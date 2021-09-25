@@ -1,10 +1,21 @@
 # nebari
 
+![nebari is considered experimental and unsupported](https://img.shields.io/badge/status-experimental-blueviolet)
+[![crate version](https://img.shields.io/crates/v/nebari.svg)](https://crates.io/crates/nebari)
+[![Live Build Status](https://img.shields.io/github/workflow/status/khonsulabs/nebari/Tests/main)](https://github.com/khonsulabs/nebari/actions?query=workflow:Tests)
+[![HTML Coverage Report for `main` branch](https://khonsulabs.github.io/nebari/coverage/badge.svg)](https://nebari.bonsaidb.io/coverage/)
+[![Documentation for `main` branch](https://img.shields.io/badge/docs-main-informational)](https://nebari.bonsaidb.io/main/nebari/)
+
+> nebari - noun - the surface roots that flare out from the base of a bonsai tree
+
+**Warning:** This crate is early in development. The format of the file is not
+considered stable yet. Do not use in production.
+
 This crate provides the `Roots` type, which is the transactional storage layer
 for [`BonsaiDb`](https://dev.bonsaidb.io/). It is loosely inspired by
-[`Couchstore`](https://github.com/couchbase/couchstore). 
+[`Couchstore`](https://github.com/couchbase/couchstore).
 
-## Features of `Roots`
+## Features of `nebari`
 
 The main highlights are:
 
@@ -21,7 +32,7 @@ contents, skipping over entries that are no longer alive. This process can
 happen without blocking the file from being operated on, but it does
 introduce IO overhead during the operation.
 
-Roots will provide the APIs necessary to perform compaction, but due to the IO
+Nebari will provide the APIs necessary to perform compaction, but due to the IO
 overhead introduced by the operation, the implementation strategy is left to
 `BonsaiDb` to allow for flexible customization and scheduling.
 
@@ -34,9 +45,7 @@ event or crash.
 
 ### Pluggable encryption support
 
-This crate defines a `Vault` trait that allows virtually any encryption backend
-without `Roots` needing to know any details about it. `Roots` stores an
-"encryption key ID" u32 that the `Vault` provides during encryption. When
-decrypting, the stored ID is provided to the vault along with the encrypted
-payload.
-
+This crate defines a [`Vault`
+trait](https://nebari.bonsaidb.io/main/nebari/trait.Vault.html) that allows
+virtually any encryption backend without Nebari needing to know any details
+about it.

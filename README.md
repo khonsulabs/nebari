@@ -49,3 +49,7 @@ This crate defines a [`Vault`
 trait](https://nebari.bonsaidb.io/main/nebari/trait.Vault.html) that allows
 virtually any encryption backend without Nebari needing to know any details
 about it.
+
+## Open-source Licenses
+
+This project, like all projects from [Khonsu Labs](https://khonsulabs.com/), are open-source. This repository is available under the [MIT License](./LICENSE-MIT) or the [Apache License 2.0](./LICENSE-APACHE).

@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["nebari"] = [{"text":"impl&lt;F:&nbsp;<a class=\"trait\" href=\"nebari/trait.ManagedFile.html\" title=\"trait nebari::ManagedFile\">ManagedFile</a>&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.55.0/core/ops/drop/trait.Drop.html\" title=\"trait core::ops::drop::Drop\">Drop</a> for <a class=\"struct\" href=\"nebari/struct.ExecutingTransaction.html\" title=\"struct nebari::ExecutingTransaction\">ExecutingTransaction</a>&lt;F&gt;","synthetic":false,"types":["nebari::roots::ExecutingTransaction"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

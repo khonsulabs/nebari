@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["nebari"] = [{"text":"impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.55.0/std/io/trait.Write.html\" title=\"trait std::io::Write\">Write</a> for <a class=\"struct\" href=\"nebari/struct.StdFile.html\" title=\"struct nebari::StdFile\">StdFile</a>","synthetic":false,"types":["nebari::managed_file::fs::StdFile"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

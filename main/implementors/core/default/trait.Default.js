@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["nebari"] = [{"text":"impl&lt;const MAX_ORDER:&nbsp;<a class=\"primitive\" href=\"https://doc.rust-lang.org/1.55.0/std/primitive.usize.html\">usize</a>&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.55.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"nebari/tree/struct.State.html\" title=\"struct nebari::tree::State\">State</a>&lt;MAX_ORDER&gt;","synthetic":false,"types":["nebari::tree::state::State"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

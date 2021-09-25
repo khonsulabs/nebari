@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["nebari"] = [{"text":"impl&lt;'a&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.55.0/core/iter/traits/iterator/trait.Iterator.html\" title=\"trait core::iter::traits::iterator::Iterator\">Iterator</a> for <a class=\"enum\" href=\"nebari/tree/enum.KeyRange.html\" title=\"enum nebari::tree::KeyRange\">KeyRange</a>&lt;'a&gt;","synthetic":false,"types":["nebari::tree::KeyRange"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

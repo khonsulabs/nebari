@@ -326,7 +326,7 @@ impl<F: ManagedFile, const MAX_ORDER: usize> TreeFile<F, MAX_ORDER> {
         &mut self,
         keys: &[&[u8]],
         in_transaction: bool,
-    ) -> Result<Vec<Buffer<'static>>, Error> {
+    ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
         let mut buffers = Vec::with_capacity(keys.len());
         self.file.execute(DocumentGetter {
             from_transaction: in_transaction,
@@ -334,8 +334,8 @@ impl<F: ManagedFile, const MAX_ORDER: usize> TreeFile<F, MAX_ORDER> {
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
             keys: KeyRange::Multiple(keys),
-            key_reader: |_key, value| {
-                buffers.push(value);
+            key_reader: |key, value| {
+                buffers.push((key, value));
                 Ok(())
             },
             key_evaluator: |_| KeyEvaluation::ReadData,
@@ -1217,47 +1217,32 @@ mod tests {
             .unwrap();
         // Order isn't guaranteeed.
         all_records.sort();
-        assert_eq!(all_records, ids);
+        assert_eq!(
+            all_records
+                .iter()
+                .map(|kv| kv.1.clone())
+                .collect::<Vec<_>>(),
+            ids
+        );
 
         // Try some ranges
-        let mut unbounded_to_five = tree
-            .get_range(..ids[5].clone(), false)
-            .unwrap()
-            .into_iter()
-            .map(|(_, value)| value)
-            .collect::<Vec<_>>();
+        let mut unbounded_to_five = tree.get_range(..ids[5].clone(), false).unwrap();
         unbounded_to_five.sort();
         assert_eq!(&all_records[..5], &unbounded_to_five);
         let mut one_to_ten_unbounded = tree
             .get_range(ids[1].clone()..ids[10].clone(), false)
-            .unwrap()
-            .into_iter()
-            .map(|(_, value)| value)
-            .collect::<Vec<_>>();
+            .unwrap();
         one_to_ten_unbounded.sort();
         assert_eq!(&all_records[1..10], &one_to_ten_unbounded);
         let mut bounded_upper = tree
             .get_range(ids[3].clone()..=ids[50].clone(), false)
-            .unwrap()
-            .into_iter()
-            .map(|(_, value)| value)
-            .collect::<Vec<_>>();
+            .unwrap();
         bounded_upper.sort();
         assert_eq!(&all_records[3..=50], &bounded_upper);
-        let mut unbounded_upper = tree
-            .get_range(ids[60].clone().., false)
-            .unwrap()
-            .into_iter()
-            .map(|(_, value)| value)
-            .collect::<Vec<_>>();
+        let mut unbounded_upper = tree.get_range(ids[60].clone().., false).unwrap();
         unbounded_upper.sort();
         assert_eq!(&all_records[60..], &unbounded_upper);
-        let mut all_through_scan = tree
-            .get_range(.., false)
-            .unwrap()
-            .into_iter()
-            .map(|(_, value)| value)
-            .collect::<Vec<_>>();
+        let mut all_through_scan = tree.get_range(.., false).unwrap();
         all_through_scan.sort();
         assert_eq!(&all_records, &all_through_scan);
     }

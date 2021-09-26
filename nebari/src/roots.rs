@@ -337,8 +337,10 @@ impl<F: ManagedFile> TransactionTree<F> {
 
     /// Retrieves the values of `keys`. If any keys are not found, they will be
     /// omitted from the results.
-    // TODO needs to be a Vec<(Buffer, Buffer)>
-    pub fn get_multiple(&mut self, keys: &[&[u8]]) -> Result<Vec<Buffer<'static>>, Error> {
+    pub fn get_multiple(
+        &mut self,
+        keys: &[&[u8]],
+    ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
         self.tree.get_multiple(keys, true)
     }
 
@@ -510,8 +512,10 @@ impl<F: ManagedFile> Tree<F> {
 
     /// Retrieves the values of `keys`. If any keys are not found, they will be
     /// omitted from the results.
-    // TODO needs to be a Vec<(Buffer, Buffer)>
-    pub fn get_multiple(&self, keys: &[&[u8]]) -> Result<Vec<Buffer<'static>>, Error> {
+    pub fn get_multiple(
+        &self,
+        keys: &[&[u8]],
+    ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
         let mut tree = TreeFile::<F, MAX_ORDER>::read(
             self.path(),
             self.state.clone(),

@@ -23,6 +23,7 @@ pub struct ChunkCache {
 
 pub trait AnySendSync: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 impl<T> AnySendSync for T
@@ -30,6 +31,10 @@ where
     T: Any + Send + Sync,
 {
     fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }

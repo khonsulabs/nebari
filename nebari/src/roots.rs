@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     borrow::Cow,
     collections::HashMap,
     convert::Infallible,
@@ -15,11 +16,12 @@ use parking_lot::Mutex;
 use crate::{
     context::Context,
     transaction::{TransactionHandle, TransactionManager},
-    tree::{CompareSwap, KeyEvaluation, KeyOperation, Modification, Operation, State, TreeFile},
+    tree::{
+        self, state::AnyTreeState, CompareSwap, KeyEvaluation, KeyOperation, Modification,
+        Operation, State, TreeFile, TreeRoot, VersionedTreeRoot,
+    },
     Buffer, ChunkCache, Error, FileManager, ManagedFile, Vault,
 };
-
-const MAX_ORDER: usize = 1000;
 
 /// A multi-tree transactional B-Tree database.
 #[derive(Debug)]
@@ -32,7 +34,7 @@ struct Data<F: ManagedFile> {
     context: Context<F::Manager>,
     transactions: TransactionManager<F::Manager>,
     path: PathBuf,
-    tree_states: Mutex<HashMap<String, State<MAX_ORDER>>>,
+    tree_states: Mutex<HashMap<String, Box<dyn AnyTreeState>>>,
 }
 
 impl<F: ManagedFile> Roots<F> {
@@ -78,13 +80,16 @@ impl<F: ManagedFile> Roots<F> {
 
     /// Opens a tree named `name`.
     // TODO enforce name restrictions.
-    pub fn tree(&self, name: impl Into<Cow<'static, str>>) -> Result<Tree<F>, Error> {
+    pub fn tree<Root: tree::Root, Name: Into<Cow<'static, str>>>(
+        &self,
+        name: Name,
+    ) -> Result<Tree<Root, F>, Error> {
         let name = name.into();
         let path = self.tree_path(&name);
         if !path.exists() {
             self.context().file_manager.append(&path)?;
         }
-        let state = self.tree_state(&name);
+        let state = self.tree_state(name.clone());
         Ok(Tree {
             roots: self.clone(),
             state,
@@ -120,24 +125,26 @@ impl<F: ManagedFile> Roots<F> {
         Ok(names)
     }
 
-    fn tree_state(&self, name: &str) -> State<MAX_ORDER> {
-        self.tree_states([name].iter().copied())
+    fn tree_state<Root: tree::Root>(&self, name: impl Into<Cow<'static, str>>) -> State<Root> {
+        self.tree_states(&[Root::tree(name)])
             .into_iter()
             .next()
             .unwrap()
+            .as_ref()
+            .as_any()
+            .downcast_ref::<State<Root>>()
+            .unwrap()
+            .clone()
     }
 
-    fn tree_states<'i, Names: Iterator<Item = &'i str> + ExactSizeIterator>(
-        &self,
-        names: Names,
-    ) -> Vec<State<MAX_ORDER>> {
+    fn tree_states(&self, names: &[TreeRoot<F>]) -> Vec<Box<dyn AnyTreeState>> {
         let mut tree_states = self.data.tree_states.lock();
         let mut output = Vec::with_capacity(names.len());
-        for name in names {
+        for tree in names {
             let state = tree_states
-                .entry(name.to_string())
-                .or_insert_with(State::default)
-                .clone();
+                .entry(tree.name().to_string())
+                .or_insert_with(|| tree.default_state())
+                .cloned();
             output.push(state);
         }
         output
@@ -146,31 +153,27 @@ impl<F: ManagedFile> Roots<F> {
     /// Begins a transaction over `trees`. All trees will be exclusively
     /// accessible by the transaction. Dropping the executing transaction will
     /// roll the transaction back.
-    pub fn transaction(&self, trees: &[impl AsRef<str>]) -> Result<ExecutingTransaction<F>, Error> {
+    pub fn transaction(&self, trees: &[TreeRoot<F>]) -> Result<ExecutingTransaction<F>, Error> {
         // TODO this extra vec here is annoying. We should have a treename type
         // that we can use instead of str.
         let transaction = self.data.transactions.new_transaction(
             &trees
                 .iter()
-                .map(|t| t.as_ref().as_bytes())
+                .map(|t| t.name().as_bytes())
                 .collect::<Vec<_>>(),
         );
-        let states = self.tree_states(trees.iter().map(AsRef::as_ref));
+        let states = self.tree_states(trees);
         let trees = trees
             .iter()
             .zip(states.into_iter())
             .map(|(tree, state)| {
-                let tree = TreeFile::write(
-                    self.tree_path(tree.as_ref()),
-                    state,
+                tree.begin_transaction(
+                    transaction.id,
+                    &self.tree_path(tree.name()),
+                    state.as_ref(),
                     self.context(),
                     Some(&self.data.transactions),
-                )?;
-
-                Ok(TransactionTree {
-                    tree,
-                    transaction_id: transaction.id,
-                })
+                )
             })
             .collect::<Result<Vec<_>, Error>>()?;
         Ok(ExecutingTransaction {
@@ -195,7 +198,7 @@ impl<M: ManagedFile> Clone for Roots<M> {
 pub struct ExecutingTransaction<F: ManagedFile> {
     transaction_manager: TransactionManager<F::Manager>,
     transaction: Option<TransactionHandle>,
-    trees: Vec<TransactionTree<F>>,
+    trees: Vec<Box<dyn AnyTransactionTree<F>>>,
 }
 
 impl<F: ManagedFile> ExecutingTransaction<F> {
@@ -207,23 +210,26 @@ impl<F: ManagedFile> ExecutingTransaction<F> {
         self.transaction_manager
             .push(self.transaction.take().unwrap())?;
 
-        for tree in self.trees.drain(..) {
-            let state = tree.tree.state.lock();
-            state.publish(&tree.tree.state);
+        for mut tree in self.trees.drain(..) {
+            tree.commit()?;
         }
 
         Ok(())
     }
 
     /// Accesses a locked tree. The order of `TransactionTree`'s
-    pub fn tree(&mut self, index: usize) -> Option<&mut TransactionTree<F>> {
-        self.trees.get_mut(index)
+    pub fn tree<Root: tree::Root>(
+        &mut self,
+        index: usize,
+    ) -> Option<&mut TransactionTree<Root, F>> {
+        self.trees
+            .get_mut(index)
+            .and_then(|any_tree| any_tree.as_mut().as_any_mut().downcast_mut())
     }
 
     fn rollback_tree_states(&mut self) {
         for tree in self.trees.drain(..) {
-            let mut state = tree.tree.state.lock();
-            state.rollback(&tree.tree.state);
+            tree.rollback();
         }
     }
 }
@@ -239,18 +245,48 @@ impl<F: ManagedFile> Drop for ExecutingTransaction<F> {
 }
 
 /// A tree that is modifiable during a transaction.
-pub struct TransactionTree<F: ManagedFile> {
-    transaction_id: u64,
-    tree: TreeFile<F, MAX_ORDER>,
+pub struct TransactionTree<Root: tree::Root, F: ManagedFile> {
+    pub(crate) transaction_id: u64,
+    pub(crate) tree: TreeFile<Root, F>,
 }
 
-impl<F: ManagedFile> TransactionTree<F> {
+pub trait AnyTransactionTree<F: ManagedFile>: Any {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    fn commit(&mut self) -> Result<(), Error>;
+    fn rollback(&self);
+}
+
+impl<Root: tree::Root, F: ManagedFile> AnyTransactionTree<F> for TransactionTree<Root, F> {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn commit(&mut self) -> Result<(), Error> {
+        let state = self.tree.state.lock();
+        state.publish(&self.tree.state);
+        Ok(())
+    }
+
+    fn rollback(&self) {
+        let mut state = self.tree.state.lock();
+        state.rollback(&self.tree.state);
+    }
+}
+
+impl<F: ManagedFile> TransactionTree<VersionedTreeRoot, F> {
     /// Returns the latest sequence id.
     pub fn current_sequence_id(&self) -> u64 {
         let state = self.tree.state.lock();
         state.header.sequence
     }
+}
 
+impl<Root: tree::Root, F: ManagedFile> TransactionTree<Root, F> {
     /// Sets `key` to `value`.
     pub fn set(
         &mut self,
@@ -438,13 +474,13 @@ impl<F: ManagedFile> Config<F> {
 }
 
 /// A named collection of keys and values.
-pub struct Tree<F: ManagedFile> {
+pub struct Tree<Root: tree::Root, F: ManagedFile> {
     roots: Roots<F>,
-    state: State<MAX_ORDER>,
+    state: State<Root>,
     name: Cow<'static, str>,
 }
 
-impl<F: ManagedFile> Tree<F> {
+impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
     /// Returns the name of the tree.
     #[must_use]
     pub fn name(&self) -> &str {
@@ -464,15 +500,15 @@ impl<F: ManagedFile> Tree<F> {
         key: impl Into<Buffer<'static>>,
         value: impl Into<Buffer<'static>>,
     ) -> Result<(), Error> {
-        let mut transaction = self.roots.transaction(&[&self.name])?;
-        transaction.tree(0).unwrap().set(key, value)?;
+        let mut transaction = self.roots.transaction(&[Root::tree(self.name.clone())])?;
+        transaction.tree::<Root>(0).unwrap().set(key, value)?;
         transaction.commit()
     }
 
     /// Retrieves the current value of `key`, if present. Does not reflect any
     /// changes in pending transactions.
     pub fn get(&self, key: &[u8]) -> Result<Option<Buffer<'static>>, Error> {
-        let mut tree = TreeFile::<F, MAX_ORDER>::read(
+        let mut tree = TreeFile::<Root, F>::read(
             self.path(),
             self.state.clone(),
             self.roots.context(),
@@ -485,8 +521,8 @@ impl<F: ManagedFile> Tree<F> {
     /// Removes `key` and returns the existing value, if present. This is executed within its own transaction.
     #[allow(clippy::missing_panics_doc)]
     pub fn remove(&self, key: &[u8]) -> Result<Option<Buffer<'static>>, Error> {
-        let mut transaction = self.roots.transaction(&[&self.name])?;
-        let existing_value = transaction.tree(0).unwrap().remove(key)?;
+        let mut transaction = self.roots.transaction(&[Root::tree(self.name.clone())])?;
+        let existing_value = transaction.tree::<Root>(0).unwrap().remove(key)?;
         transaction.commit()?;
         Ok(existing_value)
     }
@@ -501,9 +537,9 @@ impl<F: ManagedFile> Tree<F> {
         old: Option<&Buffer<'_>>,
         new: Option<Buffer<'_>>,
     ) -> Result<(), CompareAndSwapError> {
-        let mut transaction = self.roots.transaction(&[&self.name])?;
+        let mut transaction = self.roots.transaction(&[Root::tree(self.name.clone())])?;
         transaction
-            .tree(0)
+            .tree::<Root>(0)
             .unwrap()
             .compare_and_swap(key, old, new)?;
         transaction.commit()?;
@@ -516,7 +552,7 @@ impl<F: ManagedFile> Tree<F> {
         &self,
         keys: &[&[u8]],
     ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
-        let mut tree = TreeFile::<F, MAX_ORDER>::read(
+        let mut tree = TreeFile::<Root, F>::read(
             self.path(),
             self.state.clone(),
             self.roots.context(),
@@ -531,7 +567,7 @@ impl<F: ManagedFile> Tree<F> {
         &self,
         range: B,
     ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
-        let mut tree = TreeFile::<F, MAX_ORDER>::read(
+        let mut tree = TreeFile::<Root, F>::read(
             self.path(),
             self.state.clone(),
             self.roots.context(),
@@ -564,7 +600,7 @@ impl<F: ManagedFile> Tree<F> {
         DataCallback: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<E>>,
         E: Display + Debug,
     {
-        let mut tree = TreeFile::<F, MAX_ORDER>::read(
+        let mut tree = TreeFile::<Root, F>::read(
             self.path(),
             self.state.clone(),
             self.roots.context(),
@@ -577,7 +613,7 @@ impl<F: ManagedFile> Tree<F> {
     /// Returns the last key and value of the tree.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn last(&self) -> Result<Option<(Buffer<'static>, Buffer<'static>)>, Error> {
-        let mut tree = TreeFile::<F, MAX_ORDER>::read(
+        let mut tree = TreeFile::<Root, F>::read(
             self.path(),
             self.state.clone(),
             self.roots.context(),
@@ -636,13 +672,13 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
-    use crate::{managed_file::memory::MemoryFile, ManagedFile, StdFile};
+    use crate::{managed_file::memory::MemoryFile, tree::Root, ManagedFile, StdFile};
 
     fn basic_get_set<F: ManagedFile>() {
         let tempdir = tempdir().unwrap();
         let roots = Config::<F>::new(tempdir.path()).open().unwrap();
 
-        let tree = roots.tree("test").unwrap();
+        let tree = roots.tree::<VersionedTreeRoot, _>("test").unwrap();
         tree.set(b"test", b"value").unwrap();
         let result = tree.get(b"test").unwrap().expect("key not found");
 
@@ -664,22 +700,24 @@ mod tests {
         let tempdir = tempdir().unwrap();
 
         let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
-        let tree = roots.tree("test").unwrap();
+        let tree = roots.tree::<VersionedTreeRoot, _>("test").unwrap();
         tree.set(b"test", b"value").unwrap();
 
         // Begin a transaction
-        let mut transaction = roots.transaction(&[&"test"]).unwrap();
+        let mut transaction = roots
+            .transaction(&[VersionedTreeRoot::tree("test")])
+            .unwrap();
 
         // Replace the key with a new value.
         transaction
-            .tree(0)
+            .tree::<VersionedTreeRoot>(0)
             .unwrap()
             .set(b"test", b"updated value")
             .unwrap();
 
         // Check that the transaction can read the new value
         let result = transaction
-            .tree(0)
+            .tree::<VersionedTreeRoot>(0)
             .unwrap()
             .get(b"test")
             .unwrap()
@@ -703,15 +741,17 @@ mod tests {
         let tempdir = tempdir().unwrap();
 
         let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
-        let tree = roots.tree("test").unwrap();
+        let tree = roots.tree::<VersionedTreeRoot, _>("test").unwrap();
         tree.set(b"test", b"value").unwrap();
 
         // Begin a transaction
-        let mut transaction = roots.transaction(&[&"test"]).unwrap();
+        let mut transaction = roots
+            .transaction(&[VersionedTreeRoot::tree("test")])
+            .unwrap();
 
         // Replace the key with a new value.
         transaction
-            .tree(0)
+            .tree::<VersionedTreeRoot>(0)
             .unwrap()
             .set(b"test", b"updated value")
             .unwrap();
@@ -724,10 +764,12 @@ mod tests {
         assert_eq!(result.as_slice(), b"value");
 
         // Begin a new transaction
-        let mut transaction = roots.transaction(&[&"test"]).unwrap();
+        let mut transaction = roots
+            .transaction(&[VersionedTreeRoot::tree("test")])
+            .unwrap();
         // Check that the transaction has the original value
         let result = transaction
-            .tree(0)
+            .tree::<VersionedTreeRoot>(0)
             .unwrap()
             .get(b"test")
             .unwrap()

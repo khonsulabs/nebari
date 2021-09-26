@@ -8,11 +8,11 @@ use std::{
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
 use super::{
-    btree_root::{ChangeResult, EntryChanges},
     interior::Interior,
     key_entry::KeyEntry,
     modify::{Modification, Operation},
     serialization::BinarySerialization,
+    versioned::ChangeResult,
     KeyRange, PagedWriter,
 };
 use crate::{tree::KeyEvaluation, AbortError, Buffer, ChunkCache, Error, ManagedFile, Vault};
@@ -58,13 +58,13 @@ impl<I> Reducer<I> for () {
     fn rereduce(_reductions: &[&Self]) -> Self {}
 }
 
-pub struct ModificationContext<T, F, I, Indexer, Loader>
+pub struct ModificationContext<T, F, I, C, Indexer, Loader>
 where
     Indexer: Fn(
         &Buffer<'_>,
         Option<&T>,
         Option<&I>,
-        &mut EntryChanges,
+        &mut C,
         &mut PagedWriter<'_, F>,
     ) -> Result<KeyOperation<I>, Error>,
     Loader: Fn(&I, &mut PagedWriter<'_, F>) -> Result<Option<T>, Error>,
@@ -72,7 +72,7 @@ where
     pub current_order: usize,
     pub indexer: Indexer,
     pub loader: Loader,
-    pub _phantom: PhantomData<(T, F, I)>,
+    pub _phantom: PhantomData<(T, F, I, C)>,
 }
 
 impl<I, R> BTreeEntry<I, R>
@@ -80,12 +80,12 @@ where
     I: Clone + BinarySerialization + Debug + 'static,
     R: Clone + Reducer<I> + BinarySerialization + Debug + 'static,
 {
-    pub fn modify<F, T, Indexer, Loader>(
+    pub fn modify<F, T, C, Indexer, Loader>(
         &mut self,
         modification: &mut Modification<'_, T>,
-        context: &ModificationContext<T, F, I, Indexer, Loader>,
+        context: &ModificationContext<T, F, I, C, Indexer, Loader>,
         max_key: Option<&Buffer<'_>>,
-        changes: &mut EntryChanges,
+        changes: &mut C,
         writer: &mut PagedWriter<'_, F>,
     ) -> Result<ChangeResult<I, R>, Error>
     where
@@ -94,7 +94,7 @@ where
             &Buffer<'_>,
             Option<&T>,
             Option<&I>,
-            &mut EntryChanges,
+            &mut C,
             &mut PagedWriter<'_, F>,
         ) -> Result<KeyOperation<I>, Error>,
         Loader: Fn(&I, &mut PagedWriter<'_, F>) -> Result<Option<T>, Error>,
@@ -150,12 +150,12 @@ where
     }
 
     #[allow(clippy::too_many_lines)] // TODO refactor, too many lines
-    fn modify_leaf<F, T, Indexer, Loader>(
+    fn modify_leaf<F, T, C, Indexer, Loader>(
         children: &mut Vec<KeyEntry<I>>,
         modification: &mut Modification<'_, T>,
-        context: &ModificationContext<T, F, I, Indexer, Loader>,
+        context: &ModificationContext<T, F, I, C, Indexer, Loader>,
         max_key: Option<&Buffer<'_>>,
-        changes: &mut EntryChanges,
+        changes: &mut C,
         writer: &mut PagedWriter<'_, F>,
     ) -> Result<bool, Error>
     where
@@ -164,7 +164,7 @@ where
             &Buffer<'_>,
             Option<&T>,
             Option<&I>,
-            &mut EntryChanges,
+            &mut C,
             &mut PagedWriter<'_, F>,
         ) -> Result<KeyOperation<I>, Error>,
         Loader: Fn(&I, &mut PagedWriter<'_, F>) -> Result<Option<T>, Error>,
@@ -297,12 +297,12 @@ where
         Ok(any_changes)
     }
 
-    pub fn modify_interior<F, T, Indexer, Loader>(
+    pub fn modify_interior<F, T, C, Indexer, Loader>(
         children: &mut Vec<Interior<I, R>>,
         modification: &mut Modification<'_, T>,
-        context: &ModificationContext<T, F, I, Indexer, Loader>,
+        context: &ModificationContext<T, F, I, C, Indexer, Loader>,
         max_key: Option<&Buffer<'_>>,
-        changes: &mut EntryChanges,
+        changes: &mut C,
         writer: &mut PagedWriter<'_, F>,
     ) -> Result<bool, Error>
     where
@@ -311,7 +311,7 @@ where
             &Buffer<'_>,
             Option<&T>,
             Option<&I>,
-            &mut EntryChanges,
+            &mut C,
             &mut PagedWriter<'_, F>,
         ) -> Result<KeyOperation<I>, Error>,
         Loader: Fn(&I, &mut PagedWriter<'_, F>) -> Result<Option<T>, Error>,

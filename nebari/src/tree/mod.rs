@@ -55,25 +55,30 @@ use crate::{
     chunk_cache::CacheEntry,
     managed_file::{FileManager, FileOp, ManagedFile, OpenableFile},
     roots::AbortError,
-    tree::{btree_entry::ScanArgs, btree_root::BTreeRoot},
+    tree::btree_entry::ScanArgs,
     Buffer, ChunkCache, Context, Error, TransactionManager, Vault,
 };
 
 mod btree_entry;
-mod btree_root;
 mod by_id;
 mod by_sequence;
 mod interior;
 mod key_entry;
 mod modify;
+mod root;
 mod serialization;
-mod state;
+pub(crate) mod state;
+mod unversioned;
+mod versioned;
 
 use self::serialization::BinarySerialization;
 pub use self::{
     btree_entry::KeyOperation,
     modify::{CompareSwap, CompareSwapFn, Modification, Operation},
+    root::{Root, TreeRoot},
     state::State,
+    unversioned::UnversionedTreeRoot,
+    versioned::VersionedTreeRoot,
 };
 
 // The memory used by PagedWriter is PAGE_SIZE * PAGED_WRITER_BATCH_COUNT. E.g,
@@ -115,21 +120,21 @@ impl TryFrom<u8> for PageHeader {
 ///   contain. This implementation attempts to grow naturally towards this upper
 ///   limit. Changing this parameter does not automatically rebalance the tree,
 ///   but over time the tree will be updated.
-pub struct TreeFile<F: ManagedFile, const MAX_ORDER: usize> {
+pub struct TreeFile<Root: root::Root, F: ManagedFile> {
     file: <F::Manager as FileManager>::FileHandle,
     /// The state of the file.
-    pub state: State<MAX_ORDER>,
+    pub state: State<Root>,
     vault: Option<Arc<dyn Vault>>,
     cache: Option<ChunkCache>,
 }
 
-impl<F: ManagedFile, const MAX_ORDER: usize> TreeFile<F, MAX_ORDER> {
+impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
     /// Returns a tree as contained in `file`.
     ///
     /// `state` should already be initialized using [`Self::initialize_state`] if the file exists.
     pub fn new(
         file: <F::Manager as FileManager>::FileHandle,
-        state: State<MAX_ORDER>,
+        state: State<Root>,
         vault: Option<Arc<dyn Vault>>,
         cache: Option<ChunkCache>,
     ) -> Result<Self, Error> {
@@ -144,7 +149,7 @@ impl<F: ManagedFile, const MAX_ORDER: usize> TreeFile<F, MAX_ORDER> {
     /// Opens a tree file with read-only permissions.
     pub fn read(
         path: impl AsRef<Path>,
-        state: State<MAX_ORDER>,
+        state: State<Root>,
         context: &Context<F::Manager>,
         transactions: Option<&TransactionManager<F::Manager>>,
     ) -> Result<Self, Error> {
@@ -156,7 +161,7 @@ impl<F: ManagedFile, const MAX_ORDER: usize> TreeFile<F, MAX_ORDER> {
     /// Opens a tree file with the ability to read and write.
     pub fn write(
         path: impl AsRef<Path>,
-        state: State<MAX_ORDER>,
+        state: State<Root>,
         context: &Context<F::Manager>,
         transactions: Option<&TransactionManager<F::Manager>>,
     ) -> Result<Self, Error> {
@@ -167,7 +172,7 @@ impl<F: ManagedFile, const MAX_ORDER: usize> TreeFile<F, MAX_ORDER> {
 
     /// Attempts to load the last saved state of this tree into `state`.
     pub fn initialize_state(
-        state: &State<MAX_ORDER>,
+        state: &State<Root>,
         file_path: &Path,
         context: &Context<F::Manager>,
         transaction_manager: Option<&TransactionManager<F::Manager>>,
@@ -186,7 +191,7 @@ impl<F: ManagedFile, const MAX_ORDER: usize> TreeFile<F, MAX_ORDER> {
 
         let mut file_length = context.file_manager.file_length(file_path)?;
         if file_length == 0 {
-            active_state.header.sequence = 1;
+            active_state.header.initialize_default();
             return Ok(());
         }
 
@@ -238,18 +243,16 @@ impl<F: ManagedFile, const MAX_ORDER: usize> TreeFile<F, MAX_ORDER> {
                         CacheEntry::Buffer(buffer) => buffer,
                         CacheEntry::Decoded(_) => unreachable!(),
                     };
-                    let root = BTreeRoot::deserialize(contents)
+                    let root = Root::deserialize(contents)
                         .map_err(|err| Error::DataIntegrity(Box::new(err)))?;
                     if let Some(transaction_manager) = transaction_manager {
-                        if !transaction_manager.transaction_was_successful(root.transaction_id)? {
+                        if !transaction_manager.transaction_was_successful(root.transaction_id())? {
                             // The transaction wasn't written successfully, so
                             // we cannot trust the data present.
                             if block_start == 0 {
                                 // No data was ever fully written.
-                                break BTreeRoot {
-                                    sequence: 1,
-                                    ..BTreeRoot::default()
-                                };
+                                active_state.header.initialize_default();
+                                return Ok(());
                             }
                             block_start -= PAGE_SIZE as u64;
                             continue;
@@ -265,13 +268,13 @@ impl<F: ManagedFile, const MAX_ORDER: usize> TreeFile<F, MAX_ORDER> {
         Ok(())
     }
 
-    /// Returns the sequence that wrote this document.
+    /// Pushes a key/value pair. Replaces any previous value if set.
     pub fn push(
         &mut self,
         transaction_id: u64,
         key: Buffer<'static>,
         document: Buffer<'static>,
-    ) -> Result<u64, Error> {
+    ) -> Result<(), Error> {
         self.file.execute(DocumentWriter {
             state: &self.state,
             vault: self.vault.as_deref(),
@@ -284,11 +287,8 @@ impl<F: ManagedFile, const MAX_ORDER: usize> TreeFile<F, MAX_ORDER> {
         })
     }
 
-    /// Returns the sequence that wrote this document.
-    pub fn modify(
-        &mut self,
-        modification: Modification<'_, Buffer<'static>>,
-    ) -> Result<u64, Error> {
+    /// Executes a modification.
+    pub fn modify(&mut self, modification: Modification<'_, Buffer<'static>>) -> Result<(), Error> {
         self.file.execute(DocumentWriter {
             state: &self.state,
             vault: self.vault.as_deref(),
@@ -401,17 +401,15 @@ impl<F: ManagedFile, const MAX_ORDER: usize> TreeFile<F, MAX_ORDER> {
     }
 }
 
-struct DocumentWriter<'a, 'm, const MAX_ORDER: usize> {
-    state: &'a State<MAX_ORDER>,
+struct DocumentWriter<'a, 'm, Root: root::Root> {
+    state: &'a State<Root>,
     vault: Option<&'a dyn Vault>,
     cache: Option<&'a ChunkCache>,
     modification: Option<Modification<'m, Buffer<'static>>>,
 }
 
-impl<'a, 'm, F: ManagedFile, const MAX_ORDER: usize> FileOp<F>
-    for DocumentWriter<'a, 'm, MAX_ORDER>
-{
-    type Output = Result<u64, Error>;
+impl<'a, 'm, Root: root::Root, F: ManagedFile> FileOp<F> for DocumentWriter<'a, 'm, Root> {
+    type Output = Result<(), Error>;
 
     #[allow(clippy::shadow_unrelated)] // It is related, but clippy can't tell.
     fn execute(&mut self, file: &mut F) -> Self::Output {
@@ -452,7 +450,7 @@ impl<'a, 'm, F: ManagedFile, const MAX_ORDER: usize> FileOp<F>
             active_state.publish(self.state);
         }
 
-        Ok(active_state.header.sequence)
+        Ok(())
     }
 }
 
@@ -514,12 +512,12 @@ pub enum KeyEvaluation {
 struct DocumentGetter<
     'a,
     'k,
+    Root: root::Root,
     E: FnMut(&Buffer<'static>) -> KeyEvaluation,
     R: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
-    const MAX_ORDER: usize,
 > {
     from_transaction: bool,
-    state: &'a State<MAX_ORDER>,
+    state: &'a State<Root>,
     vault: Option<&'a dyn Vault>,
     cache: Option<&'a ChunkCache>,
     keys: KeyRange<'k>,
@@ -527,8 +525,8 @@ struct DocumentGetter<
     key_reader: R,
 }
 
-impl<'a, 'k, E, R, F: ManagedFile, const MAX_ORDER: usize> FileOp<F>
-    for DocumentGetter<'a, 'k, E, R, MAX_ORDER>
+impl<'a, 'k, E, R, Root: root::Root, F: ManagedFile> FileOp<F>
+    for DocumentGetter<'a, 'k, Root, E, R>
 where
     E: FnMut(&Buffer<'static>) -> KeyEvaluation,
     R: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
@@ -559,7 +557,7 @@ where
     }
 }
 
-struct DocumentScanner<'a, 'k, E, KeyEvaluator, KeyReader, KeyRangeBounds, const MAX_ORDER: usize>
+struct DocumentScanner<'a, 'k, E, Root: root::Root, KeyEvaluator, KeyReader, KeyRangeBounds>
 where
     KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
     KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<E>>,
@@ -568,7 +566,7 @@ where
 {
     forwards: bool,
     from_transaction: bool,
-    state: &'a State<MAX_ORDER>,
+    state: &'a State<Root>,
     vault: Option<&'a dyn Vault>,
     cache: Option<&'a ChunkCache>,
     range: KeyRangeBounds,
@@ -577,8 +575,8 @@ where
     _phantom: PhantomData<&'k ()>,
 }
 
-impl<'a, 'k, E, KeyEvaluator, KeyReader, KeyRangeBounds, F, const MAX_ORDER: usize> FileOp<F>
-    for DocumentScanner<'a, 'k, E, KeyEvaluator, KeyReader, KeyRangeBounds, MAX_ORDER>
+impl<'a, 'k, E, Root: root::Root, KeyEvaluator, KeyReader, KeyRangeBounds, F> FileOp<F>
+    for DocumentScanner<'a, 'k, E, Root, KeyEvaluator, KeyReader, KeyRangeBounds>
 where
     F: ManagedFile,
     KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
@@ -894,6 +892,7 @@ mod tests {
             fs::StdFileManager,
             memory::{MemoryFile, MemoryFileManager},
         },
+        tree::unversioned::UnversionedTreeRoot,
         StdFile,
     };
 
@@ -946,7 +945,7 @@ mod tests {
         }
     }
 
-    fn insert_one_record<F: ManagedFile, const MAX_ORDER: usize>(
+    fn insert_one_record<F: ManagedFile>(
         context: &Context<F::Manager>,
         file_path: &Path,
         ids: &mut HashSet<u64>,
@@ -963,11 +962,13 @@ mod tests {
         {
             let state = State::default();
             if ids.len() > 1 {
-                TreeFile::<F, MAX_ORDER>::initialize_state(&state, file_path, context, None)
-                    .unwrap();
+                TreeFile::<VersionedTreeRoot, F>::initialize_state(
+                    &state, file_path, context, None,
+                )
+                .unwrap();
             }
             let file = context.file_manager.append(file_path).unwrap();
-            let mut tree = TreeFile::<F, MAX_ORDER>::new(
+            let mut tree = TreeFile::<VersionedTreeRoot, F>::new(
                 file,
                 state,
                 context.vault.clone(),
@@ -985,10 +986,11 @@ mod tests {
         // Try loading the file up and retrieving the data.
         {
             let state = State::default();
-            TreeFile::<F, MAX_ORDER>::initialize_state(&state, file_path, context, None).unwrap();
+            TreeFile::<VersionedTreeRoot, F>::initialize_state(&state, file_path, context, None)
+                .unwrap();
 
             let file = context.file_manager.append(file_path).unwrap();
-            let mut tree = TreeFile::<F, MAX_ORDER>::new(
+            let mut tree = TreeFile::<VersionedTreeRoot, F>::new(
                 file,
                 state,
                 context.vault.clone(),
@@ -1000,18 +1002,15 @@ mod tests {
         }
     }
 
-    fn remove_one_record<F: ManagedFile, const MAX_ORDER: usize>(
-        context: &Context<F::Manager>,
-        file_path: &Path,
-        id: u64,
-    ) {
+    fn remove_one_record<F: ManagedFile>(context: &Context<F::Manager>, file_path: &Path, id: u64) {
         let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
         println!("Removing: {:?}", id_buffer);
         {
             let state = State::default();
-            TreeFile::<F, MAX_ORDER>::initialize_state(&state, file_path, context, None).unwrap();
+            TreeFile::<VersionedTreeRoot, F>::initialize_state(&state, file_path, context, None)
+                .unwrap();
             let file = context.file_manager.append(file_path).unwrap();
-            let mut tree = TreeFile::<F, MAX_ORDER>::new(
+            let mut tree = TreeFile::<VersionedTreeRoot, F>::new(
                 file,
                 state,
                 context.vault.clone(),
@@ -1033,10 +1032,11 @@ mod tests {
         // Try loading the file up and retrieving the data.
         {
             let state = State::default();
-            TreeFile::<F, MAX_ORDER>::initialize_state(&state, file_path, context, None).unwrap();
+            TreeFile::<VersionedTreeRoot, F>::initialize_state(&state, file_path, context, None)
+                .unwrap();
 
             let file = context.file_manager.append(file_path).unwrap();
-            let mut tree = TreeFile::<F, MAX_ORDER>::new(
+            let mut tree = TreeFile::<VersionedTreeRoot, F>::new(
                 file,
                 state,
                 context.vault.clone(),
@@ -1064,24 +1064,22 @@ mod tests {
         let mut ids = HashSet::new();
         // Insert up to the limit of a LEAF, which is ORDER - 1.
         for _ in 0..ORDER - 1 {
-            insert_one_record::<StdFile, ORDER>(&context, &file_path, &mut ids, &mut rng);
+            insert_one_record::<StdFile>(&context, &file_path, &mut ids, &mut rng);
         }
         println!("Successfully inserted up to ORDER - 1 nodes.");
 
         // The next record will split the node
-        insert_one_record::<StdFile, ORDER>(&context, &file_path, &mut ids, &mut rng);
+        insert_one_record::<StdFile>(&context, &file_path, &mut ids, &mut rng);
         println!("Successfully introduced one layer of depth.");
 
         // Insert a lot more.
         for _ in 0..1_000 {
-            insert_one_record::<StdFile, ORDER>(&context, &file_path, &mut ids, &mut rng);
+            insert_one_record::<StdFile>(&context, &file_path, &mut ids, &mut rng);
         }
     }
 
     #[test]
     fn remove() {
-        const ORDER: usize = 4;
-
         let mut rng = Pcg64::new_seed(1);
         let context = Context {
             file_manager: StdFileManager::default(),
@@ -1094,18 +1092,23 @@ mod tests {
         let mut ids = HashSet::new();
         // Insert up to the limit of a LEAF, which is ORDER - 1.
         for _ in 0..100 {
-            insert_one_record::<StdFile, ORDER>(&context, &file_path, &mut ids, &mut rng);
+            insert_one_record::<StdFile>(&context, &file_path, &mut ids, &mut rng);
         }
 
         // Remove each of the records
         for id in ids {
-            remove_one_record::<StdFile, ORDER>(&context, &file_path, id);
+            remove_one_record::<StdFile>(&context, &file_path, id);
         }
     }
 
     #[test]
-    fn spam_insert_tokio() {
-        spam_insert::<StdFile>("tokio");
+    fn spam_insert_std_versioned() {
+        spam_insert::<VersionedTreeRoot, StdFile>("std");
+    }
+
+    #[test]
+    fn spam_insert_std_unversioned() {
+        spam_insert::<UnversionedTreeRoot, StdFile>("std");
     }
 
     #[test]
@@ -1114,8 +1117,7 @@ mod tests {
         spam_insert::<crate::UringFile>("uring");
     }
 
-    fn spam_insert<F: ManagedFile>(name: &str) {
-        const ORDER: usize = 100;
+    fn spam_insert<R: Root, F: ManagedFile>(name: &str) {
         const RECORDS: usize = 1_000;
         let mut rng = Pcg64::new_seed(1);
         let ids = (0..RECORDS).map(|_| rng.generate::<u64>());
@@ -1129,9 +1131,13 @@ mod tests {
         let file_path = temp_dir.join("tree");
         let state = State::default();
         let file = context.file_manager.append(file_path).unwrap();
-        let mut tree =
-            TreeFile::<F, ORDER>::new(file, state, context.vault.clone(), context.cache.clone())
-                .unwrap();
+        let mut tree = TreeFile::<VersionedTreeRoot, F>::new(
+            file,
+            state,
+            context.vault.clone(),
+            context.cache.clone(),
+        )
+        .unwrap();
         for (_index, id) in ids.enumerate() {
             let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
             tree.push(0, id_buffer.clone(), Buffer::from(b"hello world"))
@@ -1145,7 +1151,6 @@ mod tests {
     }
 
     fn bulk_insert<F: ManagedFile>(name: &str) {
-        const ORDER: usize = 10;
         const RECORDS_PER_BATCH: usize = 10;
         const BATCHES: usize = 1000;
         let mut rng = Pcg64::new_seed(1);
@@ -1159,9 +1164,13 @@ mod tests {
         let file_path = temp_dir.join("tree");
         let state = State::default();
         let file = context.file_manager.append(file_path).unwrap();
-        let mut tree =
-            TreeFile::<F, ORDER>::new(file, state, context.vault.clone(), context.cache.clone())
-                .unwrap();
+        let mut tree = TreeFile::<VersionedTreeRoot, F>::new(
+            file,
+            state,
+            context.vault.clone(),
+            context.cache.clone(),
+        )
+        .unwrap();
         for _ in 0..BATCHES {
             let mut ids = (0..RECORDS_PER_BATCH)
                 .map(|_| rng.generate::<u64>())
@@ -1196,7 +1205,7 @@ mod tests {
         };
         let state = State::default();
         let file = context.file_manager.append("test").unwrap();
-        let mut tree = TreeFile::<MemoryFile, 3>::new(
+        let mut tree = TreeFile::<VersionedTreeRoot, MemoryFile>::new(
             file,
             state,
             context.vault.clone(),

@@ -48,7 +48,7 @@ impl BinarySerialization for UnversionedByIdIndex {
     ) -> Result<usize, Error> {
         writer.write_u32::<BigEndian>(self.document_size)?;
         writer.write_u64::<BigEndian>(self.position)?;
-        Ok(20)
+        Ok(12)
     }
 
     fn deserialize_from(reader: &mut Buffer<'_>, _current_order: usize) -> Result<Self, Error> {

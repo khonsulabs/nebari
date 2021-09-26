@@ -49,6 +49,7 @@ pub struct VersionedTreeRoot {
 
 pub enum ChangeResult<I: BinarySerialization, R: BinarySerialization> {
     Unchanged,
+    Remove,
     Changed,
     Split(BTreeEntry<I, R>),
 }
@@ -120,7 +121,7 @@ impl VersionedTreeRoot {
                 changes,
                 writer,
             )? {
-                ChangeResult::Unchanged | ChangeResult::Changed => {}
+                ChangeResult::Remove | ChangeResult::Unchanged | ChangeResult::Changed => {}
                 ChangeResult::Split(upper) => {
                     self.by_sequence_root.split_root(upper);
                 }
@@ -162,7 +163,7 @@ impl VersionedTreeRoot {
                 &mut EntryChanges::default(),
                 writer,
             )? {
-                ChangeResult::Changed | ChangeResult::Unchanged => {}
+                ChangeResult::Remove | ChangeResult::Changed | ChangeResult::Unchanged => {}
                 ChangeResult::Split(upper) => {
                     self.by_id_root.split_root(upper);
                 }

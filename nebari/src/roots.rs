@@ -267,8 +267,7 @@ impl<Root: tree::Root, F: ManagedFile> AnyTransactionTree<F> for TransactionTree
     }
 
     fn commit(&mut self) -> Result<(), Error> {
-        let state = self.tree.state.lock();
-        state.publish(&self.tree.state);
+        self.tree.commit()?;
         Ok(())
     }
 

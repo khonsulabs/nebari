@@ -76,14 +76,17 @@ impl UnversionedTreeRoot {
                             Ok(KeyOperation::Remove)
                         }
                     },
-                    loader: |_index, _writer| Ok(None),
+                    loader: |index, writer| match writer.read_chunk(index.position)? {
+                        CacheEntry::Buffer(buffer) => Ok(Some(buffer.clone())),
+                        CacheEntry::Decoded(_) => unreachable!(),
+                    },
                     _phantom: PhantomData,
                 },
                 None,
                 &mut (),
                 writer,
             )? {
-                ChangeResult::Changed | ChangeResult::Unchanged => {}
+                ChangeResult::Changed | ChangeResult::Unchanged | ChangeResult::Remove => {}
                 ChangeResult::Split(upper) => {
                     self.by_id_root.split_root(upper);
                 }
@@ -141,7 +144,7 @@ impl Root for UnversionedTreeRoot {
         let by_id_size = u32::try_from(by_id_size)
             .ok()
             .ok_or(Error::Internal(InternalError::HeaderTooLarge))?;
-        BigEndian::write_u32(&mut output[20..24], by_id_size);
+        BigEndian::write_u32(&mut output[8..12], by_id_size);
 
         Ok(output)
     }

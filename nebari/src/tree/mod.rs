@@ -55,7 +55,7 @@ use crate::{
     chunk_cache::CacheEntry,
     managed_file::{FileManager, FileOp, ManagedFile, OpenableFile},
     roots::AbortError,
-    tree::btree_entry::ScanArgs,
+    tree::{btree_entry::ScanArgs, state::ActiveState},
     Buffer, ChunkCache, Context, Error, TransactionManager, Vault,
 };
 
@@ -399,6 +399,46 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
         })?;
         Ok(())
     }
+
+    /// Commits the tree. This is only needed if writes were done with a
+    /// transaction id. This will fully flush the tree and publish the
+    /// transactional state to be available to readers.
+    pub fn commit(&mut self) -> Result<(), Error> {
+        self.file.execute(TreeWriter {
+            state: &self.state,
+            vault: self.vault.as_deref(),
+            cache: self.cache.as_ref(),
+        })
+    }
+}
+
+struct TreeWriter<'a, Root: root::Root> {
+    state: &'a State<Root>,
+    vault: Option<&'a dyn Vault>,
+    cache: Option<&'a ChunkCache>,
+}
+
+impl<'a, Root: root::Root, F: ManagedFile> FileOp<F> for TreeWriter<'a, Root> {
+    type Output = Result<(), Error>;
+    fn execute(&mut self, file: &mut F) -> Self::Output {
+        let mut active_state = self.state.lock();
+
+        let data_block = PagedWriter::new(
+            PageHeader::Data,
+            file,
+            self.vault.as_deref(),
+            self.cache,
+            active_state.current_position,
+        );
+
+        save_tree(
+            self.state,
+            &mut *active_state,
+            self.vault,
+            self.cache,
+            data_block,
+        )
+    }
 }
 
 struct DocumentWriter<'a, 'm, Root: root::Root> {
@@ -411,7 +451,6 @@ struct DocumentWriter<'a, 'm, Root: root::Root> {
 impl<'a, 'm, Root: root::Root, F: ManagedFile> FileOp<F> for DocumentWriter<'a, 'm, Root> {
     type Output = Result<(), Error>;
 
-    #[allow(clippy::shadow_unrelated)] // It is related, but clippy can't tell.
     fn execute(&mut self, file: &mut F) -> Self::Output {
         let mut active_state = self.state.lock();
 
@@ -427,31 +466,53 @@ impl<'a, 'm, Root: root::Root, F: ManagedFile> FileOp<F> for DocumentWriter<'a, 
         let modification = self.modification.take().unwrap();
         let is_transactional = modification.transaction_id != 0;
         active_state.header.modify(modification, &mut data_block)?;
-        let new_header = active_state.header.serialize(&mut data_block)?;
-        let (file, after_data) = data_block.finish()?;
-        active_state.current_position = after_data;
 
-        // Write a new header.
-        let mut header_block = PagedWriter::new(
-            PageHeader::Header,
-            file,
-            self.vault.as_deref(),
-            self.cache,
-            active_state.current_position,
-        );
-        header_block.write_chunk(&new_header)?;
-
-        let (file, after_header) = header_block.finish()?;
-        active_state.current_position = after_header;
-
-        file.flush()?;
-
-        if !is_transactional {
-            active_state.publish(self.state);
+        if is_transactional {
+            // Transactions will saved later.
+            let (_, new_position) = data_block.finish()?;
+            active_state.current_position = new_position;
+        } else {
+            save_tree(
+                self.state,
+                &mut *active_state,
+                self.vault,
+                self.cache,
+                data_block,
+            )?;
         }
 
         Ok(())
     }
+}
+
+#[allow(clippy::shadow_unrelated)] // It is related, but clippy can't tell.
+fn save_tree<Root: root::Root, F: ManagedFile>(
+    state: &State<Root>,
+    active_state: &mut ActiveState<Root>,
+    vault: Option<&dyn Vault>,
+    cache: Option<&ChunkCache>,
+    mut data_block: PagedWriter<'_, F>,
+) -> Result<(), Error> {
+    let new_header = active_state.header.serialize(&mut data_block)?;
+    let (file, after_data) = data_block.finish()?;
+    active_state.current_position = after_data;
+
+    // Write a new header.
+    let mut header_block = PagedWriter::new(
+        PageHeader::Header,
+        file,
+        vault,
+        cache,
+        active_state.current_position,
+    );
+    header_block.write_chunk(&new_header)?;
+
+    let (file, after_header) = header_block.finish()?;
+    active_state.current_position = after_header;
+
+    file.flush()?;
+    active_state.publish(state);
+    Ok(())
 }
 
 /// One or more keys.

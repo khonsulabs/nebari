@@ -112,6 +112,8 @@ where
                         children.truncate(midpoint);
 
                         Ok(ChangeResult::Split(Self::from(upper_half)))
+                    } else if children.is_empty() {
+                        Ok(ChangeResult::Remove)
                     } else {
                         Ok(ChangeResult::Changed)
                     }
@@ -138,6 +140,8 @@ where
                         Ok(ChangeResult::Split(Self::from(BTreeNode::Interior(
                             upper_half,
                         ))))
+                    } else if children.is_empty() {
+                        Ok(ChangeResult::Remove)
                     } else {
                         Ok(ChangeResult::Changed)
                     }
@@ -363,6 +367,9 @@ where
                     }
                     children.insert(last_index + 1, Interior::from(upper));
                     any_changes |= true;
+                }
+                ChangeResult::Remove => {
+                    children.remove(last_index);
                 }
             };
             debug_assert!(children.windows(2).all(|w| w[0].key < w[1].key));

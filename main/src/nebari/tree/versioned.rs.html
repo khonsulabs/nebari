@@ -414,6 +414,7 @@
 <span id="414">414</span>
 <span id="415">415</span>
 <span id="416">416</span>
+<span id="417">417</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">convert::TryFrom</span>,
@@ -466,6 +467,7 @@
 
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">ChangeResult</span><span class="op">&lt;</span><span class="ident">I</span>: <span class="ident">BinarySerialization</span>, <span class="ident">R</span>: <span class="ident">BinarySerialization</span><span class="op">&gt;</span> {
     <span class="ident">Unchanged</span>,
+    <span class="ident">Remove</span>,
     <span class="ident">Changed</span>,
     <span class="ident">Split</span>(<span class="ident">BTreeEntry</span><span class="op">&lt;</span><span class="ident">I</span>, <span class="ident">R</span><span class="op">&gt;</span>),
 }
@@ -537,7 +539,7 @@
                 <span class="ident">changes</span>,
                 <span class="ident">writer</span>,
             )<span class="question-mark">?</span> {
-                <span class="ident">ChangeResult::Unchanged</span> <span class="op">|</span> <span class="ident">ChangeResult::Changed</span> <span class="op">=</span><span class="op">&gt;</span> {}
+                <span class="ident">ChangeResult::Remove</span> <span class="op">|</span> <span class="ident">ChangeResult::Unchanged</span> <span class="op">|</span> <span class="ident">ChangeResult::Changed</span> <span class="op">=</span><span class="op">&gt;</span> {}
                 <span class="ident">ChangeResult::Split</span>(<span class="ident">upper</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="self">self</span>.<span class="ident">by_sequence_root</span>.<span class="ident">split_root</span>(<span class="ident">upper</span>);
                 }
@@ -579,7 +581,7 @@
                 <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">EntryChanges::default</span>(),
                 <span class="ident">writer</span>,
             )<span class="question-mark">?</span> {
-                <span class="ident">ChangeResult::Changed</span> <span class="op">|</span> <span class="ident">ChangeResult::Unchanged</span> <span class="op">=</span><span class="op">&gt;</span> {}
+                <span class="ident">ChangeResult::Remove</span> <span class="op">|</span> <span class="ident">ChangeResult::Changed</span> <span class="op">|</span> <span class="ident">ChangeResult::Unchanged</span> <span class="op">=</span><span class="op">&gt;</span> {}
                 <span class="ident">ChangeResult::Split</span>(<span class="ident">upper</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">split_root</span>(<span class="ident">upper</span>);
                 }

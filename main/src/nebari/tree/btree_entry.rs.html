@@ -706,6 +706,13 @@
 <span id="706">706</span>
 <span id="707">707</span>
 <span id="708">708</span>
+<span id="709">709</span>
+<span id="710">710</span>
+<span id="711">711</span>
+<span id="712">712</span>
+<span id="713">713</span>
+<span id="714">714</span>
+<span id="715">715</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">convert::Infallible</span>,
@@ -821,6 +828,8 @@
                         <span class="ident">children</span>.<span class="ident">truncate</span>(<span class="ident">midpoint</span>);
 
                         <span class="prelude-val">Ok</span>(<span class="ident">ChangeResult::Split</span>(<span class="self">Self</span><span class="ident">::from</span>(<span class="ident">upper_half</span>)))
+                    } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">children</span>.<span class="ident">is_empty</span>() {
+                        <span class="prelude-val">Ok</span>(<span class="ident">ChangeResult::Remove</span>)
                     } <span class="kw">else</span> {
                         <span class="prelude-val">Ok</span>(<span class="ident">ChangeResult::Changed</span>)
                     }
@@ -847,6 +856,8 @@
                         <span class="prelude-val">Ok</span>(<span class="ident">ChangeResult::Split</span>(<span class="self">Self</span><span class="ident">::from</span>(<span class="ident">BTreeNode::Interior</span>(
                             <span class="ident">upper_half</span>,
                         ))))
+                    } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">children</span>.<span class="ident">is_empty</span>() {
+                        <span class="prelude-val">Ok</span>(<span class="ident">ChangeResult::Remove</span>)
                     } <span class="kw">else</span> {
                         <span class="prelude-val">Ok</span>(<span class="ident">ChangeResult::Changed</span>)
                     }
@@ -1072,6 +1083,9 @@
                     }
                     <span class="ident">children</span>.<span class="ident">insert</span>(<span class="ident">last_index</span> <span class="op">+</span> <span class="number">1</span>, <span class="ident">Interior::from</span>(<span class="ident">upper</span>));
                     <span class="ident">any_changes</span> <span class="op">|</span><span class="op">=</span> <span class="bool-val">true</span>;
+                }
+                <span class="ident">ChangeResult::Remove</span> <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="ident">children</span>.<span class="ident">remove</span>(<span class="ident">last_index</span>);
                 }
             };
             <span class="macro">debug_assert!</span>(<span class="ident">children</span>.<span class="ident">windows</span>(<span class="number">2</span>).<span class="ident">all</span>(<span class="op">|</span><span class="ident">w</span><span class="op">|</span> <span class="ident">w</span>[<span class="number">0</span>].<span class="ident">key</span> <span class="op">&lt;</span> <span class="ident">w</span>[<span class="number">1</span>].<span class="ident">key</span>));

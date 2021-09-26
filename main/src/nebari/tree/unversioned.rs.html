@@ -278,6 +278,9 @@
 <span id="278">278</span>
 <span id="279">279</span>
 <span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">convert::TryFrom</span>,
@@ -357,14 +360,17 @@
                             <span class="prelude-val">Ok</span>(<span class="ident">KeyOperation::Remove</span>)
                         }
                     },
-                    <span class="ident">loader</span>: <span class="op">|</span><span class="ident">_index</span>, <span class="ident">_writer</span><span class="op">|</span> <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>),
+                    <span class="ident">loader</span>: <span class="op">|</span><span class="ident">index</span>, <span class="ident">writer</span><span class="op">|</span> <span class="kw">match</span> <span class="ident">writer</span>.<span class="ident">read_chunk</span>(<span class="ident">index</span>.<span class="ident">position</span>)<span class="question-mark">?</span> {
+                        <span class="ident">CacheEntry::Buffer</span>(<span class="ident">buffer</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">buffer</span>.<span class="ident">clone</span>())),
+                        <span class="ident">CacheEntry::Decoded</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable!</span>(),
+                    },
                     <span class="ident">_phantom</span>: <span class="ident">PhantomData</span>,
                 },
                 <span class="prelude-val">None</span>,
                 <span class="kw-2">&amp;</span><span class="kw-2">mut</span> (),
                 <span class="ident">writer</span>,
             )<span class="question-mark">?</span> {
-                <span class="ident">ChangeResult::Changed</span> <span class="op">|</span> <span class="ident">ChangeResult::Unchanged</span> <span class="op">=</span><span class="op">&gt;</span> {}
+                <span class="ident">ChangeResult::Changed</span> <span class="op">|</span> <span class="ident">ChangeResult::Unchanged</span> <span class="op">|</span> <span class="ident">ChangeResult::Remove</span> <span class="op">=</span><span class="op">&gt;</span> {}
                 <span class="ident">ChangeResult::Split</span>(<span class="ident">upper</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">split_root</span>(<span class="ident">upper</span>);
                 }
@@ -422,7 +428,7 @@
         <span class="kw">let</span> <span class="ident">by_id_size</span> <span class="op">=</span> <span class="ident">u32::try_from</span>(<span class="ident">by_id_size</span>)
             .<span class="ident">ok</span>()
             .<span class="ident">ok_or</span>(<span class="ident">Error::Internal</span>(<span class="ident">InternalError::HeaderTooLarge</span>))<span class="question-mark">?</span>;
-        <span class="ident">BigEndian::write_u32</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">output</span>[<span class="number">20</span>..<span class="number">24</span>], <span class="ident">by_id_size</span>);
+        <span class="ident">BigEndian::write_u32</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">output</span>[<span class="number">8</span>..<span class="number">12</span>], <span class="ident">by_id_size</span>);
 
         <span class="prelude-val">Ok</span>(<span class="ident">output</span>)
     }

@@ -1,5 +1,5 @@
 use nebari::{
-    tree::{Modification, Operation, State, TreeFile},
+    tree::{Modification, Operation, State, TreeFile, UnversionedTreeRoot},
     Buffer, ChunkCache, Context, FileManager, ManagedFile,
 };
 use tempfile::TempDir;
@@ -9,7 +9,7 @@ use crate::{BenchConfig, SimpleBench};
 
 pub struct InsertLogs<F: ManagedFile> {
     _tempfile: TempDir,
-    tree: TreeFile<F, 1_000>,
+    tree: TreeFile<UnversionedTreeRoot, F>,
     state: LogEntryBatchGenerator,
 }
 
@@ -32,9 +32,9 @@ impl<F: ManagedFile> SimpleBench for InsertLogs<F> {
         let tempfile = TempDir::new()?;
         let manager = <F::Manager as Default>::default();
         let file = manager.append(tempfile.path().join("tree"))?;
-        let tree = TreeFile::<F, 1_000>::new(
+        let tree = TreeFile::<UnversionedTreeRoot, F>::new(
             file,
-            State::default(),
+            State::initialized(),
             None,
             Some(ChunkCache::new(100, 160_384)),
         )?;
@@ -72,7 +72,7 @@ impl<F: ManagedFile> SimpleBench for InsertLogs<F> {
 }
 
 pub struct ReadLogs<F: ManagedFile> {
-    tree: TreeFile<F, 50>,
+    tree: TreeFile<UnversionedTreeRoot, F>,
     state: ReadState,
 }
 
@@ -88,9 +88,9 @@ impl<F: ManagedFile> SimpleBench for ReadLogs<F> {
         let tempfile = TempDir::new().unwrap();
         let manager = <F::Manager as Default>::default();
         let file = manager.append(tempfile.path().join("tree")).unwrap();
-        let mut tree = TreeFile::<F, 50>::new(
+        let mut tree = TreeFile::<UnversionedTreeRoot, F>::new(
             file,
-            State::default(),
+            State::initialized(),
             None,
             Some(ChunkCache::new(2000, 160_384)),
         )
@@ -129,10 +129,15 @@ impl<F: ManagedFile> SimpleBench for ReadLogs<F> {
         let file_path = group_state.path().join("tree");
         let file = context.file_manager.append(&file_path).unwrap();
         let state = State::default();
-        TreeFile::<F, 50>::initialize_state(&state, &file_path, &context, None).unwrap();
-        let tree =
-            TreeFile::<F, 50>::new(file, state, context.vault.clone(), context.cache.clone())
-                .unwrap();
+        TreeFile::<UnversionedTreeRoot, F>::initialize_state(&state, &file_path, &context, None)
+            .unwrap();
+        let tree = TreeFile::<UnversionedTreeRoot, F>::new(
+            file,
+            state,
+            context.vault.clone(),
+            context.cache.clone(),
+        )
+        .unwrap();
         let state = config.initialize(config_group_state);
         Ok(Self { tree, state })
     }

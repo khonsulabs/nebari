@@ -7,6 +7,7 @@ use crate::chunk_cache::AnySendSync;
 /// The current state of a tree file. Must be initialized before passing to
 /// `TreeFile::new` if the file already exists.
 #[derive(Default, Clone, Debug)]
+#[must_use]
 pub struct State<Root: super::Root> {
     reader: Arc<RwLock<ActiveState<Root>>>,
     writer: Arc<Mutex<ActiveState<Root>>>,
@@ -16,6 +17,8 @@ impl<Root> State<Root>
 where
     Root: super::Root,
 {
+    /// Returns an initialized state. This should only be used if you're
+    /// creating a file from scratch.
     pub fn initialized() -> Self {
         let state = Self::default();
         {

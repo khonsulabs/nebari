@@ -70,6 +70,9 @@
 <span id="70">70</span>
 <span id="71">71</span>
 <span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">fmt::Debug</span>, <span class="ident">sync::Arc</span>};
 
@@ -80,6 +83,7 @@
 <span class="doccomment">/// The current state of a tree file. Must be initialized before passing to</span>
 <span class="doccomment">/// `TreeFile::new` if the file already exists.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>, <span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
+<span class="attribute">#[<span class="ident">must_use</span>]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">State</span><span class="op">&lt;</span><span class="ident">Root</span>: <span class="kw">super</span><span class="ident">::Root</span><span class="op">&gt;</span> {
     <span class="ident">reader</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">ActiveState</span><span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">writer</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">ActiveState</span><span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
@@ -89,6 +93,8 @@
 <span class="kw">where</span>
     <span class="ident">Root</span>: <span class="kw">super</span><span class="ident">::Root</span>,
 {
+    <span class="doccomment">/// Returns an initialized state. This should only be used if you&#39;re</span>
+    <span class="doccomment">/// creating a file from scratch.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">initialized</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="self">Self</span><span class="ident">::default</span>();
         {

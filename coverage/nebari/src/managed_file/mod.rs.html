@@ -268,7 +268,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">pub trait ManagedFile: Seek + Read + Write + Sized + &#x27;static {</pre>
+                <pre class="has-background-white py-0 px-2">pub trait ManagedFile: Send + Sync + Seek + Read + Write + Sized + &#x27;static {</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -879,7 +879,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">pub trait OpenableFile&lt;F: ManagedFile&gt; {</pre>
+                <pre class="has-background-white py-0 px-2">pub trait OpenableFile&lt;F: ManagedFile&gt;: Send + Sync {</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -1105,7 +1105,7 @@
         </div></div>
         <footer class="footer">
             <div class="content has-text-centered">
-                <p class="heading">Date: 2021-09-26 22:27</p>
+                <p class="heading">Date: 2021-09-27 19:30</p>
             </div>
         </footer>
     </body>

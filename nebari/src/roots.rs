@@ -432,6 +432,54 @@ impl<Root: tree::Root, F: ManagedFile> TransactionTree<Root, F> {
         self.tree
             .scan(range, forwards, true, key_evaluator, callback)
     }
+
+    /// Returns the last  of the tree.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    pub fn last_key(&mut self) -> Result<Option<Buffer<'static>>, Error> {
+        let mut result = None;
+        self.tree
+            .scan(
+                ..,
+                false,
+                false,
+                |key| {
+                    result = Some(key.clone());
+                    KeyEvaluation::Stop
+                },
+                |_key, _value| Ok(()),
+            )
+            .map_err(AbortError::infallible)?;
+
+        Ok(result)
+    }
+
+    /// Returns the last key and value of the tree.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    pub fn last(&mut self) -> Result<Option<(Buffer<'static>, Buffer<'static>)>, Error> {
+        let mut result = None;
+        let mut key_requested = false;
+        self.tree
+            .scan(
+                ..,
+                false,
+                false,
+                |_| {
+                    if key_requested {
+                        KeyEvaluation::Stop
+                    } else {
+                        key_requested = true;
+                        KeyEvaluation::ReadData
+                    }
+                },
+                |key, value| {
+                    result = Some((key, value));
+                    Ok(())
+                },
+            )
+            .map_err(AbortError::infallible)?;
+
+        Ok(result)
+    }
 }
 
 /// An error returned from `compare_and_swap()`.
@@ -626,6 +674,32 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
         )?;
 
         tree.scan(range, forwards, false, key_evaluator, callback)
+    }
+
+    /// Returns the last key of the tree.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    pub fn last_key(&self) -> Result<Option<Buffer<'static>>, Error> {
+        let mut tree = TreeFile::<Root, F>::read(
+            self.path(),
+            self.state.clone(),
+            self.roots.context(),
+            Some(self.roots.transactions()),
+        )?;
+
+        let mut result = None;
+        tree.scan(
+            ..,
+            false,
+            false,
+            |key| {
+                result = Some(key.clone());
+                KeyEvaluation::Stop
+            },
+            |_key, _value| Ok(()),
+        )
+        .map_err(AbortError::infallible)?;
+
+        Ok(result)
     }
 
     /// Returns the last key and value of the tree.

@@ -24,6 +24,9 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
         TreeRoot(name.into(), Box::new(TreeRootInner::<F, Self>(PhantomData)))
     }
 
+    /// Returns true if the root needs to be saved.
+    fn dirty(&self) -> bool;
+
     /// Returns true if the tree is initialized.
     fn initialized(&self) -> bool;
 
@@ -36,7 +39,8 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     fn serialize<F: ManagedFile>(
         &mut self,
         paged_writer: &mut PagedWriter<'_, F>,
-    ) -> Result<Vec<u8>, Error>;
+        output: &mut Vec<u8>,
+    ) -> Result<(), Error>;
 
     /// Deserializes the root from `bytes`.
     fn deserialize(bytes: Buffer<'_>) -> Result<Self, Error>;

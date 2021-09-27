@@ -11,9 +11,9 @@ pub struct VersionedByIdIndex {
 }
 
 impl BinarySerialization for VersionedByIdIndex {
-    fn serialize_to<W: WriteBytesExt, F: ManagedFile>(
+    fn serialize_to<F: ManagedFile>(
         &mut self,
-        writer: &mut W,
+        writer: &mut Vec<u8>,
         _paged_writer: &mut PagedWriter<'_, F>,
     ) -> Result<usize, Error> {
         writer.write_u64::<BigEndian>(self.sequence_id)?;
@@ -41,9 +41,9 @@ pub struct UnversionedByIdIndex {
 }
 
 impl BinarySerialization for UnversionedByIdIndex {
-    fn serialize_to<W: WriteBytesExt, F: ManagedFile>(
+    fn serialize_to<F: ManagedFile>(
         &mut self,
-        writer: &mut W,
+        writer: &mut Vec<u8>,
         _paged_writer: &mut PagedWriter<'_, F>,
     ) -> Result<usize, Error> {
         writer.write_u32::<BigEndian>(self.document_size)?;
@@ -75,9 +75,9 @@ impl ByIdStats {
 }
 
 impl BinarySerialization for ByIdStats {
-    fn serialize_to<W: WriteBytesExt, F: ManagedFile>(
+    fn serialize_to<F: ManagedFile>(
         &mut self,
-        writer: &mut W,
+        writer: &mut Vec<u8>,
         _paged_writer: &mut PagedWriter<'_, F>,
     ) -> Result<usize, Error> {
         writer.write_u64::<BigEndian>(self.alive_documents)?;

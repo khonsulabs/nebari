@@ -582,9 +582,9 @@ impl<
         R: Reducer<I> + Clone + BinarySerialization + Debug + 'static,
     > BinarySerialization for BTreeEntry<I, R>
 {
-    fn serialize_to<W: WriteBytesExt, F: ManagedFile>(
+    fn serialize_to<F: ManagedFile>(
         &mut self,
-        writer: &mut W,
+        writer: &mut Vec<u8>,
         paged_writer: &mut PagedWriter<'_, F>,
     ) -> Result<usize, Error> {
         let mut bytes_written = 0;

@@ -8,9 +8,14 @@ use std::{
     marker::PhantomData,
     ops::RangeBounds,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU16, Ordering},
+        Arc,
+    },
 };
 
+use flume::Sender;
+use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
 use crate::{
@@ -33,6 +38,7 @@ pub struct Roots<F: ManagedFile> {
 struct Data<F: ManagedFile> {
     context: Context<F::Manager>,
     transactions: TransactionManager<F::Manager>,
+    thread_pool: ThreadPool<F>,
     path: PathBuf,
     tree_states: Mutex<HashMap<String, Box<dyn AnyTreeState>>>,
 }
@@ -55,6 +61,7 @@ impl<F: ManagedFile> Roots<F> {
                 context,
                 path,
                 transactions,
+                thread_pool: ThreadPool::default(),
                 tree_states: Mutex::default(),
             }),
         })
@@ -177,6 +184,7 @@ impl<F: ManagedFile> Roots<F> {
             })
             .collect::<Result<Vec<_>, Error>>()?;
         Ok(ExecutingTransaction {
+            roots: self.clone(),
             transaction: Some(transaction),
             trees,
             transaction_manager: self.data.transactions.clone(),
@@ -196,6 +204,7 @@ impl<M: ManagedFile> Clone for Roots<M> {
 /// execute across the same trees as this transaction holds.
 #[must_use]
 pub struct ExecutingTransaction<F: ManagedFile> {
+    roots: Roots<F>,
     transaction_manager: TransactionManager<F::Manager>,
     transaction: Option<TransactionHandle>,
     trees: Vec<Box<dyn AnyTransactionTree<F>>>,
@@ -207,11 +216,14 @@ impl<F: ManagedFile> ExecutingTransaction<F> {
     /// well as impervious to sudden failures such as a power outage.
     #[allow(clippy::missing_panics_doc)]
     pub fn commit(mut self) -> Result<(), Error> {
+        let trees = std::mem::take(&mut self.trees);
+        let trees = self.roots.data.thread_pool.commit_trees(trees)?;
+
         self.transaction_manager
             .push(self.transaction.take().unwrap())?;
 
-        for mut tree in self.trees.drain(..) {
-            tree.commit()?;
+        for tree in trees {
+            tree.publish();
         }
 
         Ok(())
@@ -250,11 +262,12 @@ pub struct TransactionTree<Root: tree::Root, F: ManagedFile> {
     pub(crate) tree: TreeFile<Root, F>,
 }
 
-pub trait AnyTransactionTree<F: ManagedFile>: Any {
+pub trait AnyTransactionTree<F: ManagedFile>: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     fn commit(&mut self) -> Result<(), Error>;
+    fn publish(&self);
     fn rollback(&self);
 }
 
@@ -274,6 +287,11 @@ impl<Root: tree::Root, F: ManagedFile> AnyTransactionTree<F> for TransactionTree
     fn rollback(&self) {
         let mut state = self.tree.state.lock();
         state.rollback(&self.tree.state);
+    }
+
+    fn publish(&self) {
+        let state = self.tree.state.lock();
+        state.publish(&self.tree.state);
     }
 }
 
@@ -354,7 +372,7 @@ impl<Root: tree::Root, F: ManagedFile> TransactionTree<Root, F> {
         let mut result = Ok(());
         self.tree.modify(Modification {
             transaction_id: self.transaction_id,
-            keys: vec![Buffer::from(key.to_vec())],
+            keys: vec![Buffer::from(key)],
             operation: Operation::CompareSwap(CompareSwap::new(&mut |_key, value| {
                 if value.as_ref() == old {
                     match new.take() {
@@ -664,6 +682,106 @@ impl AbortError<Infallible> {
             AbortError::Roots(error) => error,
         }
     }
+}
+
+#[derive(Debug)]
+struct ThreadPool<F>
+where
+    F: ManagedFile,
+{
+    sender: flume::Sender<ThreadCommit<F>>,
+    receiver: flume::Receiver<ThreadCommit<F>>,
+    thread_count: AtomicU16,
+}
+
+impl<F: ManagedFile> ThreadPool<F> {
+    pub fn commit_trees(
+        &self,
+        mut trees: Vec<Box<dyn AnyTransactionTree<F>>>,
+    ) -> Result<Vec<Box<dyn AnyTransactionTree<F>>>, Error> {
+        static CPU_COUNT: Lazy<usize> = Lazy::new(num_cpus::get);
+
+        if trees.len() == 1 {
+            trees[0].commit()?;
+            Ok(trees)
+        } else {
+            // Push the trees so that any existing threads can begin processing the queue.
+            let (completion_sender, completion_receiver) = flume::unbounded();
+            let tree_count = trees.len();
+            for tree in trees {
+                self.sender.send(ThreadCommit {
+                    tree,
+                    completion_sender: completion_sender.clone(),
+                })?;
+            }
+
+            // Scale the queue if needed.
+            let desired_threads = tree_count.min(*CPU_COUNT);
+            loop {
+                let thread_count = self.thread_count.load(Ordering::SeqCst);
+                if (thread_count as usize) >= desired_threads {
+                    break;
+                }
+
+                // Spawn a thread, but ensure that we don't spin up too many threads if another thread is committing at the same time.
+                if self
+                    .thread_count
+                    .compare_exchange(
+                        thread_count,
+                        thread_count + 1,
+                        Ordering::SeqCst,
+                        Ordering::SeqCst,
+                    )
+                    .is_ok()
+                {
+                    let commit_receiver = self.receiver.clone();
+                    std::thread::Builder::new()
+                        .name(String::from("roots-txwriter"))
+                        .spawn(move || transaction_commit_thread(commit_receiver))
+                        .unwrap();
+                }
+            }
+
+            // Wait for our results
+            let mut results = Vec::with_capacity(tree_count);
+            for _ in 0..tree_count {
+                results.push(completion_receiver.recv()??);
+            }
+
+            Ok(results)
+        }
+    }
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn transaction_commit_thread<F: ManagedFile>(receiver: flume::Receiver<ThreadCommit<F>>) {
+    while let Ok(ThreadCommit {
+        mut tree,
+        completion_sender,
+    }) = receiver.recv()
+    {
+        let result = tree.commit().map(move |_| tree);
+        drop(completion_sender.send(result));
+    }
+}
+
+impl<F: ManagedFile> Default for ThreadPool<F> {
+    fn default() -> Self {
+        let (sender, receiver) = flume::unbounded();
+        Self {
+            sender,
+            receiver,
+            thread_count: AtomicU16::new(0),
+        }
+    }
+}
+
+struct ThreadCommit<F>
+where
+    F: ManagedFile,
+{
+    tree: Box<dyn AnyTransactionTree<F>>,
+    completion_sender: Sender<Result<Box<dyn AnyTransactionTree<F>>, Error>>,
 }
 
 #[cfg(test)]

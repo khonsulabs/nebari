@@ -135,9 +135,9 @@ impl<
         R: Reducer<I> + Clone + BinarySerialization + Debug + 'static,
     > BinarySerialization for Interior<I, R>
 {
-    fn serialize_to<W: WriteBytesExt, F: ManagedFile>(
+    fn serialize_to<F: ManagedFile>(
         &mut self,
-        writer: &mut W,
+        writer: &mut Vec<u8>,
         paged_writer: &mut PagedWriter<'_, F>,
     ) -> Result<usize, Error> {
         let mut pointer = Pointer::OnDisk(0);
@@ -151,8 +151,11 @@ impl<
                 // Serialize if dirty, or if this node hasn't been on-disk before.
                 (true, _) | (_, None) => {
                     entry.dirty = false;
-                    let bytes = entry.serialize(paged_writer)?;
-                    let position = paged_writer.write_chunk(&bytes)?;
+                    let old_writer_length = writer.len();
+                    entry.serialize_to(writer, paged_writer)?;
+                    let position = paged_writer
+                        .write_chunk(&writer[old_writer_length..writer.len()], false)?;
+                    writer.truncate(old_writer_length);
                     if let Some(cache) = paged_writer.cache {
                         cache.replace_with_decoded(paged_writer.path(), position, entry);
                     }
@@ -166,7 +169,7 @@ impl<
         // Write the key
         let key_len = u16::try_from(self.key.len()).map_err(|_| Error::KeyTooLarge)?;
         writer.write_u16::<BigEndian>(key_len)?;
-        writer.write_all(&self.key)?;
+        writer.extend_from_slice(&self.key);
         bytes_written += 2 + key_len as usize;
 
         writer.write_u64::<BigEndian>(location_on_disk)?;

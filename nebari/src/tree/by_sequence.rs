@@ -13,9 +13,9 @@ pub struct BySequenceIndex {
 }
 
 impl BinarySerialization for BySequenceIndex {
-    fn serialize_to<W: WriteBytesExt, F: ManagedFile>(
+    fn serialize_to<F: ManagedFile>(
         &mut self,
-        writer: &mut W,
+        writer: &mut Vec<u8>,
         _paged_writer: &mut PagedWriter<'_, F>,
     ) -> Result<usize, Error> {
         let mut bytes_written = 0;
@@ -28,7 +28,7 @@ impl BinarySerialization for BySequenceIndex {
             u16::try_from(self.document_id.len()).map_err(|_| Error::IdTooLarge)?;
         writer.write_u16::<BigEndian>(document_id_length)?;
         bytes_written += 2;
-        writer.write_all(&self.document_id)?;
+        writer.extend_from_slice(&self.document_id);
         bytes_written += document_id_length as usize;
         Ok(bytes_written)
     }
@@ -60,9 +60,9 @@ pub struct BySequenceStats {
 }
 
 impl BinarySerialization for BySequenceStats {
-    fn serialize_to<W: WriteBytesExt, F: ManagedFile>(
+    fn serialize_to<F: ManagedFile>(
         &mut self,
-        writer: &mut W,
+        writer: &mut Vec<u8>,
         _paged_writer: &mut PagedWriter<'_, F>,
     ) -> Result<usize, Error> {
         writer.write_u64::<BigEndian>(self.number_of_records)?;

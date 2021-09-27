@@ -1,30 +1,19 @@
-use byteorder::WriteBytesExt;
-
 use super::PagedWriter;
 use crate::{Buffer, Error, ManagedFile};
 
 pub trait BinarySerialization: Send + Sync + Sized {
-    fn serialize_to<W: WriteBytesExt, F: ManagedFile>(
+    fn serialize_to<F: ManagedFile>(
         &mut self,
-        writer: &mut W,
+        writer: &mut Vec<u8>,
         paged_writer: &mut PagedWriter<'_, F>,
     ) -> Result<usize, Error>;
-    fn serialize<F: ManagedFile>(
-        &mut self,
-        paged_writer: &mut PagedWriter<'_, F>,
-    ) -> Result<Vec<u8>, Error> {
-        let mut buffer = Vec::new();
-        buffer.reserve(super::PAGE_SIZE);
-        self.serialize_to(&mut buffer, paged_writer)?;
-        Ok(buffer)
-    }
     fn deserialize_from(reader: &mut Buffer<'_>, current_order: usize) -> Result<Self, Error>;
 }
 
 impl BinarySerialization for () {
-    fn serialize_to<W: WriteBytesExt, F: ManagedFile>(
+    fn serialize_to<F: ManagedFile>(
         &mut self,
-        _writer: &mut W,
+        _writer: &mut Vec<u8>,
         _paged_writer: &mut PagedWriter<'_, F>,
     ) -> Result<usize, Error> {
         Ok(0)

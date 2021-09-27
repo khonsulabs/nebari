@@ -271,9 +271,8 @@ impl<F: ManagedFile> FileOp<F> for LogWriter<F> {
     type Output = Result<(), Error>;
     fn execute(&mut self, log: &mut F) -> Result<(), Error> {
         let mut log_position = self.state.lock_for_write();
-        let mut scratch_buffer = Vec::new();
-        scratch_buffer.resize(PAGE_SIZE, 0);
-        let mut completed_transactions = Vec::new();
+        let mut scratch = [0_u8; PAGE_SIZE];
+        let mut completed_transactions = Vec::with_capacity(self.handles.len());
         for handle in self.handles.drain(..) {
             completed_transactions.push(handle.transaction.id);
             let mut bytes = handle.transaction.serialize()?;
@@ -292,26 +291,26 @@ impl<F: ManagedFile> FileOp<F> for LogWriter<F> {
                     if length & 0xFF00_0000 != 0 {
                         return Err(Error::message("transaction too large"));
                     }
-                    scratch_buffer[0] = 1;
+                    scratch[0] = 1;
                     #[allow(clippy::cast_possible_truncation)]
                     {
-                        scratch_buffer[1] = (length >> 16) as u8;
-                        scratch_buffer[2] = (length >> 8) as u8;
-                        scratch_buffer[3] = (length & 0xFF) as u8;
+                        scratch[1] = (length >> 16) as u8;
+                        scratch[2] = (length >> 8) as u8;
+                        scratch[3] = (length & 0xFF) as u8;
                     }
                     4
                 } else {
                     // Set page_header to have a 0 byte for future pages written.
-                    scratch_buffer[0] = 0;
+                    scratch[0] = 0;
                     1
                 };
 
                 // Write up to PAGE_SIZE - header_len bytes
                 let total_bytes_left = total_length - (offset + 3);
                 let bytes_to_write = total_bytes_left.min(PAGE_SIZE - header_len as usize);
-                scratch_buffer[header_len..bytes_to_write + header_len]
+                scratch[header_len..bytes_to_write + header_len]
                     .copy_from_slice(&bytes[offset..offset + bytes_to_write]);
-                log.write_all(&scratch_buffer)?;
+                log.write_all(&scratch)?;
                 offset += bytes_to_write;
                 *log_position += PAGE_SIZE as u64;
             }

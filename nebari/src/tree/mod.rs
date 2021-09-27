@@ -38,6 +38,7 @@
 //! A data block may contain more than one chunk.
 
 use std::{
+    borrow::Cow,
     convert::{Infallible, TryFrom},
     fmt::{Debug, Display},
     fs::OpenOptions,
@@ -126,6 +127,7 @@ pub struct TreeFile<Root: root::Root, F: ManagedFile> {
     pub state: State<Root>,
     vault: Option<Arc<dyn Vault>>,
     cache: Option<ChunkCache>,
+    scratch: Vec<u8>,
 }
 
 impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
@@ -143,6 +145,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
             state,
             vault,
             cache,
+            scratch: Vec::new(),
         })
     }
 
@@ -284,6 +287,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
                 keys: vec![key],
                 operation: Operation::Set(document),
             }),
+            scratch: &mut self.scratch,
         })
     }
 
@@ -294,6 +298,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
             modification: Some(modification),
+            scratch: &mut self.scratch,
         })
     }
 
@@ -408,6 +413,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
             state: &self.state,
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
+            scratch: &mut self.scratch,
         })
     }
 }
@@ -416,28 +422,33 @@ struct TreeWriter<'a, Root: root::Root> {
     state: &'a State<Root>,
     vault: Option<&'a dyn Vault>,
     cache: Option<&'a ChunkCache>,
+    scratch: &'a mut Vec<u8>,
 }
 
 impl<'a, Root: root::Root, F: ManagedFile> FileOp<F> for TreeWriter<'a, Root> {
     type Output = Result<(), Error>;
     fn execute(&mut self, file: &mut F) -> Self::Output {
         let mut active_state = self.state.lock();
+        if active_state.header.dirty() {
+            let data_block = PagedWriter::new(
+                PageHeader::Data,
+                file,
+                self.vault.as_deref(),
+                self.cache,
+                active_state.current_position,
+            );
 
-        let data_block = PagedWriter::new(
-            PageHeader::Data,
-            file,
-            self.vault.as_deref(),
-            self.cache,
-            active_state.current_position,
-        );
-
-        save_tree(
-            self.state,
-            &mut *active_state,
-            self.vault,
-            self.cache,
-            data_block,
-        )
+            self.scratch.clear();
+            save_tree(
+                &mut *active_state,
+                self.vault,
+                self.cache,
+                data_block,
+                self.scratch,
+            )
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -446,6 +457,7 @@ struct DocumentWriter<'a, 'm, Root: root::Root> {
     vault: Option<&'a dyn Vault>,
     cache: Option<&'a ChunkCache>,
     modification: Option<Modification<'m, Buffer<'static>>>,
+    scratch: &'a mut Vec<u8>,
 }
 
 impl<'a, 'm, Root: root::Root, F: ManagedFile> FileOp<F> for DocumentWriter<'a, 'm, Root> {
@@ -472,13 +484,15 @@ impl<'a, 'm, Root: root::Root, F: ManagedFile> FileOp<F> for DocumentWriter<'a, 
             let (_, new_position) = data_block.finish()?;
             active_state.current_position = new_position;
         } else {
+            self.scratch.clear();
             save_tree(
-                self.state,
                 &mut *active_state,
                 self.vault,
                 self.cache,
                 data_block,
+                self.scratch,
             )?;
+            active_state.publish(self.state);
         }
 
         Ok(())
@@ -487,13 +501,14 @@ impl<'a, 'm, Root: root::Root, F: ManagedFile> FileOp<F> for DocumentWriter<'a, 
 
 #[allow(clippy::shadow_unrelated)] // It is related, but clippy can't tell.
 fn save_tree<Root: root::Root, F: ManagedFile>(
-    state: &State<Root>,
     active_state: &mut ActiveState<Root>,
     vault: Option<&dyn Vault>,
     cache: Option<&ChunkCache>,
     mut data_block: PagedWriter<'_, F>,
+    scratch: &mut Vec<u8>,
 ) -> Result<(), Error> {
-    let new_header = active_state.header.serialize(&mut data_block)?;
+    scratch.clear();
+    active_state.header.serialize(&mut data_block, scratch)?;
     let (file, after_data) = data_block.finish()?;
     active_state.current_position = after_data;
 
@@ -505,13 +520,12 @@ fn save_tree<Root: root::Root, F: ManagedFile>(
         cache,
         active_state.current_position,
     );
-    header_block.write_chunk(&new_header)?;
+    header_block.write_chunk(scratch, false)?;
 
     let (file, after_header) = header_block.finish()?;
     active_state.current_position = after_header;
 
     file.flush()?;
-    active_state.publish(state);
     Ok(())
 }
 
@@ -675,7 +689,7 @@ pub struct PagedWriter<'a, F: ManagedFile> {
     vault: Option<&'a dyn Vault>,
     cache: Option<&'a ChunkCache>,
     position: u64,
-    scratch: Vec<u8>,
+    scratch: [u8; PAGE_SIZE * PAGED_WRITER_BATCH_COUNT],
     offset: usize,
 }
 
@@ -706,7 +720,7 @@ impl<'a, F: ManagedFile> PagedWriter<'a, F> {
             vault,
             cache,
             position,
-            scratch: vec![0; PAGE_SIZE * PAGED_WRITER_BATCH_COUNT],
+            scratch: [0; PAGE_SIZE * PAGED_WRITER_BATCH_COUNT],
             offset: 0,
         };
         writer.scratch[0] = header as u8;
@@ -770,7 +784,7 @@ impl<'a, F: ManagedFile> PagedWriter<'a, F> {
     /// Writes a chunk of data to the file, after possibly encrypting it.
     /// Returns the position that this chunk can be read from in the file.
     #[allow(clippy::cast_possible_truncation)]
-    fn write_chunk(&mut self, contents: &[u8]) -> Result<u64, Error> {
+    fn write_chunk(&mut self, contents: &[u8], cache: bool) -> Result<u64, Error> {
         let possibly_encrypted = self.vault.as_ref().map_or_else(
             || Cow::Borrowed(contents),
             |vault| Cow::Owned(vault.encrypt(contents)),
@@ -804,9 +818,11 @@ impl<'a, F: ManagedFile> PagedWriter<'a, F> {
         self.write_u32::<BigEndian>(crc)?;
         self.write(&possibly_encrypted)?;
 
-        if let Some(cache) = self.cache {
-            if let Cow::Owned(vec) = possibly_encrypted {
-                cache.insert(self.file.path(), position, Buffer::from(vec));
+        if cache {
+            if let Some(cache) = self.cache {
+                if let Cow::Owned(vec) = possibly_encrypted {
+                    cache.insert(self.file.path(), position, Buffer::from(vec));
+                }
             }
         }
 
@@ -856,7 +872,7 @@ impl<'a, F: ManagedFile> PagedWriter<'a, F> {
     }
 
     fn finish(mut self) -> Result<(&'a mut F, u64), Error> {
-        if self.offset > 0 {
+        if self.offset > 1 {
             self.commit()?;
         }
         Ok((self.file, self.position))
@@ -968,7 +984,7 @@ mod tests {
             paged_writer.write(&scratch[..offset])?;
         }
         scratch.fill(1);
-        let written_position = paged_writer.write_chunk(&scratch[..length])?;
+        let written_position = paged_writer.write_chunk(&scratch[..length], false)?;
         drop(paged_writer.finish()?);
 
         match read_chunk(written_position, &mut file, None, None)? {

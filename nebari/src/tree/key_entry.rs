@@ -12,16 +12,16 @@ pub struct KeyEntry<I> {
 }
 
 impl<I: BinarySerialization> BinarySerialization for KeyEntry<I> {
-    fn serialize_to<W: WriteBytesExt, F: ManagedFile>(
+    fn serialize_to<F: ManagedFile>(
         &mut self,
-        writer: &mut W,
+        writer: &mut Vec<u8>,
         paged_writer: &mut PagedWriter<'_, F>,
     ) -> Result<usize, Error> {
         let mut bytes_written = 0;
         // Write the key
         let key_len = u16::try_from(self.key.len()).map_err(|_| Error::KeyTooLarge)?;
         writer.write_u16::<BigEndian>(key_len)?;
-        writer.write_all(&self.key)?;
+        writer.extend_from_slice(&self.key);
         bytes_written += 2 + key_len as usize;
 
         // Write the value

@@ -79,7 +79,7 @@ impl VersionedTreeRoot {
                               changes: &mut EntryChanges,
                               writer: &mut PagedWriter<'_, F>| {
                         let (document_position, document_size) = if let Some(value) = value {
-                            let new_position = writer.write_chunk(value)?;
+                            let new_position = writer.write_chunk(value, false)?;
                             // write_chunk errors if it can't fit within a u32
                             #[allow(clippy::cast_possible_truncation)]
                             let document_size = value.len() as u32;
@@ -179,6 +179,10 @@ impl Root for VersionedTreeRoot {
         self.sequence != UNINITIALIZED_SEQUENCE
     }
 
+    fn dirty(&self) -> bool {
+        self.by_id_root.dirty || self.by_sequence_root.dirty
+    }
+
     fn initialize_default(&mut self) {
         self.sequence = 1;
     }
@@ -214,8 +218,8 @@ impl Root for VersionedTreeRoot {
     fn serialize<F: ManagedFile>(
         &mut self,
         paged_writer: &mut PagedWriter<'_, F>,
-    ) -> Result<Vec<u8>, Error> {
-        let mut output = Vec::new();
+        mut output: &mut Vec<u8>,
+    ) -> Result<(), Error> {
         output.reserve(PAGE_SIZE);
         output.write_u64::<BigEndian>(self.transaction_id)?;
         output.write_u64::<BigEndian>(self.sequence)?;
@@ -237,7 +241,7 @@ impl Root for VersionedTreeRoot {
             .ok_or(Error::Internal(InternalError::HeaderTooLarge))?;
         BigEndian::write_u32(&mut output[20..24], by_id_size);
 
-        Ok(output)
+        Ok(())
     }
 
     fn transaction_id(&self) -> u64 {

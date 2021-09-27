@@ -48,6 +48,18 @@ impl From<&'static str> for Error {
     }
 }
 
+impl From<flume::RecvError> for Error {
+    fn from(_err: flume::RecvError) -> Self {
+        Self::Internal(InternalError::InternalCommunication)
+    }
+}
+
+impl<T> From<flume::SendError<T>> for Error {
+    fn from(_err: flume::SendError<T>) -> Self {
+        Self::Internal(InternalError::InternalCommunication)
+    }
+}
+
 impl From<String> for Error {
     fn from(message: String) -> Self {
         Self::message(message)
@@ -61,4 +73,6 @@ pub enum InternalError {
     HeaderTooLarge,
     #[error("the transaction manager has stopped")]
     TransactionManagerStopped,
+    #[error("an error on an internal channel has occurred")]
+    InternalCommunication,
 }

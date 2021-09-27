@@ -66,17 +66,17 @@ impl<
                     CacheEntry::Buffer(mut buffer) => {
                         // It's worthless to store this node in the cache
                         // because if we mutate, we'll be rewritten.
-                        BTreeEntry::deserialize_from(&mut buffer, current_order)?
+                        Box::new(BTreeEntry::deserialize_from(&mut buffer, current_order)?)
                     }
                     CacheEntry::Decoded(node) => node
                         .as_ref()
                         .as_any()
-                        .downcast_ref::<BTreeEntry<I, R>>()
+                        .downcast_ref::<Box<BTreeEntry<I, R>>>()
                         .unwrap()
                         .clone(),
                 };
                 *self = Self::Loaded {
-                    entry: Box::new(entry),
+                    entry,
                     previous_location: Some(*position),
                 };
             }
@@ -112,7 +112,7 @@ impl<
 
                     let result = callback(&decoded, file);
                     if let Some(cache) = cache {
-                        cache.replace_with_decoded(file.path(), *position, decoded);
+                        cache.replace_with_decoded(file.path(), *position, Box::new(decoded));
                     }
                     result
                 }
@@ -120,7 +120,7 @@ impl<
                     let entry = value
                         .as_ref()
                         .as_any()
-                        .downcast_ref::<BTreeEntry<I, R>>()
+                        .downcast_ref::<Box<BTreeEntry<I, R>>>()
                         .unwrap();
                     callback(entry, file)
                 }
@@ -140,22 +140,28 @@ impl<
         writer: &mut W,
         paged_writer: &mut PagedWriter<'_, F>,
     ) -> Result<usize, Error> {
-        let position = match &mut self.position {
-            Pointer::OnDisk(position) => *position,
+        let mut pointer = Pointer::OnDisk(0);
+        std::mem::swap(&mut pointer, &mut self.position);
+        let location_on_disk = match pointer {
+            Pointer::OnDisk(position) => position,
             Pointer::Loaded {
-                entry,
+                mut entry,
                 previous_location,
-            } => {
-                if entry.dirty || previous_location.is_none() {
+            } => match (entry.dirty, previous_location) {
+                // Serialize if dirty, or if this node hasn't been on-disk before.
+                (true, _) | (_, None) => {
+                    entry.dirty = false;
                     let bytes = entry.serialize(paged_writer)?;
                     let position = paged_writer.write_chunk(&bytes)?;
-                    self.position = Pointer::OnDisk(position);
+                    if let Some(cache) = paged_writer.cache {
+                        cache.replace_with_decoded(paged_writer.path(), position, entry);
+                    }
                     position
-                } else {
-                    previous_location.unwrap()
                 }
-            }
+                (_, Some(position)) => position,
+            },
         };
+        self.position = Pointer::OnDisk(location_on_disk);
         let mut bytes_written = 0;
         // Write the key
         let key_len = u16::try_from(self.key.len()).map_err(|_| Error::KeyTooLarge)?;
@@ -163,7 +169,7 @@ impl<
         writer.write_all(&self.key)?;
         bytes_written += 2 + key_len as usize;
 
-        writer.write_u64::<BigEndian>(position)?;
+        writer.write_u64::<BigEndian>(location_on_disk)?;
         bytes_written += 8;
 
         bytes_written += self.stats.serialize_to(writer, paged_writer)?;

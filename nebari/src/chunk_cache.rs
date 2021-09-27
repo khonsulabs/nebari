@@ -80,12 +80,13 @@ impl ChunkCache {
         value: T,
     ) {
         let mut cache = self.cache.lock();
-        if let Some(entry) = cache.peek_mut(&ChunkKey {
-            position,
-            file_path,
-        }) {
-            *entry = CacheEntry::Decoded(Arc::new(value));
-        }
+        cache.put(
+            ChunkKey {
+                position,
+                file_path,
+            },
+            CacheEntry::Decoded(Arc::new(value)),
+        );
     }
 
     /// Looks up a previously read chunk for `file_path` at `position`,

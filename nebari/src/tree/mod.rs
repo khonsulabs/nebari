@@ -771,10 +771,9 @@ impl<'a, F: ManagedFile> PagedWriter<'a, F> {
     /// Returns the position that this chunk can be read from in the file.
     #[allow(clippy::cast_possible_truncation)]
     fn write_chunk(&mut self, contents: &[u8]) -> Result<u64, Error> {
-        let possibly_encrypted = Buffer::from(
-            self.vault
-                .as_ref()
-                .map_or_else(|| contents.to_vec(), |vault| vault.encrypt(contents)),
+        let possibly_encrypted = self.vault.as_ref().map_or_else(
+            || Cow::Borrowed(contents),
+            |vault| Cow::Owned(vault.encrypt(contents)),
         );
         let length = u32::try_from(possibly_encrypted.len())
             .map_err(|_| Error::data_integrity("chunk too large"))?;
@@ -806,7 +805,9 @@ impl<'a, F: ManagedFile> PagedWriter<'a, F> {
         self.write(&possibly_encrypted)?;
 
         if let Some(cache) = self.cache {
-            cache.insert(self.file.path(), position, possibly_encrypted);
+            if let Cow::Owned(vec) = possibly_encrypted {
+                cache.insert(self.file.path(), position, Buffer::from(vec));
+            }
         }
 
         Ok(position)

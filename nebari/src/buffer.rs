@@ -97,6 +97,16 @@ impl<'a> Buffer<'a> {
     }
 }
 
+impl<'a> From<Cow<'a, [u8]>> for Buffer<'a> {
+    fn from(buffer: Cow<'a, [u8]>) -> Self {
+        Self {
+            end: buffer.len(),
+            buffer: Arc::new(buffer),
+            position: 0,
+        }
+    }
+}
+
 impl<'a> From<Vec<u8>> for Buffer<'a> {
     fn from(buffer: Vec<u8>) -> Self {
         Self {

@@ -3,10 +3,13 @@ use std::{
     fs::{File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 
 use super::{FileManager, FileOp, ManagedFile, OpenableFile};
 use crate::Error;
@@ -15,24 +18,24 @@ use crate::Error;
 #[derive(Debug)]
 pub struct StdFile {
     file: File,
-    path: Arc<PathBuf>,
+    id: u64,
 }
 
 impl ManagedFile for StdFile {
     type Manager = StdFileManager;
-    fn path(&self) -> Arc<PathBuf> {
-        self.path.clone()
+    fn id(&self) -> u64 {
+        self.id
     }
 
-    fn open_for_read(path: impl AsRef<std::path::Path> + Send) -> Result<Self, Error> {
+    fn open_for_read(path: impl AsRef<std::path::Path> + Send, id: u64) -> Result<Self, Error> {
         let path = path.as_ref();
         Ok(Self {
             file: File::open(path).unwrap(),
-            path: Arc::new(path.to_path_buf()),
+            id,
         })
     }
 
-    fn open_for_append(path: impl AsRef<std::path::Path> + Send) -> Result<Self, Error> {
+    fn open_for_append(path: impl AsRef<std::path::Path> + Send, id: u64) -> Result<Self, Error> {
         let path = path.as_ref();
         Ok(Self {
             file: OpenOptions::new()
@@ -41,7 +44,7 @@ impl ManagedFile for StdFile {
                 .read(true)
                 .create(true)
                 .open(path)?,
-            path: Arc::new(path.to_path_buf()),
+            id,
         })
     }
 
@@ -79,29 +82,45 @@ impl Read for StdFile {
 
 #[derive(Debug, Default, Clone)]
 pub struct StdFileManager {
-    open_files: Arc<Mutex<HashMap<PathBuf, Option<StdFile>>>>,
+    file_id_counter: Arc<AtomicU64>,
+    file_ids: Arc<RwLock<HashMap<PathBuf, u64>>>,
+    open_files: Arc<Mutex<HashMap<u64, Option<StdFile>>>>,
     #[allow(clippy::type_complexity)] // TODO this is temporary and will be refactored
-    reader_files: Arc<Mutex<HashMap<PathBuf, VecDeque<StdFile>>>>,
+    reader_files: Arc<Mutex<HashMap<u64, VecDeque<StdFile>>>>,
+}
+
+impl StdFileManager {
+    fn file_id_for_path(&self, path: &Path) -> u64 {
+        let file_ids = self.file_ids.upgradable_read();
+        if let Some(id) = file_ids.get(path) {
+            *id
+        } else {
+            let mut file_ids = RwLockUpgradableReadGuard::upgrade(file_ids);
+            *file_ids
+                .entry(path.to_path_buf())
+                .or_insert_with(|| self.file_id_counter.fetch_add(1, Ordering::SeqCst))
+        }
+    }
 }
 
 impl FileManager for StdFileManager {
     type File = StdFile;
     type FileHandle = OpenStdFile;
     fn append(&self, path: impl AsRef<Path> + Send) -> Result<Self::FileHandle, Error> {
+        let path = path.as_ref();
+        let file_id = self.file_id_for_path(path);
         let mut open_files = self.open_files.lock();
-        if let Some(open_file) = open_files.get_mut(path.as_ref()) {
+        if let Some(open_file) = open_files.get_mut(&file_id) {
             Ok(OpenStdFile {
                 file: Some(open_file.take().expect("file already owned")),
-                path: path.as_ref().to_path_buf(),
                 reader: false,
                 manager: Some(self.clone()),
             })
         } else {
-            let file = StdFile::open_for_append(path.as_ref())?;
-            open_files.insert(path.as_ref().to_path_buf(), None);
+            let file = StdFile::open_for_append(path, file_id)?;
+            open_files.insert(file_id, None);
             Ok(OpenStdFile {
                 file: Some(file),
-                path: path.as_ref().to_path_buf(),
                 reader: false,
                 manager: Some(self.clone()),
             })
@@ -114,32 +133,32 @@ impl FileManager for StdFileManager {
         // we should be able to limit the number of open files. A time+capacity
         // based Lru cache might work.
         let path = path.as_ref();
+        let file_id = self.file_id_for_path(path);
         {
             let mut reader_files = self.reader_files.lock();
-            if let Some(file) = reader_files.get_mut(path).and_then(VecDeque::pop_front) {
+            if let Some(file) = reader_files.get_mut(&file_id).and_then(VecDeque::pop_front) {
                 return Ok(OpenStdFile {
                     file: Some(file),
                     manager: Some(self.clone()),
-                    path: path.to_path_buf(),
                     reader: true,
                 });
             }
         }
 
-        let file = StdFile::open_for_read(path)?;
+        let file = StdFile::open_for_read(path, file_id)?;
         Ok(OpenStdFile {
             file: Some(file),
             manager: Some(self.clone()),
-            path: path.to_path_buf(),
             reader: true,
         })
     }
 
     fn delete(&self, path: impl AsRef<Path> + Send) -> Result<bool, Error> {
-        let mut open_files = self.open_files.lock();
         let path = path.as_ref();
+        let file_id = self.file_id_for_path(path);
+        let mut open_files = self.open_files.lock();
         if path.exists() {
-            open_files.remove(path);
+            open_files.remove(&file_id);
             std::fs::remove_file(path)?;
             Ok(true)
         } else {
@@ -150,7 +169,6 @@ impl FileManager for StdFileManager {
 
 pub struct OpenStdFile {
     file: Option<StdFile>,
-    path: PathBuf,
     manager: Option<StdFileManager>,
     reader: bool,
 }
@@ -172,11 +190,12 @@ impl Drop for OpenStdFile {
             let file = self.file.take().unwrap();
             if self.reader {
                 let mut reader_files = manager.reader_files.lock();
-                let path_files = reader_files.entry(self.path.clone()).or_default();
+                let path_files = reader_files.entry(file.id).or_default();
                 path_files.push_front(file);
             } else {
                 let mut writer_files = manager.open_files.lock();
-                *writer_files.get_mut(&self.path).unwrap() = Some(file);
+                let id = file.id;
+                *writer_files.get_mut(&id).unwrap() = Some(file);
             }
         }
     }

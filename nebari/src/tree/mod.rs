@@ -214,7 +214,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
             file.sync_all()?;
         }
 
-        let mut tree = F::open_for_read(file_path)?;
+        let mut tree = F::open_for_read(file_path, 0)?;
 
         // Scan back block by block until we find a header page.
         let mut block_start = file_length - PAGE_SIZE as u64;
@@ -821,7 +821,7 @@ impl<'a, F: ManagedFile> PagedWriter<'a, F> {
         if cache {
             if let Some(cache) = self.cache {
                 if let Cow::Owned(vec) = possibly_encrypted {
-                    cache.insert(self.file.path(), position, Buffer::from(vec));
+                    cache.insert(self.file.id(), position, Buffer::from(vec));
                 }
             }
         }
@@ -888,7 +888,7 @@ fn read_chunk<F: ManagedFile>(
     cache: Option<&ChunkCache>,
 ) -> Result<CacheEntry, Error> {
     if let Some(cache) = cache {
-        if let Some(entry) = cache.get(file.path(), position) {
+        if let Some(entry) = cache.get(file.id(), position) {
             return Ok(entry);
         }
     }
@@ -952,7 +952,7 @@ fn read_chunk<F: ManagedFile>(
     });
 
     if let Some(cache) = cache {
-        cache.insert(file.path(), position, decrypted.clone());
+        cache.insert(file.id(), position, decrypted.clone());
     }
 
     Ok(CacheEntry::Buffer(decrypted))
@@ -975,7 +975,7 @@ mod tests {
     };
 
     fn test_paged_write(offset: usize, length: usize) -> Result<(), Error> {
-        let mut file = MemoryFile::open_for_append(format!("test-{}-{}", offset, length))?;
+        let mut file = MemoryFile::open_for_append(format!("test-{}-{}", offset, length), 0)?;
         let mut paged_writer = PagedWriter::new(PageHeader::Header, &mut file, None, None, 0);
 
         let mut scratch = Vec::new();

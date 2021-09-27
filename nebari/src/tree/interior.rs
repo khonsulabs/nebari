@@ -112,7 +112,7 @@ impl<
 
                     let result = callback(&decoded, file);
                     if let Some(cache) = cache {
-                        cache.replace_with_decoded(file.path(), *position, Box::new(decoded));
+                        cache.replace_with_decoded(file.id(), *position, Box::new(decoded));
                     }
                     result
                 }
@@ -157,7 +157,7 @@ impl<
                         .write_chunk(&writer[old_writer_length..writer.len()], false)?;
                     writer.truncate(old_writer_length);
                     if let Some(cache) = paged_writer.cache {
-                        cache.replace_with_decoded(paged_writer.path(), position, entry);
+                        cache.replace_with_decoded(paged_writer.id(), position, entry);
                     }
                     position
                 }

@@ -1,4 +1,4 @@
-use std::{any::Any, path::PathBuf, sync::Arc};
+use std::{any::Any, sync::Arc};
 
 use lru::LruCache;
 use parking_lot::Mutex;
@@ -42,7 +42,7 @@ where
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct ChunkKey {
     position: u64,
-    file_path: Arc<PathBuf>,
+    file_id: u64,
 }
 
 impl ChunkCache {
@@ -59,46 +59,32 @@ impl ChunkCache {
     }
 
     /// Adds a new cached chunk for `file_path` at `position`.
-    pub fn insert(&self, file_path: Arc<PathBuf>, position: u64, buffer: Buffer<'static>) {
+    pub fn insert(&self, file_id: u64, position: u64, buffer: Buffer<'static>) {
         if buffer.len() <= self.max_block_length {
             let mut cache = self.cache.lock();
-            cache.put(
-                ChunkKey {
-                    position,
-                    file_path,
-                },
-                CacheEntry::Buffer(buffer),
-            );
+            cache.put(ChunkKey { position, file_id }, CacheEntry::Buffer(buffer));
         }
     }
 
     /// Adds a new cached chunk for `file_path` at `position`.
     pub fn replace_with_decoded<T: AnySendSync + 'static>(
         &self,
-        file_path: Arc<PathBuf>,
+        file_id: u64,
         position: u64,
         value: T,
     ) {
         let mut cache = self.cache.lock();
         cache.put(
-            ChunkKey {
-                position,
-                file_path,
-            },
+            ChunkKey { position, file_id },
             CacheEntry::Decoded(Arc::new(value)),
         );
     }
 
     /// Looks up a previously read chunk for `file_path` at `position`,
     #[must_use]
-    pub fn get(&self, file_path: Arc<PathBuf>, position: u64) -> Option<CacheEntry> {
+    pub fn get(&self, file_id: u64, position: u64) -> Option<CacheEntry> {
         let mut cache = self.cache.lock();
-        cache
-            .get(&ChunkKey {
-                position,
-                file_path,
-            })
-            .cloned()
+        cache.get(&ChunkKey { position, file_id }).cloned()
     }
 }
 

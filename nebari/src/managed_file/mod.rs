@@ -1,7 +1,6 @@
 use std::{
     io::{Read, Seek, Write},
-    path::{Path, PathBuf},
-    sync::Arc,
+    path::Path,
 };
 
 use crate::error::Error;
@@ -19,13 +18,13 @@ pub trait ManagedFile: Send + Sync + Seek + Read + Write + Sized + 'static {
     /// The file manager that synchronizes file access across threads.
     type Manager: FileManager<File = Self>;
 
-    /// Returns a shared reference to the path for the file.
-    fn path(&self) -> Arc<PathBuf>;
+    /// Returns the unique ID of this file. Only unique within [`Self::Managager`].
+    fn id(&self) -> u64;
 
     /// Opens a file at `path` with read-only permission.
-    fn open_for_read(path: impl AsRef<Path> + Send) -> Result<Self, Error>;
+    fn open_for_read(path: impl AsRef<Path> + Send, id: u64) -> Result<Self, Error>;
     /// Opens or creates a file at `path`, positioning the cursor at the end of the file.
-    fn open_for_append(path: impl AsRef<Path> + Send) -> Result<Self, Error>;
+    fn open_for_append(path: impl AsRef<Path> + Send, id: u64) -> Result<Self, Error>;
 
     /// Safely closes the file after flushing any pending operations to disk.
     fn close(self) -> Result<(), Error>;

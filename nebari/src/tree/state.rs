@@ -41,11 +41,17 @@ where
 
 pub trait AnyTreeState: AnySendSync + Debug {
     fn cloned(&self) -> Box<dyn AnyTreeState>;
+    fn publish(&self);
 }
 
 impl<Root: super::Root> AnyTreeState for State<Root> {
     fn cloned(&self) -> Box<dyn AnyTreeState> {
         Box::new(self.clone())
+    }
+
+    fn publish(&self) {
+        let state = self.lock();
+        state.publish(self);
     }
 }
 

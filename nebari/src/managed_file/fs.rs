@@ -79,9 +79,9 @@ impl Read for StdFile {
 
 #[derive(Debug, Default, Clone)]
 pub struct StdFileManager {
-    open_files: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<StdFile>>>>>,
+    open_files: Arc<Mutex<HashMap<PathBuf, Option<StdFile>>>>,
     #[allow(clippy::type_complexity)] // TODO this is temporary and will be refactored
-    reader_files: Arc<Mutex<HashMap<PathBuf, VecDeque<Arc<Mutex<StdFile>>>>>>,
+    reader_files: Arc<Mutex<HashMap<PathBuf, VecDeque<StdFile>>>>,
 }
 
 impl FileManager for StdFileManager {
@@ -89,19 +89,21 @@ impl FileManager for StdFileManager {
     type FileHandle = OpenStdFile;
     fn append(&self, path: impl AsRef<Path> + Send) -> Result<Self::FileHandle, Error> {
         let mut open_files = self.open_files.lock();
-        if let Some(open_file) = open_files.get(path.as_ref()) {
+        if let Some(open_file) = open_files.get_mut(path.as_ref()) {
             Ok(OpenStdFile {
-                file: open_file.clone(),
+                file: Some(open_file.take().expect("file already owned")),
                 path: path.as_ref().to_path_buf(),
-                manager: None,
+                reader: false,
+                manager: Some(self.clone()),
             })
         } else {
-            let file = Arc::new(Mutex::new(StdFile::open_for_append(path.as_ref())?));
-            open_files.insert(path.as_ref().to_path_buf(), file.clone());
+            let file = StdFile::open_for_append(path.as_ref())?;
+            open_files.insert(path.as_ref().to_path_buf(), None);
             Ok(OpenStdFile {
-                file,
+                file: Some(file),
                 path: path.as_ref().to_path_buf(),
-                manager: None,
+                reader: false,
+                manager: Some(self.clone()),
             })
         }
     }
@@ -116,18 +118,20 @@ impl FileManager for StdFileManager {
             let mut reader_files = self.reader_files.lock();
             if let Some(file) = reader_files.get_mut(path).and_then(VecDeque::pop_front) {
                 return Ok(OpenStdFile {
-                    file,
+                    file: Some(file),
                     manager: Some(self.clone()),
                     path: path.to_path_buf(),
+                    reader: true,
                 });
             }
         }
 
-        let file = Arc::new(Mutex::new(StdFile::open_for_read(path)?));
+        let file = StdFile::open_for_read(path)?;
         Ok(OpenStdFile {
-            file,
+            file: Some(file),
             manager: Some(self.clone()),
             path: path.to_path_buf(),
+            reader: true,
         })
     }
 
@@ -145,15 +149,15 @@ impl FileManager for StdFileManager {
 }
 
 pub struct OpenStdFile {
-    file: Arc<Mutex<StdFile>>,
+    file: Option<StdFile>,
     path: PathBuf,
     manager: Option<StdFileManager>,
+    reader: bool,
 }
 
 impl OpenableFile<StdFile> for OpenStdFile {
     fn execute<W: FileOp<StdFile>>(&mut self, mut writer: W) -> W::Output {
-        let mut file = self.file.lock();
-        writer.execute(&mut file)
+        writer.execute(self.file.as_mut().unwrap())
     }
 
     fn close(self) -> Result<(), Error> {
@@ -165,9 +169,15 @@ impl OpenableFile<StdFile> for OpenStdFile {
 impl Drop for OpenStdFile {
     fn drop(&mut self) {
         if let Some(manager) = &self.manager {
-            let mut reader_files = manager.reader_files.lock();
-            let path_files = reader_files.entry(self.path.clone()).or_default();
-            path_files.push_front(self.file.clone());
+            let file = self.file.take().unwrap();
+            if self.reader {
+                let mut reader_files = manager.reader_files.lock();
+                let path_files = reader_files.entry(self.path.clone()).or_default();
+                path_files.push_front(file);
+            } else {
+                let mut writer_files = manager.open_files.lock();
+                *writer_files.get_mut(&self.path).unwrap() = Some(file);
+            }
         }
     }
 }

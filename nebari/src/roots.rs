@@ -206,8 +206,8 @@ impl<M: ManagedFile> Clone for Roots<M> {
 pub struct ExecutingTransaction<F: ManagedFile> {
     roots: Roots<F>,
     transaction_manager: TransactionManager<F::Manager>,
-    transaction: Option<TransactionHandle>,
     trees: Vec<Box<dyn AnyTransactionTree<F>>>,
+    transaction: Option<TransactionHandle>,
 }
 
 impl<F: ManagedFile> ExecutingTransaction<F> {
@@ -250,6 +250,7 @@ impl<F: ManagedFile> Drop for ExecutingTransaction<F> {
     fn drop(&mut self) {
         if let Some(transaction) = self.transaction.take() {
             self.rollback_tree_states();
+            self.trees.clear();
             // Now the transaction can be dropped safely, freeing up access to the trees.
             drop(transaction);
         }
@@ -266,8 +267,9 @@ pub trait AnyTransactionTree<F: ManagedFile>: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
+    fn state(&self) -> Box<dyn AnyTreeState>;
+
     fn commit(&mut self) -> Result<(), Error>;
-    fn publish(&self);
     fn rollback(&self);
 }
 
@@ -279,6 +281,10 @@ impl<Root: tree::Root, F: ManagedFile> AnyTransactionTree<F> for TransactionTree
         self
     }
 
+    fn state(&self) -> Box<dyn AnyTreeState> {
+        Box::new(self.tree.state.clone())
+    }
+
     fn commit(&mut self) -> Result<(), Error> {
         self.tree.commit()?;
         Ok(())
@@ -287,11 +293,6 @@ impl<Root: tree::Root, F: ManagedFile> AnyTransactionTree<F> for TransactionTree
     fn rollback(&self) {
         let mut state = self.tree.state.lock();
         state.rollback(&self.tree.state);
-    }
-
-    fn publish(&self) {
-        let state = self.tree.state.lock();
-        state.publish(&self.tree.state);
     }
 }
 
@@ -698,12 +699,12 @@ impl<F: ManagedFile> ThreadPool<F> {
     pub fn commit_trees(
         &self,
         mut trees: Vec<Box<dyn AnyTransactionTree<F>>>,
-    ) -> Result<Vec<Box<dyn AnyTransactionTree<F>>>, Error> {
+    ) -> Result<Vec<Box<dyn AnyTreeState>>, Error> {
         static CPU_COUNT: Lazy<usize> = Lazy::new(num_cpus::get);
 
         if trees.len() == 1 {
             trees[0].commit()?;
-            Ok(trees)
+            Ok(vec![trees[0].state()])
         } else {
             // Push the trees so that any existing threads can begin processing the queue.
             let (completion_sender, completion_receiver) = flume::unbounded();
@@ -760,7 +761,7 @@ fn transaction_commit_thread<F: ManagedFile>(receiver: flume::Receiver<ThreadCom
         completion_sender,
     }) = receiver.recv()
     {
-        let result = tree.commit().map(move |_| tree);
+        let result = tree.commit().map(move |_| tree.state());
         drop(completion_sender.send(result));
     }
 }
@@ -781,7 +782,7 @@ where
     F: ManagedFile,
 {
     tree: Box<dyn AnyTransactionTree<F>>,
-    completion_sender: Sender<Result<Box<dyn AnyTransactionTree<F>>, Error>>,
+    completion_sender: Sender<Result<Box<dyn AnyTreeState>, Error>>,
 }
 
 #[cfg(test)]

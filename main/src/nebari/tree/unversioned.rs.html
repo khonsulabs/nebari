@@ -281,6 +281,10 @@
 <span id="281">281</span>
 <span id="282">282</span>
 <span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">convert::TryFrom</span>,
@@ -348,7 +352,7 @@
                               <span class="ident">_changes</span>,
                               <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">F</span><span class="op">&gt;</span><span class="op">|</span> {
                         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">value</span>) <span class="op">=</span> <span class="ident">value</span> {
-                            <span class="kw">let</span> <span class="ident">new_position</span> <span class="op">=</span> <span class="ident">writer</span>.<span class="ident">write_chunk</span>(<span class="ident">value</span>)<span class="question-mark">?</span>;
+                            <span class="kw">let</span> <span class="ident">new_position</span> <span class="op">=</span> <span class="ident">writer</span>.<span class="ident">write_chunk</span>(<span class="ident">value</span>, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
                             <span class="comment">// write_chunk errors if it can&#39;t fit within a u32</span>
                             <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::cast_possible_truncation</span>)]</span>
                             <span class="kw">let</span> <span class="ident">document_size</span> <span class="op">=</span> <span class="ident">value</span>.<span class="ident">len</span>() <span class="kw">as</span> <span class="ident">u32</span>;
@@ -386,6 +390,10 @@
         <span class="self">self</span>.<span class="ident">transaction_id</span>.<span class="ident">is_some</span>()
     }
 
+    <span class="kw">fn</span> <span class="ident">dirty</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">dirty</span>
+    }
+
     <span class="kw">fn</span> <span class="ident">initialize_default</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
         <span class="self">self</span>.<span class="ident">transaction_id</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="number">0</span>);
     }
@@ -414,8 +422,8 @@
     <span class="kw">fn</span> <span class="ident">serialize</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">paged_writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">F</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">output</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
+        <span class="kw-2">mut</span> <span class="ident">output</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">output</span>.<span class="ident">reserve</span>(<span class="ident">PAGE_SIZE</span>);
         <span class="ident">output</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(
             <span class="self">self</span>.<span class="ident">transaction_id</span>
@@ -430,7 +438,7 @@
             .<span class="ident">ok_or</span>(<span class="ident">Error::Internal</span>(<span class="ident">InternalError::HeaderTooLarge</span>))<span class="question-mark">?</span>;
         <span class="ident">BigEndian::write_u32</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">output</span>[<span class="number">8</span>..<span class="number">12</span>], <span class="ident">by_id_size</span>);
 
-        <span class="prelude-val">Ok</span>(<span class="ident">output</span>)
+        <span class="prelude-val">Ok</span>(())
     }
 
     <span class="kw">fn</span> <span class="ident">transaction_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {

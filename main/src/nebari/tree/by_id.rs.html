@@ -193,9 +193,9 @@
 }
 
 <span class="kw">impl</span> <span class="ident">BinarySerialization</span> <span class="kw">for</span> <span class="ident">VersionedByIdIndex</span> {
-    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">W</span>: <span class="ident">WriteBytesExt</span>, <span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">W</span>,
+        <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">F</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">sequence_id</span>)<span class="question-mark">?</span>;
@@ -223,9 +223,9 @@
 }
 
 <span class="kw">impl</span> <span class="ident">BinarySerialization</span> <span class="kw">for</span> <span class="ident">UnversionedByIdIndex</span> {
-    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">W</span>: <span class="ident">WriteBytesExt</span>, <span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">W</span>,
+        <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">F</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">writer</span>.<span class="ident">write_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">document_size</span>)<span class="question-mark">?</span>;
@@ -257,9 +257,9 @@
 }
 
 <span class="kw">impl</span> <span class="ident">BinarySerialization</span> <span class="kw">for</span> <span class="ident">ByIdStats</span> {
-    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">W</span>: <span class="ident">WriteBytesExt</span>, <span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">W</span>,
+        <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">F</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">alive_documents</span>)<span class="question-mark">?</span>;

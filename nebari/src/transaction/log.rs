@@ -91,11 +91,11 @@ impl<F: ManagedFile> TransactionLog<F> {
 
     /// Logs one or more transactions. After this call returns, the transaction
     /// log is guaranteed to be fully written to disk.
-    pub fn push(&mut self, handles: Vec<TransactionHandle>) -> Result<(), Error> {
+    pub fn push(&mut self, handles: Vec<LogEntry<'static>>) -> Result<(), Error> {
         self.log.execute(LogWriter {
             state: self.state.clone(),
             vault: self.vault.clone(),
-            handles,
+            transactions: handles,
             _file: PhantomData,
         })
     }
@@ -262,7 +262,7 @@ impl<'a, F: ManagedFile> FileOp<F> for EntryFetcher<'a> {
 
 struct LogWriter<F> {
     state: State,
-    handles: Vec<TransactionHandle>,
+    transactions: Vec<LogEntry<'static>>,
     vault: Option<Arc<dyn Vault>>,
     _file: PhantomData<F>,
 }
@@ -272,10 +272,10 @@ impl<F: ManagedFile> FileOp<F> for LogWriter<F> {
     fn execute(&mut self, log: &mut F) -> Result<(), Error> {
         let mut log_position = self.state.lock_for_write();
         let mut scratch = [0_u8; PAGE_SIZE];
-        let mut completed_transactions = Vec::with_capacity(self.handles.len());
-        for handle in self.handles.drain(..) {
-            completed_transactions.push(handle.transaction.id);
-            let mut bytes = handle.transaction.serialize()?;
+        let mut completed_transactions = Vec::with_capacity(self.transactions.len());
+        for transaction in self.transactions.drain(..) {
+            completed_transactions.push(transaction.id);
+            let mut bytes = transaction.serialize()?;
             if let Some(vault) = &self.vault {
                 bytes = vault.encrypt(&bytes);
             }
@@ -612,7 +612,7 @@ mod tests {
                 }]),
             );
 
-            transactions.push(vec![tx]).unwrap();
+            transactions.push(vec![tx.transaction]).unwrap();
             transactions.close().unwrap();
         }
 
@@ -668,7 +668,7 @@ mod tests {
                 }]),
             );
 
-            transactions.push(vec![tx]).unwrap();
+            transactions.push(vec![tx.transaction]).unwrap();
         }
 
         for id in valid_ids {

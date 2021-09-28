@@ -214,6 +214,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
             file.sync_all()?;
         }
 
+        // TODO use a real file id, so that the chunk cache works
         let mut tree = F::open_for_read(file_path, 0)?;
 
         // Scan back block by block until we find a header page.
@@ -1023,7 +1024,7 @@ mod tests {
         }
     }
 
-    fn insert_one_record<F: ManagedFile>(
+    fn insert_one_record<R: Root, F: ManagedFile>(
         context: &Context<F::Manager>,
         file_path: &Path,
         ids: &mut HashSet<u64>,
@@ -1080,7 +1081,11 @@ mod tests {
         }
     }
 
-    fn remove_one_record<F: ManagedFile>(context: &Context<F::Manager>, file_path: &Path, id: u64) {
+    fn remove_one_record<R: Root, F: ManagedFile>(
+        context: &Context<F::Manager>,
+        file_path: &Path,
+        id: u64,
+    ) {
         let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
         println!("Removing: {:?}", id_buffer);
         {
@@ -1142,41 +1147,63 @@ mod tests {
         let mut ids = HashSet::new();
         // Insert up to the limit of a LEAF, which is ORDER - 1.
         for _ in 0..ORDER - 1 {
-            insert_one_record::<StdFile>(&context, &file_path, &mut ids, &mut rng);
+            insert_one_record::<VersionedTreeRoot, StdFile>(
+                &context, &file_path, &mut ids, &mut rng,
+            );
         }
         println!("Successfully inserted up to ORDER - 1 nodes.");
 
         // The next record will split the node
-        insert_one_record::<StdFile>(&context, &file_path, &mut ids, &mut rng);
+        insert_one_record::<VersionedTreeRoot, StdFile>(&context, &file_path, &mut ids, &mut rng);
         println!("Successfully introduced one layer of depth.");
 
         // Insert a lot more.
         for _ in 0..1_000 {
-            insert_one_record::<StdFile>(&context, &file_path, &mut ids, &mut rng);
+            insert_one_record::<VersionedTreeRoot, StdFile>(
+                &context, &file_path, &mut ids, &mut rng,
+            );
         }
     }
 
-    #[test]
-    fn remove() {
+    fn remove<R: Root>(label: &str) {
         let mut rng = Pcg64::new_seed(1);
         let context = Context {
             file_manager: StdFileManager::default(),
             vault: None,
             cache: None,
         };
-        let temp_dir = crate::test_util::TestDirectory::new("btree-removals");
+        let temp_dir = crate::test_util::TestDirectory::new(format!("btree-removals-{}", label));
         std::fs::create_dir(&temp_dir).unwrap();
         let file_path = temp_dir.join("tree");
         let mut ids = HashSet::new();
         // Insert up to the limit of a LEAF, which is ORDER - 1.
-        for _ in 0..100 {
-            insert_one_record::<StdFile>(&context, &file_path, &mut ids, &mut rng);
+        for _ in 0..10000 {
+            insert_one_record::<R, StdFile>(&context, &file_path, &mut ids, &mut rng);
+        }
+
+        let mut ids = ids.into_iter().collect::<Vec<_>>();
+
+        for i in 0..ids.len() {
+            let random = rng.generate_range(i..ids.len());
+            if random != i {
+                ids.swap(i, random);
+            }
         }
 
         // Remove each of the records
         for id in ids {
-            remove_one_record::<StdFile>(&context, &file_path, id);
+            remove_one_record::<R, StdFile>(&context, &file_path, id);
         }
+    }
+
+    #[test]
+    fn remove_versioned() {
+        remove::<VersionedTreeRoot>("versioned");
+    }
+
+    #[test]
+    fn remove_unversioned() {
+        remove::<UnversionedTreeRoot>("unversioned");
     }
 
     #[test]

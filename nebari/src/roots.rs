@@ -217,19 +217,26 @@ impl<F: ManagedFile> ExecutingTransaction<F> {
     #[allow(clippy::missing_panics_doc)]
     pub fn commit(mut self) -> Result<(), Error> {
         let trees = std::mem::take(&mut self.trees);
+        // Write the trees to disk
         let trees = self.roots.data.thread_pool.commit_trees(trees)?;
 
-        self.transaction_manager
+        // Push the transaction to the log.
+        let tree_locks = self
+            .transaction_manager
             .push(self.transaction.take().unwrap())?;
 
+        // Publish the tree states, now that the transaction has been fully recorded
         for tree in trees {
-            tree.publish();
+            tree.state().publish();
         }
+
+        // Release the locks for the trees, allowing a new transaction to begin.
+        drop(tree_locks);
 
         Ok(())
     }
 
-    /// Accesses a locked tree. The order of `TransactionTree`'s
+    /// Accesses a locked tree.
     pub fn tree<Root: tree::Root>(
         &mut self,
         index: usize,
@@ -250,7 +257,6 @@ impl<F: ManagedFile> Drop for ExecutingTransaction<F> {
     fn drop(&mut self) {
         if let Some(transaction) = self.transaction.take() {
             self.rollback_tree_states();
-            self.trees.clear();
             // Now the transaction can be dropped safely, freeing up access to the trees.
             drop(transaction);
         }
@@ -286,8 +292,7 @@ impl<Root: tree::Root, F: ManagedFile> AnyTransactionTree<F> for TransactionTree
     }
 
     fn commit(&mut self) -> Result<(), Error> {
-        self.tree.commit()?;
-        Ok(())
+        self.tree.commit()
     }
 
     fn rollback(&self) {
@@ -441,7 +446,7 @@ impl<Root: tree::Root, F: ManagedFile> TransactionTree<Root, F> {
             .scan(
                 ..,
                 false,
-                false,
+                true,
                 |key| {
                     result = Some(key.clone());
                     KeyEvaluation::Stop
@@ -462,7 +467,7 @@ impl<Root: tree::Root, F: ManagedFile> TransactionTree<Root, F> {
             .scan(
                 ..,
                 false,
-                false,
+                true,
                 |_| {
                     if key_requested {
                         KeyEvaluation::Stop
@@ -773,12 +778,12 @@ impl<F: ManagedFile> ThreadPool<F> {
     pub fn commit_trees(
         &self,
         mut trees: Vec<Box<dyn AnyTransactionTree<F>>>,
-    ) -> Result<Vec<Box<dyn AnyTreeState>>, Error> {
+    ) -> Result<Vec<Box<dyn AnyTransactionTree<F>>>, Error> {
         static CPU_COUNT: Lazy<usize> = Lazy::new(num_cpus::get);
 
         if trees.len() == 1 {
             trees[0].commit()?;
-            Ok(vec![trees[0].state()])
+            Ok(trees)
         } else {
             // Push the trees so that any existing threads can begin processing the queue.
             let (completion_sender, completion_receiver) = flume::unbounded();
@@ -835,7 +840,7 @@ fn transaction_commit_thread<F: ManagedFile>(receiver: flume::Receiver<ThreadCom
         completion_sender,
     }) = receiver.recv()
     {
-        let result = tree.commit().map(move |_| tree.state());
+        let result = tree.commit().map(move |_| tree);
         drop(completion_sender.send(result));
     }
 }
@@ -856,7 +861,7 @@ where
     F: ManagedFile,
 {
     tree: Box<dyn AnyTransactionTree<F>>,
-    completion_sender: Sender<Result<Box<dyn AnyTreeState>, Error>>,
+    completion_sender: Sender<Result<Box<dyn AnyTransactionTree<F>>, Error>>,
 }
 
 #[cfg(test)]

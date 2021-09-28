@@ -20,7 +20,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct TransactionManager<M: FileManager> {
     state: State,
-    transaction_sender: flume::Sender<(TransactionHandle, flume::Sender<()>)>,
+    transaction_sender: flume::Sender<(TransactionHandle, flume::Sender<TreeLocks>)>,
     context: Context<M>,
 }
 
@@ -55,7 +55,7 @@ impl<M: FileManager> TransactionManager<M> {
 
     /// Push `transaction` to the log. Once this function returns, the
     /// transaction log entry has been fully flushed to disk.
-    pub fn push(&self, transaction: TransactionHandle) -> Result<(), Error> {
+    pub fn push(&self, transaction: TransactionHandle) -> Result<TreeLocks, Error> {
         let (completion_sender, completion_receiver) = flume::bounded(1);
         self.transaction_sender
             .send((transaction, completion_sender))
@@ -108,7 +108,7 @@ impl<M: FileManager> Deref for TransactionManager<M> {
 fn transaction_writer_thread<F: ManagedFile>(
     state_sender: flume::Sender<Result<State, Error>>,
     log_path: PathBuf,
-    transactions: flume::Receiver<(TransactionHandle, flume::Sender<()>)>,
+    transactions: flume::Receiver<(TransactionHandle, flume::Sender<TreeLocks>)>,
     context: Context<F::Manager>,
 ) {
     const BATCH: usize = 16;
@@ -125,22 +125,33 @@ fn transaction_writer_thread<F: ManagedFile>(
 
     while let Ok(transaction) = transactions.recv() {
         let mut transaction_batch = Vec::with_capacity(BATCH);
-        transaction_batch.push(transaction.0);
+        let completion_sender = transaction.1;
+        let TransactionHandle {
+            transaction,
+            locked_trees,
+        } = transaction.0;
+        transaction_batch.push(transaction);
         let mut completion_senders = Vec::with_capacity(BATCH);
-        completion_senders.push(transaction.1);
+        completion_senders.push((completion_sender, locked_trees));
         for _ in 0..BATCH - 1 {
             match transactions.try_recv() {
-                Ok((transaction, sender)) => {
+                Ok((
+                    TransactionHandle {
+                        transaction,
+                        locked_trees,
+                    },
+                    sender,
+                )) => {
                     transaction_batch.push(transaction);
-                    completion_senders.push(sender);
+                    completion_senders.push((sender, locked_trees));
                 }
                 // At this point either type of error we want to finish writing the transactions we have.
                 Err(_) => break,
             }
         }
         log.push(transaction_batch).unwrap();
-        for completion_sender in completion_senders {
-            let _ = completion_sender.send(());
+        for (completion_sender, tree_locks) in completion_senders {
+            drop(completion_sender.send(tree_locks));
         }
     }
 }

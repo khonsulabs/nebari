@@ -370,6 +370,7 @@ where
                 }
                 ChangeResult::Remove => {
                     children.remove(last_index);
+                    any_changes |= true;
                 }
             };
             debug_assert!(children.windows(2).all(|w| w[0].key < w[1].key));

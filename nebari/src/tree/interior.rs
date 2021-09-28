@@ -161,7 +161,7 @@ impl<
                     }
                     position
                 }
-                (_, Some(position)) => position,
+                (false, Some(position)) => position,
             },
         };
         self.position = Pointer::OnDisk(location_on_disk);

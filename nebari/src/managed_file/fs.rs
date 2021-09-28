@@ -101,6 +101,11 @@ impl StdFileManager {
                 .or_insert_with(|| self.file_id_counter.fetch_add(1, Ordering::SeqCst))
         }
     }
+
+    fn remove_file_id_for_path(&self, path: &Path) -> Option<u64> {
+        let mut file_ids = self.file_ids.write();
+        file_ids.remove(path)
+    }
 }
 
 impl FileManager for StdFileManager {
@@ -155,10 +160,15 @@ impl FileManager for StdFileManager {
 
     fn delete(&self, path: impl AsRef<Path> + Send) -> Result<bool, Error> {
         let path = path.as_ref();
-        let file_id = self.file_id_for_path(path);
-        let mut open_files = self.open_files.lock();
-        if path.exists() {
+        let file_id = self.remove_file_id_for_path(path);
+        if let Some(file_id) = file_id {
+            let mut open_files = self.open_files.lock();
+            let mut reader_files = self.reader_files.lock();
             open_files.remove(&file_id);
+            reader_files.remove(&file_id);
+        }
+
+        if path.exists() {
             std::fs::remove_file(path)?;
             Ok(true)
         } else {

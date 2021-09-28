@@ -713,6 +713,7 @@
 <span id="713">713</span>
 <span id="714">714</span>
 <span id="715">715</span>
+<span id="716">716</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">convert::Infallible</span>,
@@ -1086,6 +1087,7 @@
                 }
                 <span class="ident">ChangeResult::Remove</span> <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="ident">children</span>.<span class="ident">remove</span>(<span class="ident">last_index</span>);
+                    <span class="ident">any_changes</span> <span class="op">|</span><span class="op">=</span> <span class="bool-val">true</span>;
                 }
             };
             <span class="macro">debug_assert!</span>(<span class="ident">children</span>.<span class="ident">windows</span>(<span class="number">2</span>).<span class="ident">all</span>(<span class="op">|</span><span class="ident">w</span><span class="op">|</span> <span class="ident">w</span>[<span class="number">0</span>].<span class="ident">key</span> <span class="op">&lt;</span> <span class="ident">w</span>[<span class="number">1</span>].<span class="ident">key</span>));

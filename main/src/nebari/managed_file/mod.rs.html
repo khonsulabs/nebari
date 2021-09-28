@@ -79,12 +79,10 @@
 <span id="79">79</span>
 <span id="80">80</span>
 <span id="81">81</span>
-<span id="82">82</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">io</span>::{<span class="ident">Read</span>, <span class="ident">Seek</span>, <span class="ident">Write</span>},
-    <span class="ident">path</span>::{<span class="ident">Path</span>, <span class="ident">PathBuf</span>},
-    <span class="ident">sync::Arc</span>,
+    <span class="ident">path::Path</span>,
 };
 
 <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::error::Error</span>;
@@ -102,13 +100,13 @@
     <span class="doccomment">/// The file manager that synchronizes file access across threads.</span>
     <span class="kw">type</span> <span class="ident">Manager</span>: <span class="ident">FileManager</span><span class="op">&lt;</span><span class="ident">File</span> <span class="op">=</span> <span class="self">Self</span><span class="op">&gt;</span>;
 
-    <span class="doccomment">/// Returns a shared reference to the path for the file.</span>
-    <span class="kw">fn</span> <span class="ident">path</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PathBuf</span><span class="op">&gt;</span>;
+    <span class="doccomment">/// Returns the unique ID of this file. Only unique within [`Self::Manager`].</span>
+    <span class="kw">fn</span> <span class="ident">id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span>;
 
     <span class="doccomment">/// Opens a file at `path` with read-only permission.</span>
-    <span class="kw">fn</span> <span class="ident">open_for_read</span>(<span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Send</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">open_for_read</span>(<span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Send</span>, <span class="ident">id</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
     <span class="doccomment">/// Opens or creates a file at `path`, positioning the cursor at the end of the file.</span>
-    <span class="kw">fn</span> <span class="ident">open_for_append</span>(<span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Send</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">open_for_append</span>(<span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Send</span>, <span class="ident">id</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Safely closes the file after flushing any pending operations to disk.</span>
     <span class="kw">fn</span> <span class="ident">close</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>;

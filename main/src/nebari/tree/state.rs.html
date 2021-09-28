@@ -73,6 +73,12 @@
 <span id="73">73</span>
 <span id="74">74</span>
 <span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">fmt::Debug</span>, <span class="ident">sync::Arc</span>};
 
@@ -117,11 +123,17 @@
 
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">AnyTreeState</span>: <span class="ident">AnySendSync</span> <span class="op">+</span> <span class="ident">Debug</span> {
     <span class="kw">fn</span> <span class="ident">cloned</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTreeState</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">publish</span>(<span class="kw-2">&amp;</span><span class="self">self</span>);
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">Root</span>: <span class="kw">super</span><span class="ident">::Root</span><span class="op">&gt;</span> <span class="ident">AnyTreeState</span> <span class="kw">for</span> <span class="ident">State</span><span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span> {
     <span class="kw">fn</span> <span class="ident">cloned</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTreeState</span><span class="op">&gt;</span> {
         <span class="ident">Box::new</span>(<span class="self">self</span>.<span class="ident">clone</span>())
+    }
+
+    <span class="kw">fn</span> <span class="ident">publish</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
+        <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock</span>();
+        <span class="ident">state</span>.<span class="ident">publish</span>(<span class="self">self</span>);
     }
 }
 

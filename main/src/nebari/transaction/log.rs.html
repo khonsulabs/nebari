@@ -826,11 +826,11 @@
 
     <span class="doccomment">/// Logs one or more transactions. After this call returns, the transaction</span>
     <span class="doccomment">/// log is guaranteed to be fully written to disk.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">push</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">handles</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">TransactionHandle</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">push</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">handles</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">LogEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">log</span>.<span class="ident">execute</span>(<span class="ident">LogWriter</span> {
             <span class="ident">state</span>: <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">clone</span>(),
             <span class="ident">vault</span>: <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">clone</span>(),
-            <span class="ident">handles</span>,
+            <span class="ident">transactions</span>: <span class="ident">handles</span>,
             <span class="ident">_file</span>: <span class="ident">PhantomData</span>,
         })
     }
@@ -997,7 +997,7 @@
 
 <span class="kw">struct</span> <span class="ident">LogWriter</span><span class="op">&lt;</span><span class="ident">F</span><span class="op">&gt;</span> {
     <span class="ident">state</span>: <span class="ident">State</span>,
-    <span class="ident">handles</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">TransactionHandle</span><span class="op">&gt;</span>,
+    <span class="ident">transactions</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">LogEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">_file</span>: <span class="ident">PhantomData</span><span class="op">&lt;</span><span class="ident">F</span><span class="op">&gt;</span>,
 }
@@ -1007,10 +1007,10 @@
     <span class="kw">fn</span> <span class="ident">execute</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">log</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">F</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">log_position</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock_for_write</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">scratch</span> <span class="op">=</span> [<span class="number">0_u8</span>; <span class="ident">PAGE_SIZE</span>];
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">completed_transactions</span> <span class="op">=</span> <span class="ident">Vec::with_capacity</span>(<span class="self">self</span>.<span class="ident">handles</span>.<span class="ident">len</span>());
-        <span class="kw">for</span> <span class="ident">handle</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">handles</span>.<span class="ident">drain</span>(..) {
-            <span class="ident">completed_transactions</span>.<span class="ident">push</span>(<span class="ident">handle</span>.<span class="ident">transaction</span>.<span class="ident">id</span>);
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">handle</span>.<span class="ident">transaction</span>.<span class="ident">serialize</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">completed_transactions</span> <span class="op">=</span> <span class="ident">Vec::with_capacity</span>(<span class="self">self</span>.<span class="ident">transactions</span>.<span class="ident">len</span>());
+        <span class="kw">for</span> <span class="ident">transaction</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">transactions</span>.<span class="ident">drain</span>(..) {
+            <span class="ident">completed_transactions</span>.<span class="ident">push</span>(<span class="ident">transaction</span>.<span class="ident">id</span>);
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">transaction</span>.<span class="ident">serialize</span>()<span class="question-mark">?</span>;
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">vault</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">vault</span> {
                 <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">vault</span>.<span class="ident">encrypt</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>);
             }
@@ -1347,7 +1347,7 @@
                 }]),
             );
 
-            <span class="ident">transactions</span>.<span class="ident">push</span>(<span class="macro">vec!</span>[<span class="ident">tx</span>]).<span class="ident">unwrap</span>();
+            <span class="ident">transactions</span>.<span class="ident">push</span>(<span class="macro">vec!</span>[<span class="ident">tx</span>.<span class="ident">transaction</span>]).<span class="ident">unwrap</span>();
             <span class="ident">transactions</span>.<span class="ident">close</span>().<span class="ident">unwrap</span>();
         }
 
@@ -1403,7 +1403,7 @@
                 }]),
             );
 
-            <span class="ident">transactions</span>.<span class="ident">push</span>(<span class="macro">vec!</span>[<span class="ident">tx</span>]).<span class="ident">unwrap</span>();
+            <span class="ident">transactions</span>.<span class="ident">push</span>(<span class="macro">vec!</span>[<span class="ident">tx</span>.<span class="ident">transaction</span>]).<span class="ident">unwrap</span>();
         }
 
         <span class="kw">for</span> <span class="ident">id</span> <span class="kw">in</span> <span class="ident">valid_ids</span> {

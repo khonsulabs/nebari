@@ -241,6 +241,17 @@
 <span id="241">241</span>
 <span id="242">242</span>
 <span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">ops::Deref</span>,
@@ -264,7 +275,7 @@
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Clone</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">TransactionManager</span><span class="op">&lt;</span><span class="ident">M</span>: <span class="ident">FileManager</span><span class="op">&gt;</span> {
     <span class="ident">state</span>: <span class="ident">State</span>,
-    <span class="ident">transaction_sender</span>: <span class="ident">flume::Sender</span><span class="op">&lt;</span>(<span class="ident">TransactionHandle</span>, <span class="ident">flume::Sender</span><span class="op">&lt;</span>()<span class="op">&gt;</span>)<span class="op">&gt;</span>,
+    <span class="ident">transaction_sender</span>: <span class="ident">flume::Sender</span><span class="op">&lt;</span>(<span class="ident">TransactionHandle</span>, <span class="ident">flume::Sender</span><span class="op">&lt;</span><span class="ident">TreeLocks</span><span class="op">&gt;</span>)<span class="op">&gt;</span>,
     <span class="ident">context</span>: <span class="ident">Context</span><span class="op">&lt;</span><span class="ident">M</span><span class="op">&gt;</span>,
 }
 
@@ -299,7 +310,7 @@
 
     <span class="doccomment">/// Push `transaction` to the log. Once this function returns, the</span>
     <span class="doccomment">/// transaction log entry has been fully flushed to disk.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">push</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">transaction</span>: <span class="ident">TransactionHandle</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">push</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">transaction</span>: <span class="ident">TransactionHandle</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">TreeLocks</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">completion_sender</span>, <span class="ident">completion_receiver</span>) <span class="op">=</span> <span class="ident">flume::bounded</span>(<span class="number">1</span>);
         <span class="self">self</span>.<span class="ident">transaction_sender</span>
             .<span class="ident">send</span>((<span class="ident">transaction</span>, <span class="ident">completion_sender</span>))
@@ -352,7 +363,7 @@
 <span class="kw">fn</span> <span class="ident">transaction_writer_thread</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
     <span class="ident">state_sender</span>: <span class="ident">flume::Sender</span><span class="op">&lt;</span><span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">State</span>, <span class="ident">Error</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">log_path</span>: <span class="ident">PathBuf</span>,
-    <span class="ident">transactions</span>: <span class="ident">flume::Receiver</span><span class="op">&lt;</span>(<span class="ident">TransactionHandle</span>, <span class="ident">flume::Sender</span><span class="op">&lt;</span>()<span class="op">&gt;</span>)<span class="op">&gt;</span>,
+    <span class="ident">transactions</span>: <span class="ident">flume::Receiver</span><span class="op">&lt;</span>(<span class="ident">TransactionHandle</span>, <span class="ident">flume::Sender</span><span class="op">&lt;</span><span class="ident">TreeLocks</span><span class="op">&gt;</span>)<span class="op">&gt;</span>,
     <span class="ident">context</span>: <span class="ident">Context</span><span class="op">&lt;</span><span class="ident">F::Manager</span><span class="op">&gt;</span>,
 ) {
     <span class="kw">const</span> <span class="ident">BATCH</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">16</span>;
@@ -369,22 +380,33 @@
 
     <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">transaction</span>) <span class="op">=</span> <span class="ident">transactions</span>.<span class="ident">recv</span>() {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction_batch</span> <span class="op">=</span> <span class="ident">Vec::with_capacity</span>(<span class="ident">BATCH</span>);
-        <span class="ident">transaction_batch</span>.<span class="ident">push</span>(<span class="ident">transaction</span>.<span class="number">0</span>);
+        <span class="kw">let</span> <span class="ident">completion_sender</span> <span class="op">=</span> <span class="ident">transaction</span>.<span class="number">1</span>;
+        <span class="kw">let</span> <span class="ident">TransactionHandle</span> {
+            <span class="ident">transaction</span>,
+            <span class="ident">locked_trees</span>,
+        } <span class="op">=</span> <span class="ident">transaction</span>.<span class="number">0</span>;
+        <span class="ident">transaction_batch</span>.<span class="ident">push</span>(<span class="ident">transaction</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">completion_senders</span> <span class="op">=</span> <span class="ident">Vec::with_capacity</span>(<span class="ident">BATCH</span>);
-        <span class="ident">completion_senders</span>.<span class="ident">push</span>(<span class="ident">transaction</span>.<span class="number">1</span>);
+        <span class="ident">completion_senders</span>.<span class="ident">push</span>((<span class="ident">completion_sender</span>, <span class="ident">locked_trees</span>));
         <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">BATCH</span> <span class="op">-</span> <span class="number">1</span> {
             <span class="kw">match</span> <span class="ident">transactions</span>.<span class="ident">try_recv</span>() {
-                <span class="prelude-val">Ok</span>((<span class="ident">transaction</span>, <span class="ident">sender</span>)) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="prelude-val">Ok</span>((
+                    <span class="ident">TransactionHandle</span> {
+                        <span class="ident">transaction</span>,
+                        <span class="ident">locked_trees</span>,
+                    },
+                    <span class="ident">sender</span>,
+                )) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="ident">transaction_batch</span>.<span class="ident">push</span>(<span class="ident">transaction</span>);
-                    <span class="ident">completion_senders</span>.<span class="ident">push</span>(<span class="ident">sender</span>);
+                    <span class="ident">completion_senders</span>.<span class="ident">push</span>((<span class="ident">sender</span>, <span class="ident">locked_trees</span>));
                 }
                 <span class="comment">// At this point either type of error we want to finish writing the transactions we have.</span>
                 <span class="prelude-val">Err</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw">break</span>,
             }
         }
         <span class="ident">log</span>.<span class="ident">push</span>(<span class="ident">transaction_batch</span>).<span class="ident">unwrap</span>();
-        <span class="kw">for</span> <span class="ident">completion_sender</span> <span class="kw">in</span> <span class="ident">completion_senders</span> {
-            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">completion_sender</span>.<span class="ident">send</span>(());
+        <span class="kw">for</span> (<span class="ident">completion_sender</span>, <span class="ident">tree_locks</span>) <span class="kw">in</span> <span class="ident">completion_senders</span> {
+            <span class="ident">drop</span>(<span class="ident">completion_sender</span>.<span class="ident">send</span>(<span class="ident">tree_locks</span>));
         }
     }
 }

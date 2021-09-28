@@ -1,8 +1,9 @@
 use std::{fmt::Display, iter::Take};
 
+#[cfg(feature = "nebari")]
+use _nebari::StdFile;
 use criterion::Criterion;
 use nanorand::{Pcg64, Rng};
-use nebari::StdFile;
 use serde::{Deserialize, Serialize};
 
 use crate::{BenchConfig, SimpleBench};
@@ -62,10 +63,15 @@ impl LogEntry {
     }
 }
 
+#[cfg(feature = "couchdb")]
 mod couchdb;
+#[cfg(feature = "persy")]
 mod persy;
+#[cfg(feature = "nebari")]
 mod roots;
+#[cfg(feature = "sled")]
 mod sled;
+#[cfg(feature = "sqlite")]
 mod sqlite;
 
 #[derive(Clone)]
@@ -282,10 +288,15 @@ pub fn inserts(c: &mut Criterion) {
             entries_per_transaction,
         };
 
+        #[cfg(feature = "nebari")]
         roots::InsertLogs::<StdFile>::run(&mut group, &config);
+        #[cfg(feature = "sled")]
         sled::InsertLogs::run(&mut group, &config);
+        #[cfg(feature = "sqlite")]
         sqlite::InsertLogs::run(&mut group, &config);
+        #[cfg(feature = "persy")]
         persy::InsertLogs::run(&mut group, &config);
+        #[cfg(feature = "couchdb")]
         couchdb::InsertLogs::run(&mut group, &config);
     }
 }
@@ -308,10 +319,15 @@ pub fn gets(c: &mut Criterion) {
     ] {
         let config = ReadConfig::new(sequential_ids, database_size, get_count);
 
+        #[cfg(feature = "nebari")]
         roots::ReadLogs::<StdFile>::run(&mut group, &config);
+        #[cfg(feature = "sled")]
         sled::ReadLogs::run(&mut group, &config);
+        #[cfg(feature = "sqlite")]
         sqlite::ReadLogs::run(&mut group, &config);
+        #[cfg(feature = "persy")]
         persy::ReadLogs::run(&mut group, &config);
+        #[cfg(feature = "couchdb")]
         couchdb::ReadLogs::run(&mut group, &config);
     }
 }

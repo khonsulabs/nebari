@@ -1,4 +1,4 @@
-use nebari::{
+use _nebari::{
     tree::{Modification, Operation, State, TreeFile, UnversionedTreeRoot},
     Buffer, ChunkCache, Context, FileManager, ManagedFile,
 };

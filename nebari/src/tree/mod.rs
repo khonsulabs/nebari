@@ -214,7 +214,6 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
             file.sync_all()?;
         }
 
-        // TODO use a real file id, so that the chunk cache works
         let mut tree = F::open_for_read(file_path, 0)?;
 
         // Scan back block by block until we find a header page.

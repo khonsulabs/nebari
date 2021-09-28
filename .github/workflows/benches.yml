@@ -12,8 +12,6 @@ jobs:
       - name: Run benchmarks
         run: |
           cargo bench
-        env:
-          DBS: roots,sqlite
 
       - name: Deploy Docs
         if: ${{ github.ref == 'refs/heads/main'  }}

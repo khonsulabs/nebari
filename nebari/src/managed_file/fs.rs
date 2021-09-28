@@ -85,7 +85,6 @@ pub struct StdFileManager {
     file_id_counter: Arc<AtomicU64>,
     file_ids: Arc<RwLock<HashMap<PathBuf, u64>>>,
     open_files: Arc<Mutex<HashMap<u64, Option<StdFile>>>>,
-    #[allow(clippy::type_complexity)] // TODO this is temporary and will be refactored
     reader_files: Arc<Mutex<HashMap<u64, VecDeque<StdFile>>>>,
 }
 

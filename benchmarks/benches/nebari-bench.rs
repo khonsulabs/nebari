@@ -11,9 +11,21 @@
 //! To use, invoke through cargo bench:
 //!
 //! ```sh
-//! cargo bench --bench roots-bench
+//! cargo bench --bench nebari-bench
+//! ```
 //!
-//! The environment variable `DBS` can be used to limit benchmarks to a specific database. E.g., `DBS=roots,sqlite cargo bench --bench roots-bench`
+//! Enabling/disabling databases is done via feature flags. Nebari and SQLite
+//! are enabled by default.
+//!
+//! Available databases:
+//! - [`sled`](https://sled.rs/)
+//! - [`persy`](https://persy.rs/)
+//! - [`sqlite`](https://sqlite.org/): Access is done via
+//!   [`rusqlite`](https://github.com/rusqlite/rusqlite).
+//! - [`couchdb`](https://apache.couchdb.org): Requires a running CouchDB server
+//!   on port 5984. Provide an administrator username and password via
+//!   environment variables `COUCHDB_USER` and `COUCHDB_PASSWORD`. The benchmark
+//!   will create and delete a database named `nebari-log-benchmark`.
 
 use std::fmt::Display;
 
@@ -25,10 +37,7 @@ pub trait SimpleBench: Sized {
     const BACKEND: &'static str;
 
     fn should_execute() -> bool {
-        std::env::var("DBS").map_or(true, |var| {
-            var.to_ascii_lowercase()
-                .contains(&Self::BACKEND.to_ascii_lowercase())
-        })
+        true
     }
 
     fn can_execute() -> bool {

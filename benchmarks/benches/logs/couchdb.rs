@@ -44,17 +44,17 @@ impl SimpleBench for InsertLogs {
         let authorization_header = Credentials::new(&username, &password).as_http_header();
 
         // Delete the database
-        ureq::delete("http://localhost:5984/roots-log-benchmark")
+        ureq::delete("http://localhost:5984/nebari-log-benchmark")
             .set("Authorization", &authorization_header)
             .call()?;
 
         // Create the database
-        ureq::put("http://localhost:5984/roots-log-benchmark")
+        ureq::put("http://localhost:5984/nebari-log-benchmark")
             .set("Authorization", &authorization_header)
             .call()?;
 
         // Set the security model to none, allowing the benchmark to execute without security.
-        ureq::put("http://localhost:5984/roots-log-benchmark/_security")
+        ureq::put("http://localhost:5984/nebari-log-benchmark/_security")
             .set("Authorization", &authorization_header)
             .send_json(Value::Object(Map::default()))?;
 
@@ -64,7 +64,7 @@ impl SimpleBench for InsertLogs {
     }
 
     fn execute_measured(&mut self, _config: &Self::Config) -> Result<(), anyhow::Error> {
-        ureq::post("http://localhost:5984/roots-log-benchmark/_bulk_docs").send_json(
+        ureq::post("http://localhost:5984/nebari-log-benchmark/_bulk_docs").send_json(
             serde_json::to_value(&Documents {
                 docs: self.state.next().unwrap(),
             })?,
@@ -116,25 +116,25 @@ impl SimpleBench for ReadLogs {
         let authorization_header = Credentials::new(&username, &password).as_http_header();
 
         // Delete the database
-        ureq::delete("http://localhost:5984/roots-log-benchmark")
+        ureq::delete("http://localhost:5984/nebari-log-benchmark")
             .set("Authorization", &authorization_header)
             .call()
             .unwrap();
 
         // Create the database
-        ureq::put("http://localhost:5984/roots-log-benchmark")
+        ureq::put("http://localhost:5984/nebari-log-benchmark")
             .set("Authorization", &authorization_header)
             .call()
             .unwrap();
 
         // Set the security model to none, allowing the benchmark to execute without security.
-        ureq::put("http://localhost:5984/roots-log-benchmark/_security")
+        ureq::put("http://localhost:5984/nebari-log-benchmark/_security")
             .set("Authorization", &authorization_header)
             .send_json(Value::Object(Map::default()))
             .unwrap();
 
         config.for_each_database_chunk(10_000, |chunk| {
-            ureq::post("http://localhost:5984/roots-log-benchmark/_bulk_docs")
+            ureq::post("http://localhost:5984/nebari-log-benchmark/_bulk_docs")
                 .send_json(
                     serde_json::to_value(&Documents {
                         docs: chunk
@@ -165,7 +165,7 @@ impl SimpleBench for ReadLogs {
     fn execute_measured(&mut self, _config: &Self::Config) -> Result<(), anyhow::Error> {
         let entry = self.state.next().unwrap();
         let result = ureq::get(&format!(
-            "http://localhost:5984/roots-log-benchmark/{}",
+            "http://localhost:5984/nebari-log-benchmark/{}",
             entry.id
         ))
         .call()?

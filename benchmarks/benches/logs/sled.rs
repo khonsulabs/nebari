@@ -1,4 +1,4 @@
-use sled::transaction::ConflictableTransactionError;
+use _sled::{transaction::ConflictableTransactionError, Db};
 use tempfile::TempDir;
 
 use super::{InsertConfig, LogEntry, LogEntryBatchGenerator, ReadConfig, ReadState};
@@ -6,7 +6,7 @@ use crate::{BenchConfig, SimpleBench};
 
 pub struct InsertLogs {
     _tempfile: TempDir,
-    db: sled::Db,
+    db: Db,
     state: LogEntryBatchGenerator,
 }
 
@@ -27,7 +27,7 @@ impl SimpleBench for InsertLogs {
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
         let tempfile = TempDir::new()?;
-        let db = sled::open(tempfile.path())?;
+        let db = _sled::open(tempfile.path())?;
 
         Ok(Self {
             _tempfile: tempfile,
@@ -53,7 +53,7 @@ impl SimpleBench for InsertLogs {
 }
 
 pub struct ReadLogs {
-    db: sled::Db,
+    db: Db,
     state: ReadState,
 }
 
@@ -67,7 +67,7 @@ impl SimpleBench for ReadLogs {
         _group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Self::GroupState {
         let tempfile = TempDir::new().unwrap();
-        let db = sled::Config::default()
+        let db = _sled::Config::default()
             .cache_capacity(2_000 * 160_384)
             .path(tempfile.path())
             .open()
@@ -88,7 +88,7 @@ impl SimpleBench for ReadLogs {
         config: &Self::Config,
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
-        let db = sled::Config::default()
+        let db = _sled::Config::default()
             .cache_capacity(2_000 * 160_384)
             .path(group_state.path())
             .open()

@@ -18,7 +18,7 @@ pub trait ManagedFile: Send + Sync + Seek + Read + Write + Sized + 'static {
     /// The file manager that synchronizes file access across threads.
     type Manager: FileManager<File = Self>;
 
-    /// Returns the unique ID of this file. Only unique within [`Self::Managager`].
+    /// Returns the unique ID of this file. Only unique within [`Self::Manager`].
     fn id(&self) -> u64;
 
     /// Opens a file at `path` with read-only permission.

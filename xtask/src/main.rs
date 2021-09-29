@@ -5,6 +5,7 @@ use khonsu_tools::{
     code_coverage::{self, CodeCoverage},
 };
 use structopt::StructOpt;
+use sysinfo::{RefreshKind, System, SystemExt};
 
 #[derive(StructOpt, Debug)]
 pub enum Commands {
@@ -37,6 +38,23 @@ fn generate_benchmark_overview() -> anyhow::Result<()> {
 
     let overview = overview.replace("TIMESTAMP", &now.to_rfc2822());
     let overview = overview.replace("GITREV", git_rev);
+    let environment = match std::env::var("ENVIRONMENT") {
+        Ok(environment) => environment,
+        Err(_) => {
+            let whoami = read!("whoami")?;
+            let whoami = whoami.trim();
+            let system = System::new_with_specifics(RefreshKind::new().with_cpu().with_memory());
+            format!(
+                "on {}'s machine with {} cores and {} GB of RAM",
+                whoami,
+                system
+                    .physical_core_count()
+                    .expect("unable to count processor cores"),
+                system.total_memory() / 1024 / 1024,
+            )
+        }
+    };
+    let overview = overview.replace("ENVIRONMENT", &environment);
 
     std::fs::write("target/criterion/index.html", &overview)?;
 

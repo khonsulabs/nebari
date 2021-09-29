@@ -20,6 +20,8 @@ jobs:
       - name: Generate overview
         run: |
           cargo xtask generate-benchmark-overview
+        env:
+          ENVIRONMENT: Github Actions
 
       - name: Deploy Docs
         if: ${{ github.ref == 'refs/heads/main'  }}

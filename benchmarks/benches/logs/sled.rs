@@ -1,3 +1,5 @@
+use std::{io::ErrorKind, time::Duration};
+
 use _sled::{transaction::ConflictableTransactionError, Db};
 use tempfile::TempDir;
 
@@ -88,11 +90,23 @@ impl SimpleBench for ReadLogs {
         config: &Self::Config,
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
-        let db = _sled::Config::default()
-            .cache_capacity(2_000 * 160_384)
-            .path(group_state.path())
-            .open()
-            .unwrap();
+        let db = loop {
+            match _sled::Config::default()
+                .cache_capacity(2_000 * 160_384)
+                .path(group_state.path())
+                .open()
+            {
+                Ok(db) => break db,
+                Err(_sled::Error::Io(err)) => {
+                    if err.kind() == ErrorKind::WouldBlock {
+                        // Sled occasionally returns a blocking error, but the only way this could happen is if background threads haven't cleaned up fully.
+                        eprintln!("Sled returned a would block error.");
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                }
+                Err(other) => return Err(anyhow::anyhow!(other)),
+            }
+        };
         let state = config.initialize(config_group_state);
         Ok(Self { db, state })
     }

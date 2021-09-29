@@ -95,6 +95,7 @@ pub trait SimpleBench: Sized {
     fn execute_iterations(group: &mut BenchmarkGroup<WallTime>, config: &Self::Config) {
         let config_group_state = config.initialize_group();
         let group_state = Self::initialize_group(config, &config_group_state);
+        group.throughput(config.throughput());
         group.bench_with_input(
             BenchmarkId::new(Self::BACKEND, config),
             config,
@@ -115,10 +116,12 @@ pub trait BenchConfig: Display {
     fn initialize_group(&self) -> Self::GroupState;
 
     fn initialize(&self, group_state: &Self::GroupState) -> Self::State;
+
+    fn throughput(&self) -> Throughput;
 }
 
 use criterion::{
-    criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId,
+    criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Throughput,
 };
 
 criterion_group!(benches, logs::benches);

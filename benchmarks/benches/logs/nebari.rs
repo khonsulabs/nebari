@@ -1,22 +1,47 @@
-use _nebari::{
-    tree::{Modification, Operation, State, TreeFile, UnversionedTreeRoot},
-    Buffer, ChunkCache, Context, FileManager, ManagedFile,
+use std::marker::PhantomData;
+
+use nebari::{
+    tree::{
+        Modification, Operation, Root, State, TreeFile, UnversionedTreeRoot, VersionedTreeRoot,
+    },
+    Buffer, ChunkCache, Context, FileManager, ManagedFile, StdFile,
 };
 use tempfile::TempDir;
 
 use super::{InsertConfig, LogEntry, LogEntryBatchGenerator, ReadConfig, ReadState};
 use crate::{BenchConfig, SimpleBench};
 
-pub struct InsertLogs<F: ManagedFile> {
+pub struct InsertLogs<B: NebariBenchmark> {
     _tempfile: TempDir,
-    tree: TreeFile<UnversionedTreeRoot, F>,
+    tree: TreeFile<B::Root, StdFile>,
     state: LogEntryBatchGenerator,
+    _bench: PhantomData<B>,
 }
 
-impl<F: ManagedFile> SimpleBench for InsertLogs<F> {
+pub trait NebariBenchmark {
+    const BACKEND: &'static str;
+    type Root: Root;
+}
+
+pub struct VersionedBenchmark;
+pub struct UnversionedBenchmark;
+
+impl NebariBenchmark for VersionedBenchmark {
+    const BACKEND: &'static str = "Nebari+";
+
+    type Root = VersionedTreeRoot;
+}
+
+impl NebariBenchmark for UnversionedBenchmark {
+    const BACKEND: &'static str = "Nebari";
+
+    type Root = UnversionedTreeRoot;
+}
+
+impl<B: NebariBenchmark> SimpleBench for InsertLogs<B> {
     type GroupState = ();
     type Config = InsertConfig;
-    const BACKEND: &'static str = "Roots";
+    const BACKEND: &'static str = B::BACKEND;
 
     fn initialize_group(
         _config: &Self::Config,
@@ -30,9 +55,9 @@ impl<F: ManagedFile> SimpleBench for InsertLogs<F> {
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
         let tempfile = TempDir::new()?;
-        let manager = <F::Manager as Default>::default();
+        let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
         let file = manager.append(tempfile.path().join("tree"))?;
-        let tree = TreeFile::<UnversionedTreeRoot, F>::new(
+        let tree = TreeFile::<B::Root, StdFile>::new(
             file,
             State::initialized(),
             None,
@@ -43,6 +68,7 @@ impl<F: ManagedFile> SimpleBench for InsertLogs<F> {
             _tempfile: tempfile,
             tree,
             state: config.initialize(config_group_state),
+            _bench: PhantomData,
         })
     }
 
@@ -71,24 +97,24 @@ impl<F: ManagedFile> SimpleBench for InsertLogs<F> {
     }
 }
 
-pub struct ReadLogs<F: ManagedFile> {
-    tree: TreeFile<UnversionedTreeRoot, F>,
+pub struct ReadLogs<B: NebariBenchmark> {
+    tree: TreeFile<B::Root, StdFile>,
     state: ReadState,
 }
 
-impl<F: ManagedFile> SimpleBench for ReadLogs<F> {
+impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
     type GroupState = TempDir;
     type Config = ReadConfig;
-    const BACKEND: &'static str = "Roots";
+    const BACKEND: &'static str = B::BACKEND;
 
     fn initialize_group(
         config: &Self::Config,
         _group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Self::GroupState {
         let tempfile = TempDir::new().unwrap();
-        let manager = <F::Manager as Default>::default();
+        let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
         let file = manager.append(tempfile.path().join("tree")).unwrap();
-        let mut tree = TreeFile::<UnversionedTreeRoot, F>::new(
+        let mut tree = TreeFile::<B::Root, StdFile>::new(
             file,
             State::initialized(),
             None,
@@ -120,7 +146,7 @@ impl<F: ManagedFile> SimpleBench for ReadLogs<F> {
         config: &Self::Config,
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
-        let manager = <F::Manager as Default>::default();
+        let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
         let context = Context {
             file_manager: manager,
             vault: None,
@@ -129,9 +155,8 @@ impl<F: ManagedFile> SimpleBench for ReadLogs<F> {
         let file_path = group_state.path().join("tree");
         let file = context.file_manager.append(&file_path).unwrap();
         let state = State::default();
-        TreeFile::<UnversionedTreeRoot, F>::initialize_state(&state, &file_path, &context, None)
-            .unwrap();
-        let tree = TreeFile::<UnversionedTreeRoot, F>::new(
+        TreeFile::<B::Root, StdFile>::initialize_state(&state, &file_path, &context, None).unwrap();
+        let tree = TreeFile::<B::Root, StdFile>::new(
             file,
             state,
             context.vault.clone(),

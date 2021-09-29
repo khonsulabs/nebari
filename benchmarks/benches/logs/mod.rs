@@ -1,12 +1,13 @@
 use std::{fmt::Display, iter::Take};
 
-#[cfg(feature = "nebari")]
-use _nebari::StdFile;
-use criterion::Criterion;
+use criterion::{Criterion, Throughput};
 use nanorand::{Pcg64, Rng};
 use serde::{Deserialize, Serialize};
 
-use crate::{BenchConfig, SimpleBench};
+use crate::{
+    logs::nebari::{UnversionedBenchmark, VersionedBenchmark},
+    BenchConfig, SimpleBench,
+};
 
 #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
@@ -65,10 +66,9 @@ impl LogEntry {
 
 #[cfg(feature = "couchdb")]
 mod couchdb;
+mod nebari;
 #[cfg(feature = "persy")]
 mod persy;
-#[cfg(feature = "nebari")]
-mod roots;
 #[cfg(feature = "sled")]
 mod sled;
 #[cfg(feature = "sqlite")]
@@ -78,7 +78,6 @@ mod sqlite;
 pub struct InsertConfig {
     pub sequential_ids: bool,
     pub entries_per_transaction: usize,
-    pub transactions: usize,
 }
 
 pub struct LogEntryBatchGenerator {
@@ -140,32 +139,26 @@ impl BenchConfig for InsertConfig {
             entries_per_transaction: self.entries_per_transaction,
         }
     }
+
+    fn throughput(&self) -> Throughput {
+        Throughput::Elements(self.entries_per_transaction as u64)
+    }
 }
 
 impl Display for InsertConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}x{}-{}",
-            self.transactions,
-            self.entries_per_transaction,
-            if self.sequential_ids {
-                "sequential"
-            } else {
-                "random"
-            }
-        )
+        write!(f, "{} r/tx", self.entries_per_transaction,)
     }
 }
 
 pub struct ReadConfig {
     sequential_ids: bool,
-    database_size: usize,
+    database_size: Dataset,
     get_count: usize,
 }
 
 impl ReadConfig {
-    fn new(sequential_ids: bool, database_size: usize, get_count: usize) -> Self {
+    fn new(sequential_ids: bool, database_size: Dataset, get_count: usize) -> Self {
         Self {
             sequential_ids,
             database_size,
@@ -187,7 +180,7 @@ impl ReadConfig {
             base: 0,
             sequential_ids: self.sequential_ids,
         }
-        .take(self.database_size)
+        .take(self.database_size.size())
     }
 
     pub fn for_each_database_chunk<F: FnMut(&[LogEntry])>(
@@ -224,8 +217,8 @@ impl BenchConfig for ReadConfig {
     fn initialize_group(&self) -> Self::GroupState {
         // This is wasteful... but it's not being measured by the benchmark.
         let database = self.database_generator();
-        let samples_to_collect = self.database_size / 10;
-        let skip_between = self.database_size / samples_to_collect;
+        let samples_to_collect = self.database_size.size() / 10;
+        let skip_between = self.database_size.size() / samples_to_collect;
         let mut samples = Vec::new();
         for (index, entry) in database.enumerate() {
             if index % skip_between == 0 {
@@ -238,6 +231,10 @@ impl BenchConfig for ReadConfig {
 
     fn initialize(&self, group_state: &Self::GroupState) -> Self::State {
         group_state.clone()
+    }
+
+    fn throughput(&self) -> Throughput {
+        Throughput::Elements(self.get_count as u64)
     }
 }
 
@@ -258,77 +255,110 @@ impl Display for ReadConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}x{} {} elements",
+            "{} row{} / {} {}",
             self.get_count,
+            if self.get_count > 1 { "s" } else { "" },
             self.database_size,
-            if self.sequential_ids {
-                "sequential"
-            } else {
-                "random"
-            }
+            if self.sequential_ids { "seq" } else { "rdm" },
         )
     }
 }
 
 pub fn inserts(c: &mut Criterion) {
-    let mut group = c.benchmark_group("logs-inserts");
-    for (sequential_ids, transactions, entries_per_transaction) in [
-        (false, 1_000, 1),
-        (true, 1_000, 1),
-        (false, 1_000, 100),
-        (true, 1_000, 100),
-        (false, 100, 1_000),
-        (true, 100, 1_000),
-        (false, 10, 10_000),
-        (true, 10, 10_000),
-    ] {
-        let config = InsertConfig {
-            sequential_ids,
-            transactions,
-            entries_per_transaction,
-        };
+    for sequential_ids in [true, false] {
+        let mut group = c.benchmark_group(format!(
+            "logs-insert-{}",
+            if sequential_ids { "seq" } else { "rdm" }
+        ));
 
-        #[cfg(feature = "nebari")]
-        roots::InsertLogs::<StdFile>::run(&mut group, &config);
-        #[cfg(feature = "sled")]
-        sled::InsertLogs::run(&mut group, &config);
-        #[cfg(feature = "sqlite")]
-        sqlite::InsertLogs::run(&mut group, &config);
-        #[cfg(feature = "persy")]
-        persy::InsertLogs::run(&mut group, &config);
-        #[cfg(feature = "couchdb")]
-        couchdb::InsertLogs::run(&mut group, &config);
+        for entries_per_transaction in [1, 100, 1_000, 10_000] {
+            let config = InsertConfig {
+                sequential_ids,
+                entries_per_transaction,
+            };
+
+            nebari::InsertLogs::<VersionedBenchmark>::run(&mut group, &config);
+            nebari::InsertLogs::<UnversionedBenchmark>::run(&mut group, &config);
+            #[cfg(feature = "sled")]
+            sled::InsertLogs::run(&mut group, &config);
+            #[cfg(feature = "sqlite")]
+            sqlite::InsertLogs::run(&mut group, &config);
+            #[cfg(feature = "persy")]
+            persy::InsertLogs::run(&mut group, &config);
+            #[cfg(feature = "couchdb")]
+            couchdb::InsertLogs::run(&mut group, &config);
+        }
+    }
+}
+
+enum GetMode {
+    Single,
+    Multiple,
+}
+
+impl GetMode {
+    fn get_counts(&self, database_size: usize) -> Vec<usize> {
+        match self {
+            GetMode::Single => vec![1],
+            GetMode::Multiple => vec![(database_size as f64).sqrt() as usize, database_size / 16],
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+enum Dataset {
+    Small,
+    Medium,
+    Large,
+}
+
+impl Display for Dataset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Dataset::Small => f.write_str("1k"),
+            Dataset::Medium => f.write_str("10k"),
+            Dataset::Large => f.write_str("1m"),
+        }
+    }
+}
+
+impl Dataset {
+    fn size(&self) -> usize {
+        match self {
+            Dataset::Small => 1024,
+            Dataset::Medium => 10_000,
+            Dataset::Large => 1_000_000,
+        }
     }
 }
 
 pub fn gets(c: &mut Criterion) {
-    let mut group = c.benchmark_group("logs-gets");
-    for (sequential_ids, database_size, get_count) in [
-        (false, 1_000, 1),
-        (true, 1_000, 1),
-        (false, 1_000, 10),
-        (true, 1_000, 10),
-        (false, 100_000, 1),
-        (true, 100_000, 1),
-        (false, 100_000, 100),
-        (true, 100_000, 100),
-        (false, 1_000_000, 1),
-        (true, 1_000_000, 1),
-        (false, 1_000_000, 1_000),
-        (true, 1_000_000, 1_000),
-    ] {
-        let config = ReadConfig::new(sequential_ids, database_size, get_count);
+    // Handle the single gets
+    for mode in [GetMode::Single, GetMode::Multiple] {
+        for sequential_ids in [true, false] {
+            let mut group = c.benchmark_group(format!(
+                "logs-get-{}",
+                if sequential_ids { "seq" } else { "rdm" }
+            ));
 
-        #[cfg(feature = "nebari")]
-        roots::ReadLogs::<StdFile>::run(&mut group, &config);
-        #[cfg(feature = "sled")]
-        sled::ReadLogs::run(&mut group, &config);
-        #[cfg(feature = "sqlite")]
-        sqlite::ReadLogs::run(&mut group, &config);
-        #[cfg(feature = "persy")]
-        persy::ReadLogs::run(&mut group, &config);
-        #[cfg(feature = "couchdb")]
-        couchdb::ReadLogs::run(&mut group, &config);
+            for database_size in [Dataset::Small, Dataset::Medium, Dataset::Large] {
+                for get_count in mode.get_counts(database_size.size()) {
+                    let config = ReadConfig::new(sequential_ids, database_size, get_count);
+
+                    nebari::ReadLogs::<VersionedBenchmark>::run(&mut group, &config);
+                    nebari::ReadLogs::<UnversionedBenchmark>::run(&mut group, &config);
+
+                    #[cfg(feature = "sled")]
+                    sled::ReadLogs::run(&mut group, &config);
+                    #[cfg(feature = "sqlite")]
+                    sqlite::ReadLogs::run(&mut group, &config);
+                    #[cfg(feature = "persy")]
+                    persy::ReadLogs::run(&mut group, &config);
+                    #[cfg(feature = "couchdb")]
+                    couchdb::ReadLogs::run(&mut group, &config);
+                }
+            }
+        }
     }
 }
 

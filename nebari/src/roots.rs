@@ -781,6 +781,9 @@ impl<F: ManagedFile> ThreadPool<F> {
     ) -> Result<Vec<Box<dyn AnyTransactionTree<F>>>, Error> {
         static CPU_COUNT: Lazy<usize> = Lazy::new(num_cpus::get);
 
+        // If we only have one tree, there's no reason to split IO across
+        // threads. If we have multiple trees, we should split even with one
+        // cpu: if one thread blocks, the other can continue executing.
         if trees.len() == 1 {
             trees[0].commit()?;
             Ok(trees)

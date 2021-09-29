@@ -974,6 +974,9 @@
 <span id="974">974</span>
 <span id="975">975</span>
 <span id="976">976</span>
+<span id="977">977</span>
+<span id="978">978</span>
+<span id="979">979</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">any::Any</span>,
@@ -1758,6 +1761,9 @@
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTransactionTree</span><span class="op">&lt;</span><span class="ident">F</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">static</span> <span class="ident">CPU_COUNT</span>: <span class="ident">Lazy</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Lazy::new</span>(<span class="ident">num_cpus::get</span>);
 
+        <span class="comment">// If we only have one tree, there&#39;s no reason to split IO across</span>
+        <span class="comment">// threads. If we have multiple trees, we should split even with one</span>
+        <span class="comment">// cpu: if one thread blocks, the other can continue executing.</span>
         <span class="kw">if</span> <span class="ident">trees</span>.<span class="ident">len</span>() <span class="op">=</span><span class="op">=</span> <span class="number">1</span> {
             <span class="ident">trees</span>[<span class="number">0</span>].<span class="ident">commit</span>()<span class="question-mark">?</span>;
             <span class="prelude-val">Ok</span>(<span class="ident">trees</span>)

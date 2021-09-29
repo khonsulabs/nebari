@@ -11,8 +11,8 @@ jobs:
 
       - name: Run benchmarks
         run: |
-          cargo bench --features sled
-
+          cargo bench
+          
       - name: Deploy Docs
         if: ${{ github.ref == 'refs/heads/main'  }}
         uses: JamesIves/github-pages-deploy-action@releases/v4

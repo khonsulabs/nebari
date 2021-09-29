@@ -1360,7 +1360,6 @@
 <span id="1360">1360</span>
 <span id="1361">1361</span>
 <span id="1362">1362</span>
-<span id="1363">1363</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Append-only B-Tree implementation</span>
 <span class="doccomment">//!</span>
@@ -1578,7 +1577,6 @@
             <span class="ident">file</span>.<span class="ident">sync_all</span>()<span class="question-mark">?</span>;
         }
 
-        <span class="comment">// TODO use a real file id, so that the chunk cache works</span>
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">F::open_for_read</span>(<span class="ident">file_path</span>, <span class="number">0</span>)<span class="question-mark">?</span>;
 
         <span class="comment">// Scan back block by block until we find a header page.</span>

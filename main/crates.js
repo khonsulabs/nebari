@@ -1,1 +1,1 @@
-window.ALL_CRATES = ["nebari","xtask"];
+window.ALL_CRATES = ["benchmarks","nebari","xtask"];

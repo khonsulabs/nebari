@@ -9,10 +9,18 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Build benchmarks
+        run: |
+          cargo bench --no-run --features sqlite
+
       - name: Run benchmarks
         run: |
-          cargo bench
-          
+          cargo bench --features sqlite
+
+      - name: Generate overview
+        run: |
+          cargo xtask generate-benchmark-overview
+
       - name: Deploy Docs
         if: ${{ github.ref == 'refs/heads/main'  }}
         uses: JamesIves/github-pages-deploy-action@releases/v4

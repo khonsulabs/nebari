@@ -24,6 +24,6 @@ rm -rf nebari
 # The directory `generated-report` now contains an HTML report.
 
 # Upload to Backblaze B2 for viewing.
-curl https://github.com/Backblaze/B2_Command_Line_Tool/releases/latest/download/b2-linux -o b2-linux
+wget https://github.com/Backblaze/B2_Command_Line_Tool/releases/latest/download/b2-linux
 chmox +x b2-linux
 B2_APPLICATION_KEY_ID="keyid" B2_APPLICATION_KEY="key" ./b2-linux sync --delete generated-report b2://khonsulabs-storage/nebari-PATH

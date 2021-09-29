@@ -15,7 +15,7 @@ pub struct InsertLogs {
 impl SimpleBench for InsertLogs {
     type GroupState = ();
     type Config = InsertConfig;
-    const BACKEND: &'static str = "CouchDB";
+    const BACKEND: &'static str = "couchdb";
 
     fn initialize_group(
         _config: &Self::Config,
@@ -93,7 +93,7 @@ pub struct ReadLogs {
 impl SimpleBench for ReadLogs {
     type GroupState = ();
     type Config = ReadConfig;
-    const BACKEND: &'static str = "CouchDB";
+    const BACKEND: &'static str = "couchdb";
 
     fn can_execute() -> bool {
         Self::should_execute()

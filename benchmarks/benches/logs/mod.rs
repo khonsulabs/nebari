@@ -255,11 +255,9 @@ impl Display for ReadConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{} row{} / {} {}",
+            "{} row{}",
             self.get_count,
             if self.get_count > 1 { "s" } else { "" },
-            self.database_size,
-            if self.sequential_ids { "seq" } else { "rdm" },
         )
     }
 }
@@ -334,14 +332,14 @@ impl Dataset {
 
 pub fn gets(c: &mut Criterion) {
     // Handle the single gets
-    for mode in [GetMode::Single, GetMode::Multiple] {
+    for database_size in [Dataset::Small, Dataset::Medium, Dataset::Large] {
         for sequential_ids in [true, false] {
             let mut group = c.benchmark_group(format!(
-                "logs-get-{}",
+                "logs-get-{}-{}",
+                database_size,
                 if sequential_ids { "seq" } else { "rdm" }
             ));
-
-            for database_size in [Dataset::Small, Dataset::Medium, Dataset::Large] {
+            for mode in [GetMode::Single, GetMode::Multiple] {
                 for get_count in mode.get_counts(database_size.size()) {
                     let config = ReadConfig::new(sequential_ids, database_size, get_count);
 

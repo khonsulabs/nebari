@@ -13,7 +13,7 @@ pub struct InsertLogs {
 impl SimpleBench for InsertLogs {
     type GroupState = ();
     type Config = InsertConfig;
-    const BACKEND: &'static str = "SQLite";
+    const BACKEND: &'static str = "sqlite";
 
     fn initialize_group(
         _config: &Self::Config,
@@ -77,7 +77,7 @@ pub struct ReadLogs {
 impl SimpleBench for ReadLogs {
     type GroupState = NamedTempFile;
     type Config = ReadConfig;
-    const BACKEND: &'static str = "SQLite";
+    const BACKEND: &'static str = "sqlite";
 
     fn initialize_group(
         config: &Self::Config,

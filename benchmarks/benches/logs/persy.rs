@@ -12,7 +12,7 @@ pub struct InsertLogs {
 impl SimpleBench for InsertLogs {
     type GroupState = ();
     type Config = InsertConfig;
-    const BACKEND: &'static str = "Persy";
+    const BACKEND: &'static str = "persy";
 
     fn initialize_group(
         _config: &Self::Config,
@@ -64,7 +64,7 @@ pub struct ReadLogs {
 impl SimpleBench for ReadLogs {
     type GroupState = ();
     type Config = ReadConfig;
-    const BACKEND: &'static str = "Persy";
+    const BACKEND: &'static str = "persy";
 
     fn initialize_group(
         config: &Self::Config,

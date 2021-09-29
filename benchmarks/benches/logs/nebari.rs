@@ -27,13 +27,13 @@ pub struct VersionedBenchmark;
 pub struct UnversionedBenchmark;
 
 impl NebariBenchmark for VersionedBenchmark {
-    const BACKEND: &'static str = "Nebari+";
+    const BACKEND: &'static str = "nebari-versioned";
 
     type Root = VersionedTreeRoot;
 }
 
 impl NebariBenchmark for UnversionedBenchmark {
-    const BACKEND: &'static str = "Nebari";
+    const BACKEND: &'static str = "nebari";
 
     type Root = UnversionedTreeRoot;
 }

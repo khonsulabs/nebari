@@ -166,6 +166,9 @@
 <span id="166">166</span>
 <span id="167">167</span>
 <span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">any::Any</span>,
@@ -180,7 +183,7 @@
     <span class="ident">roots::AnyTransactionTree</span>,
     <span class="ident">tree</span>::{
         <span class="ident">btree_entry::ScanArgs</span>, <span class="ident">state::AnyTreeState</span>, <span class="ident">KeyEvaluation</span>, <span class="ident">KeyRange</span>, <span class="ident">Modification</span>,
-        <span class="ident">PagedWriter</span>, <span class="ident">State</span>, <span class="ident">TreeFile</span>,
+        <span class="ident">PageHeader</span>, <span class="ident">PagedWriter</span>, <span class="ident">State</span>, <span class="ident">TreeFile</span>,
     },
     <span class="ident">AbortError</span>, <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">Context</span>, <span class="ident">Error</span>, <span class="ident">ManagedFile</span>, <span class="ident">TransactionManager</span>,
     <span class="ident">TransactionTree</span>, <span class="ident">Vault</span>,
@@ -188,6 +191,9 @@
 
 <span class="doccomment">/// A B-Tree root implementation.</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">Root</span>: <span class="ident">Default</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> {
+    <span class="doccomment">/// The unique header byte for this root.</span>
+    <span class="kw">const</span> <span class="ident">HEADER</span>: <span class="ident">PageHeader</span>;
+
     <span class="doccomment">/// Returns a reference to a named tree that contains this type of root.</span>
     <span class="kw">fn</span> <span class="ident">tree</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(<span class="ident">name</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Cow</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span>, <span class="ident">str</span><span class="op">&gt;</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">TreeRoot</span><span class="op">&lt;</span><span class="ident">F</span><span class="op">&gt;</span> {
         <span class="ident">TreeRoot</span>(<span class="ident">name</span>.<span class="ident">into</span>(), <span class="ident">Box::new</span>(<span class="ident">TreeRootInner</span>::<span class="op">&lt;</span><span class="ident">F</span>, <span class="self">Self</span><span class="op">&gt;</span>(<span class="ident">PhantomData</span>)))

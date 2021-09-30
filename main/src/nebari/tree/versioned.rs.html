@@ -419,6 +419,8 @@
 <span id="419">419</span>
 <span id="420">420</span>
 <span id="421">421</span>
+<span id="422">422</span>
+<span id="423">423</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">convert::TryFrom</span>,
@@ -445,7 +447,7 @@
     <span class="ident">tree</span>::{
         <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">ScanArgs</span>},
         <span class="ident">modify::Operation</span>,
-        <span class="ident">Root</span>,
+        <span class="ident">PageHeader</span>, <span class="ident">Root</span>,
     },
     <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">Error</span>, <span class="ident">ManagedFile</span>, <span class="ident">Vault</span>,
 };
@@ -597,6 +599,8 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Root</span> <span class="kw">for</span> <span class="ident">VersionedTreeRoot</span> {
+    <span class="kw">const</span> <span class="ident">HEADER</span>: <span class="ident">PageHeader</span> <span class="op">=</span> <span class="ident">PageHeader::VersionedHeader</span>;
+
     <span class="kw">fn</span> <span class="ident">initialized</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">sequence</span> <span class="op">!</span><span class="op">=</span> <span class="ident">UNINITIALIZED_SEQUENCE</span>
     }

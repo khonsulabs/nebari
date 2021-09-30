@@ -23,7 +23,7 @@ use crate::{
     tree::{
         btree_entry::{KeyOperation, ModificationContext, ScanArgs},
         modify::Operation,
-        Root,
+        PageHeader, Root,
     },
     Buffer, ChunkCache, Error, ManagedFile, Vault,
 };
@@ -175,6 +175,8 @@ impl VersionedTreeRoot {
 }
 
 impl Root for VersionedTreeRoot {
+    const HEADER: PageHeader = PageHeader::VersionedHeader;
+
     fn initialized(&self) -> bool {
         self.sequence != UNINITIALIZED_SEQUENCE
     }

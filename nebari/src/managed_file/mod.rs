@@ -19,12 +19,12 @@ pub trait ManagedFile: Send + Sync + Seek + Read + Write + Sized + 'static {
     type Manager: FileManager<File = Self>;
 
     /// Returns the unique ID of this file. Only unique within [`Self::Manager`].
-    fn id(&self) -> u64;
+    fn id(&self) -> Option<u64>;
 
     /// Opens a file at `path` with read-only permission.
-    fn open_for_read(path: impl AsRef<Path> + Send, id: u64) -> Result<Self, Error>;
+    fn open_for_read(path: impl AsRef<Path> + Send, id: Option<u64>) -> Result<Self, Error>;
     /// Opens or creates a file at `path`, positioning the cursor at the end of the file.
-    fn open_for_append(path: impl AsRef<Path> + Send, id: u64) -> Result<Self, Error>;
+    fn open_for_append(path: impl AsRef<Path> + Send, id: Option<u64>) -> Result<Self, Error>;
 
     /// Safely closes the file after flushing any pending operations to disk.
     fn close(self) -> Result<(), Error>;

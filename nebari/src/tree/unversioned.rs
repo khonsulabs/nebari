@@ -13,7 +13,7 @@ use super::{
     modify::Modification,
     read_chunk,
     serialization::BinarySerialization,
-    KeyEvaluation, KeyRange, PagedWriter, PAGE_SIZE,
+    KeyEvaluation, KeyRange, PagedWriter,
 };
 use crate::{
     chunk_cache::CacheEntry,
@@ -22,7 +22,7 @@ use crate::{
     tree::{
         btree_entry::{KeyOperation, ModificationContext, ScanArgs},
         versioned::ChangeResult,
-        Root,
+        PageHeader, Root,
     },
     Buffer, ChunkCache, Error, ManagedFile, Vault,
 };
@@ -98,6 +98,8 @@ impl UnversionedTreeRoot {
 }
 
 impl Root for UnversionedTreeRoot {
+    const HEADER: PageHeader = PageHeader::UnversionedHeader;
+
     fn initialized(&self) -> bool {
         self.transaction_id.is_some()
     }
@@ -136,7 +138,6 @@ impl Root for UnversionedTreeRoot {
         paged_writer: &mut PagedWriter<'_, F>,
         mut output: &mut Vec<u8>,
     ) -> Result<(), Error> {
-        output.reserve(PAGE_SIZE);
         output.write_u64::<BigEndian>(
             self.transaction_id
                 .expect("serializing an uninitialized root"),

@@ -11,7 +11,7 @@ use crate::{
     roots::AnyTransactionTree,
     tree::{
         btree_entry::ScanArgs, state::AnyTreeState, KeyEvaluation, KeyRange, Modification,
-        PagedWriter, State, TreeFile,
+        PageHeader, PagedWriter, State, TreeFile,
     },
     AbortError, Buffer, ChunkCache, Context, Error, ManagedFile, TransactionManager,
     TransactionTree, Vault,
@@ -19,6 +19,9 @@ use crate::{
 
 /// A B-Tree root implementation.
 pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
+    /// The unique header byte for this root.
+    const HEADER: PageHeader;
+
     /// Returns a reference to a named tree that contains this type of root.
     fn tree<F: ManagedFile>(name: impl Into<Cow<'static, str>>) -> TreeRoot<F> {
         TreeRoot(name.into(), Box::new(TreeRootInner::<F, Self>(PhantomData)))

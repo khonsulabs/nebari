@@ -20,7 +20,7 @@ use crate::Error;
 /// in testing, as this database format is not optimized for memory efficiency.
 #[derive(Debug)]
 pub struct MemoryFile {
-    id: u64,
+    id: Option<u64>,
     buffer: Arc<RwLock<Vec<u8>>>,
     position: usize,
 }
@@ -48,11 +48,14 @@ fn lookup_buffer(
 #[allow(clippy::cast_possible_truncation)]
 impl ManagedFile for MemoryFile {
     type Manager = MemoryFileManager;
-    fn id(&self) -> u64 {
+    fn id(&self) -> Option<u64> {
         self.id
     }
 
-    fn open_for_read(path: impl AsRef<std::path::Path> + Send, id: u64) -> Result<Self, Error> {
+    fn open_for_read(
+        path: impl AsRef<std::path::Path> + Send,
+        id: Option<u64>,
+    ) -> Result<Self, Error> {
         let path = path.as_ref();
         Ok(Self {
             id,
@@ -61,7 +64,10 @@ impl ManagedFile for MemoryFile {
         })
     }
 
-    fn open_for_append(path: impl AsRef<std::path::Path> + Send, id: u64) -> Result<Self, Error> {
+    fn open_for_append(
+        path: impl AsRef<std::path::Path> + Send,
+        id: Option<u64>,
+    ) -> Result<Self, Error> {
         let path = path.as_ref();
         let buffer = lookup_buffer(path, true).unwrap();
         let position = {
@@ -169,7 +175,7 @@ impl MemoryFileManager {
         if let Some(open_file) = open_files.get(&id) {
             Ok(Some(open_file.clone()))
         } else if create_if_needed {
-            let file = Arc::new(Mutex::new(MemoryFile::open_for_append(path, id)?));
+            let file = Arc::new(Mutex::new(MemoryFile::open_for_append(path, Some(id))?));
             open_files.insert(id, file.clone());
             Ok(Some(file))
         } else {

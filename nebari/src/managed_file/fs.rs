@@ -18,16 +18,19 @@ use crate::Error;
 #[derive(Debug)]
 pub struct StdFile {
     file: File,
-    id: u64,
+    id: Option<u64>,
 }
 
 impl ManagedFile for StdFile {
     type Manager = StdFileManager;
-    fn id(&self) -> u64 {
+    fn id(&self) -> Option<u64> {
         self.id
     }
 
-    fn open_for_read(path: impl AsRef<std::path::Path> + Send, id: u64) -> Result<Self, Error> {
+    fn open_for_read(
+        path: impl AsRef<std::path::Path> + Send,
+        id: Option<u64>,
+    ) -> Result<Self, Error> {
         let path = path.as_ref();
         Ok(Self {
             file: File::open(path).unwrap(),
@@ -35,7 +38,10 @@ impl ManagedFile for StdFile {
         })
     }
 
-    fn open_for_append(path: impl AsRef<std::path::Path> + Send, id: u64) -> Result<Self, Error> {
+    fn open_for_append(
+        path: impl AsRef<std::path::Path> + Send,
+        id: Option<u64>,
+    ) -> Result<Self, Error> {
         let path = path.as_ref();
         Ok(Self {
             file: OpenOptions::new()
@@ -121,7 +127,7 @@ impl FileManager for StdFileManager {
                 manager: Some(self.clone()),
             })
         } else {
-            let file = StdFile::open_for_append(path, file_id)?;
+            let file = StdFile::open_for_append(path, Some(file_id))?;
             open_files.insert(file_id, None);
             Ok(OpenStdFile {
                 file: Some(file),
@@ -149,7 +155,7 @@ impl FileManager for StdFileManager {
             }
         }
 
-        let file = StdFile::open_for_read(path, file_id)?;
+        let file = StdFile::open_for_read(path, Some(file_id))?;
         Ok(OpenStdFile {
             file: Some(file),
             manager: Some(self.clone()),
@@ -197,14 +203,15 @@ impl Drop for OpenStdFile {
     fn drop(&mut self) {
         if let Some(manager) = &self.manager {
             let file = self.file.take().unwrap();
-            if self.reader {
-                let mut reader_files = manager.reader_files.lock();
-                let path_files = reader_files.entry(file.id).or_default();
-                path_files.push_front(file);
-            } else {
-                let mut writer_files = manager.open_files.lock();
-                let id = file.id;
-                *writer_files.get_mut(&id).unwrap() = Some(file);
+            if let Some(file_id) = file.id {
+                if self.reader {
+                    let mut reader_files = manager.reader_files.lock();
+                    let path_files = reader_files.entry(file_id).or_default();
+                    path_files.push_front(file);
+                } else {
+                    let mut writer_files = manager.open_files.lock();
+                    *writer_files.get_mut(&file_id).unwrap() = Some(file);
+                }
             }
         }
     }

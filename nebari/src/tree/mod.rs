@@ -89,12 +89,19 @@ const PAGED_WRITER_BATCH_COUNT: usize = 4;
 
 const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_BZIP2);
 
-enum PageHeader {
+/// The header byte for a tree file's page.
+#[derive(Eq, PartialEq)]
+pub enum PageHeader {
     // Using a strange value so that errors in the page writing/reading
     // algorithm are easier to detect.
+    /// A page that continues data from a previous page.
     Continuation = 0xF1,
-    Header = 1,
-    Data = 2,
+    /// A page that contains only chunks, no headers.
+    Data = 1,
+    /// A [`VersionedTreeRoot`] header.
+    VersionedHeader = 2,
+    /// An [`UnversionedTreeRoot`] header.
+    UnversionedHeader = 3,
 }
 
 impl TryFrom<u8> for PageHeader {
@@ -103,8 +110,9 @@ impl TryFrom<u8> for PageHeader {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0xF1 => Ok(Self::Continuation),
-            1 => Ok(Self::Header),
-            2 => Ok(Self::Data),
+            1 => Ok(Self::Data),
+            2 => Ok(Self::VersionedHeader),
+            3 => Ok(Self::UnversionedHeader),
             _ => Err(Error::data_integrity(format!(
                 "invalid block header: {}",
                 value
@@ -214,7 +222,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
             file.sync_all()?;
         }
 
-        let mut tree = F::open_for_read(file_path, 0)?;
+        let mut tree = F::open_for_read(file_path, None)?;
 
         // Scan back block by block until we find a header page.
         let mut block_start = file_length - PAGE_SIZE as u64;
@@ -236,7 +244,13 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
                     block_start -= PAGE_SIZE as u64;
                     continue;
                 }
-                PageHeader::Header => {
+                header => {
+                    if header != Root::HEADER {
+                        return Err(Error::data_integrity(format!(
+                            "Tree {:?} contained another header type",
+                            file_path
+                        )));
+                    }
                     let contents = match read_chunk(
                         block_start + 1,
                         &mut tree,
@@ -514,7 +528,7 @@ fn save_tree<Root: root::Root, F: ManagedFile>(
 
     // Write a new header.
     let mut header_block = PagedWriter::new(
-        PageHeader::Header,
+        Root::HEADER,
         file,
         vault,
         cache,
@@ -819,10 +833,10 @@ impl<'a, F: ManagedFile> PagedWriter<'a, F> {
         self.write(&possibly_encrypted)?;
 
         if cache {
-            if let Some(cache) = self.cache {
-                if let Cow::Owned(vec) = possibly_encrypted {
-                    cache.insert(self.file.id(), position, Buffer::from(vec));
-                }
+            if let (Some(cache), Cow::Owned(vec), Some(file_id)) =
+                (self.cache, possibly_encrypted, self.file.id())
+            {
+                cache.insert(file_id, position, Buffer::from(vec));
             }
         }
 
@@ -887,8 +901,8 @@ fn read_chunk<F: ManagedFile>(
     vault: Option<&dyn Vault>,
     cache: Option<&ChunkCache>,
 ) -> Result<CacheEntry, Error> {
-    if let Some(cache) = cache {
-        if let Some(entry) = cache.get(file.id(), position) {
+    if let (Some(cache), Some(file_id)) = (cache, file.id()) {
+        if let Some(entry) = cache.get(file_id, position) {
             return Ok(entry);
         }
     }
@@ -959,8 +973,8 @@ fn read_chunk<F: ManagedFile>(
         None => scratch,
     });
 
-    if let Some(cache) = cache {
-        cache.insert(file.id(), position, decrypted.clone());
+    if let (Some(cache), Some(file_id)) = (cache, file.id()) {
+        cache.insert(file_id, position, decrypted.clone());
     }
 
     Ok(CacheEntry::Buffer(decrypted))
@@ -983,8 +997,9 @@ mod tests {
     };
 
     fn test_paged_write(offset: usize, length: usize) -> Result<(), Error> {
-        let mut file = MemoryFile::open_for_append(format!("test-{}-{}", offset, length), 0)?;
-        let mut paged_writer = PagedWriter::new(PageHeader::Header, &mut file, None, None, 0);
+        let mut file = MemoryFile::open_for_append(format!("test-{}-{}", offset, length), None)?;
+        let mut paged_writer =
+            PagedWriter::new(PageHeader::VersionedHeader, &mut file, None, None, 0);
 
         let mut scratch = Vec::new();
         scratch.resize(offset.max(length), 0);

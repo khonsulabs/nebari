@@ -1,32 +1,3 @@
-//! This benchmark suite aims at providing a fair set of benchmarks to both help
-//! understand the performance characteristics of this crate, but also to look
-//! for potential areas of improvement. No benchmark suite is without its flaws,
-//! and no benchmark suite can accurately predict performance of a specific
-//! application.
-//!
-//! If performance is critical for your application, you should create
-//! benchmarks that simulate your application's needs rather than trusting
-//! arbitrary benchmarks.
-//!
-//! To use, invoke through cargo bench:
-//!
-//! ```sh
-//! cargo bench --bench nebari-bench
-//! ```
-//!
-//! Enabling/disabling databases is done via feature flags. Nebari and SQLite
-//! are enabled by default.
-//!
-//! Available databases:
-//! - [`sled`](https://sled.rs/)
-//! - [`persy`](https://persy.rs/)
-//! - [`sqlite`](https://sqlite.org/): Access is done via
-//!   [`rusqlite`](https://github.com/rusqlite/rusqlite).
-//! - [`couchdb`](https://apache.couchdb.org): Requires a running CouchDB server
-//!   on port 5984. Provide an administrator username and password via
-//!   environment variables `COUCHDB_USER` and `COUCHDB_PASSWORD`. The benchmark
-//!   will create and delete a database named `nebari-log-benchmark`.
-
 use std::fmt::Display;
 
 mod logs;

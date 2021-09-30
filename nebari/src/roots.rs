@@ -20,7 +20,7 @@ use parking_lot::Mutex;
 
 use crate::{
     context::Context,
-    transaction::{TransactionHandle, TransactionManager},
+    transaction::{LogEntry, TransactionHandle, TransactionManager},
     tree::{
         self, state::AnyTreeState, CompareSwap, KeyEvaluation, KeyOperation, Modification,
         Operation, State, TreeFile, TreeRoot, VersionedTreeRoot,
@@ -211,6 +211,20 @@ pub struct ExecutingTransaction<F: ManagedFile> {
 }
 
 impl<F: ManagedFile> ExecutingTransaction<F> {
+    /// Returns the [`LogEntry`] for this transaction.
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
+    pub fn entry(&self) -> &LogEntry<'static> {
+        self.transaction.as_ref().unwrap()
+    }
+
+    /// Returns a mutable reference to the [`LogEntry`] for this transaction.
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
+    pub fn entry_mut(&mut self) -> &mut LogEntry<'static> {
+        self.transaction.as_mut().unwrap()
+    }
+
     /// Commits the transaction. Once this function has returned, all data
     /// updates are guaranteed to be able to be accessed by all other readers as
     /// well as impervious to sudden failures such as a power outage.

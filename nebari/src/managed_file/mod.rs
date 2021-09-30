@@ -26,6 +26,9 @@ pub trait ManagedFile: Send + Sync + Seek + Read + Write + Sized + 'static {
     /// Opens or creates a file at `path`, positioning the cursor at the end of the file.
     fn open_for_append(path: impl AsRef<Path> + Send, id: Option<u64>) -> Result<Self, Error>;
 
+    /// Returns the length of the file.
+    fn length(&self) -> Result<u64, Error>;
+
     /// Safely closes the file after flushing any pending operations to disk.
     fn close(self) -> Result<(), Error>;
 }

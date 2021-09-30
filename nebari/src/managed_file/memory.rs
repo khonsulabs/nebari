@@ -81,6 +81,11 @@ impl ManagedFile for MemoryFile {
         })
     }
 
+    fn length(&self) -> Result<u64, Error> {
+        let file_buffer = self.buffer.read();
+        Ok(file_buffer.len() as u64)
+    }
+
     fn close(self) -> Result<(), Error> {
         Ok(())
     }

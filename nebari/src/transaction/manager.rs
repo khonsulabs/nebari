@@ -1,5 +1,5 @@
 use std::{
-    ops::Deref,
+    ops::{Deref, DerefMut, RangeBounds},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -65,12 +65,34 @@ impl<M: FileManager> TransactionManager<M> {
             .map_err(|_| Error::Internal(InternalError::TransactionManagerStopped))
     }
 
+    /// Scans the transaction log for entries with ids within `range`. Invokes
+    /// `callback` for each entry found. The scan will always scan forwards
+    /// starting with the lowest ID matching the range.
+    pub fn scan<Callback: FnMut(LogEntry<'static>) -> bool>(
+        &self,
+        range: impl RangeBounds<u64>,
+        callback: Callback,
+    ) -> Result<(), Error> {
+        let mut log = TransactionLog::<M::File>::read(
+            self.state.path(),
+            self.state.clone(),
+            self.context.clone(),
+        )?;
+        log.scan(range, callback)
+    }
+
     /// Returns true if the transaction id was recorded in the transaction log. This method caches
     pub fn transaction_was_successful(&self, transaction_id: u64) -> Result<bool, Error> {
+        self.transaction_position(transaction_id)
+            .map(|position| position.is_some())
+    }
+
+    /// Returns the location on disk of the transaction, if found.
+    pub fn transaction_position(&self, transaction_id: u64) -> Result<Option<u64>, Error> {
         if transaction_id == 0 {
-            Ok(false)
-        } else if let Some(success) = self.state.transaction_id_is_valid(transaction_id) {
-            Ok(success)
+            Ok(None)
+        } else if let Some(position) = self.state.transaction_id_position(transaction_id) {
+            Ok(position)
         } else {
             let mut log = self.context.file_manager.read(self.state.path())?;
             let transaction = log.execute(EntryFetcher {
@@ -78,9 +100,17 @@ impl<M: FileManager> TransactionManager<M> {
                 id: transaction_id,
                 vault: self.context.vault(),
             })?;
-            let found = transaction.is_some();
-            self.state.note_transaction_id_status(transaction_id, found);
-            Ok(found)
+            match transaction {
+                super::ScanResult::Found { position, .. } => {
+                    self.state
+                        .note_transaction_id_status(transaction_id, Some(position));
+                    Ok(Some(position))
+                }
+                super::ScanResult::NotFound { .. } => {
+                    self.state.note_transaction_id_status(transaction_id, None);
+                    Ok(None)
+                }
+            }
         }
     }
 
@@ -250,5 +280,11 @@ impl Deref for TransactionHandle {
 
     fn deref(&self) -> &Self::Target {
         &self.transaction
+    }
+}
+
+impl DerefMut for TransactionHandle {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.transaction
     }
 }

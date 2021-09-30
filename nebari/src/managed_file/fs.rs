@@ -54,6 +54,11 @@ impl ManagedFile for StdFile {
         })
     }
 
+    fn length(&self) -> Result<u64, Error> {
+        let metadata = self.file.metadata()?;
+        Ok(metadata.len())
+    }
+
     fn close(mut self) -> Result<(), Error> {
         // Closing is done by just dropping it
         self.flush().map_err(Error::from)

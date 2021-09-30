@@ -7,7 +7,7 @@ use std::{
     io::{SeekFrom, Write},
     marker::PhantomData,
     mem::size_of,
-    ops::Deref,
+    ops::{Bound, Deref, RangeBounds},
     path::Path,
     sync::Arc,
 };
@@ -31,6 +31,20 @@ pub struct TransactionLog<F: ManagedFile> {
 }
 
 impl<F: ManagedFile> TransactionLog<F> {
+    /// Opens a transaction log for reading.
+    pub fn read(
+        log_path: &Path,
+        state: State,
+        context: Context<F::Manager>,
+    ) -> Result<Self, Error> {
+        let log = context.file_manager.read(log_path)?;
+        Ok(Self {
+            vault: context.vault,
+            state,
+            log,
+        })
+    }
+
     /// Opens a transaction log for writing.
     pub fn open(
         log_path: &Path,
@@ -100,11 +114,28 @@ impl<F: ManagedFile> TransactionLog<F> {
         })
     }
 
+    /// Returns the executed transaction with the id provided. Returns None if not found.
+    pub fn get(&mut self, id: u64) -> Result<Option<LogEntry<'static>>, Error> {
+        match self.log.execute(EntryFetcher {
+            id,
+            state: &self.state,
+            vault: self.vault.as_deref(),
+        })? {
+            ScanResult::Found { entry, .. } => Ok(Some(entry)),
+            ScanResult::NotFound { .. } => Ok(None),
+        }
+    }
+
     /// Logs one or more transactions. After this call returns, the transaction
     /// log is guaranteed to be fully written to disk.
-    pub fn get(&mut self, id: u64) -> Result<Option<LogEntry<'static>>, Error> {
-        self.log.execute(EntryFetcher {
-            id,
+    pub fn scan<Callback: FnMut(LogEntry<'static>) -> bool>(
+        &mut self,
+        ids: impl RangeBounds<u64>,
+        callback: Callback,
+    ) -> Result<(), Error> {
+        self.log.execute(EntryScanner {
+            ids,
+            callback,
             state: &self.state,
             vault: self.vault.as_deref(),
         })
@@ -117,7 +148,7 @@ impl<F: ManagedFile> TransactionLog<F> {
 
     /// Returns the current transaction id.
     pub fn current_transaction_id(&self) -> u64 {
-        self.state.current_transaction_id()
+        self.state.next_transaction_id()
     }
 
     /// Begins a new transaction, exclusively locking `trees`.
@@ -147,16 +178,31 @@ impl<'a, F: ManagedFile> FileOp<F> for StateInitializer<'a, F> {
         scratch_buffer.reserve(PAGE_SIZE);
         scratch_buffer.resize(4, 0);
 
-        let (last_transaction, _) =
-            scan_for_transaction(log, &mut scratch_buffer, block_start, false, self.vault)?;
-
         let last_transaction =
-            last_transaction.expect("No entries found in an existing transaction log");
+            match scan_for_transaction(log, &mut scratch_buffer, block_start, false, self.vault)? {
+                ScanResult::Found { entry, .. } => entry,
+                ScanResult::NotFound { .. } => {
+                    return Err(Error::data_integrity(
+                        "No entries found in an existing transaction log",
+                    ))
+                }
+            };
 
         self.state
             .initialize(last_transaction.id + 1, self.log_length);
         Ok(())
     }
+}
+
+pub enum ScanResult {
+    Found {
+        entry: LogEntry<'static>,
+        position: u64,
+        length: u64,
+    },
+    NotFound {
+        nearest_position: u64,
+    },
 }
 
 fn scan_for_transaction<F: ManagedFile>(
@@ -165,8 +211,17 @@ fn scan_for_transaction<F: ManagedFile>(
     mut block_start: u64,
     scan_forward: bool,
     vault: Option<&dyn Vault>,
-) -> Result<(Option<LogEntry<'static>>, u64), Error> {
+) -> Result<ScanResult, Error> {
+    if scratch_buffer.len() < 4 {
+        scratch_buffer.resize(4, 0);
+    }
+    let file_length = log.length()?;
     Ok(loop {
+        if block_start >= file_length {
+            return Ok(ScanResult::NotFound {
+                nearest_position: block_start,
+            });
+        }
         log.seek(SeekFrom::Start(block_start))?;
         // Read the page header
         log.read_exact(&mut scratch_buffer[0..4])?;
@@ -174,7 +229,9 @@ fn scan_for_transaction<F: ManagedFile>(
         match scratch_buffer[0] {
             0 => {
                 if block_start == 0 {
-                    break (None, 0);
+                    break ScanResult::NotFound {
+                        nearest_position: 0,
+                    };
                 }
                 if scan_forward {
                     block_start += PAGE_SIZE as u64;
@@ -197,10 +254,14 @@ fn scan_for_transaction<F: ManagedFile>(
                     Some(vault) => Cow::Owned(vault.decrypt(payload)),
                     None => Cow::Borrowed(payload),
                 };
-                let transaction = LogEntry::deserialize(&decrypted)
+                let entry = LogEntry::deserialize(&decrypted)
                     .map_err(Error::data_integrity)?
                     .into_owned();
-                break (Some(transaction), block_start);
+                break ScanResult::Found {
+                    entry,
+                    position: block_start,
+                    length: length as u64,
+                };
             }
             _ => unreachable!("corrupt transaction log"),
         }
@@ -214,50 +275,123 @@ pub struct EntryFetcher<'a> {
 }
 
 impl<'a, F: ManagedFile> FileOp<F> for EntryFetcher<'a> {
-    type Output = Result<Option<LogEntry<'static>>, Error>;
-    fn execute(&mut self, log: &mut F) -> Result<Option<LogEntry<'static>>, Error> {
-        let mut upper_id = self.state.current_transaction_id();
-        let mut upper_location = self.state.len();
-        let mut lower_id = None;
-        let mut lower_location = None;
-        let mut scratch_buffer = Vec::new();
-        scratch_buffer.reserve(PAGE_SIZE);
-        scratch_buffer.resize(4, 0);
-        loop {
-            let guessed_location =
-                guess_page(self.id, lower_location, lower_id, upper_location, upper_id);
-            debug_assert_ne!(guessed_location, upper_location);
+    type Output = Result<ScanResult, Error>;
+    fn execute(&mut self, log: &mut F) -> Result<ScanResult, Error> {
+        let mut scratch = Vec::with_capacity(PAGE_SIZE);
+        fetch_entry(log, &mut scratch, self.state, self.id, self.vault)
+    }
+}
 
-            // load the transaction at this location
-            #[allow(clippy::cast_possible_wrap)]
-            let scan_forward = guessed_location >= upper_location;
-            let (transaction, location) = scan_for_transaction(
-                log,
-                &mut scratch_buffer,
-                guessed_location,
-                scan_forward,
-                self.vault,
-            )?;
-            if let Some(transaction) = transaction {
-                self.state.note_transaction_id_status(transaction.id, true);
-                match transaction.id.cmp(&self.id) {
+fn fetch_entry<F: ManagedFile>(
+    log: &mut F,
+    scratch_buffer: &mut Vec<u8>,
+    state: &State,
+    id: u64,
+    vault: Option<&dyn Vault>,
+) -> Result<ScanResult, Error> {
+    if id == 0 {
+        return Ok(ScanResult::NotFound {
+            nearest_position: 0,
+        });
+    }
+
+    let mut upper_id = state.next_transaction_id();
+    let mut upper_location = state.len();
+    let mut lower_id = None;
+    let mut lower_location = None;
+    loop {
+        let guessed_location = guess_page(id, lower_location, lower_id, upper_location, upper_id);
+        debug_assert_ne!(guessed_location, upper_location);
+
+        // load the transaction at this location
+        #[allow(clippy::cast_possible_wrap)]
+        let scan_forward = guessed_location >= upper_location;
+        match scan_for_transaction(log, scratch_buffer, guessed_location, scan_forward, vault)? {
+            ScanResult::Found {
+                entry,
+                position,
+                length,
+            } => {
+                state.note_transaction_id_status(entry.id, Some(position));
+                match entry.id.cmp(&id) {
                     Ordering::Less => {
-                        lower_id = Some(transaction.id);
-                        lower_location = Some(location);
+                        lower_id = Some(entry.id);
+                        lower_location = Some(position);
                     }
                     Ordering::Equal => {
-                        return Ok(Some(transaction));
+                        return Ok(ScanResult::Found {
+                            entry,
+                            position,
+                            length,
+                        });
                     }
                     Ordering::Greater => {
-                        upper_id = transaction.id;
-                        upper_location = location;
+                        upper_id = entry.id;
+                        upper_location = position;
                     }
                 }
-            } else {
-                return Ok(None);
+            }
+            ScanResult::NotFound { nearest_position } => {
+                return Ok(ScanResult::NotFound { nearest_position });
             }
         }
     }
+}
+
+pub struct EntryScanner<'a, R: RangeBounds<u64>, Callback: FnMut(LogEntry<'static>) -> bool> {
+    pub state: &'a State,
+    pub ids: R,
+    pub vault: Option<&'a dyn Vault>,
+    pub callback: Callback,
+}
+
+impl<'a, R: RangeBounds<u64>, F: ManagedFile, Callback: FnMut(LogEntry<'static>) -> bool> FileOp<F>
+    for EntryScanner<'a, R, Callback>
+{
+    type Output = Result<(), Error>;
+    fn execute(&mut self, log: &mut F) -> Self::Output {
+        let mut scratch = Vec::with_capacity(PAGE_SIZE);
+        let (start_location, start_transaction, start_length) = match self.ids.start_bound() {
+            Bound::Included(start_key) | Bound::Excluded(start_key) => {
+                match fetch_entry(log, &mut scratch, self.state, *start_key, self.vault)? {
+                    ScanResult::Found {
+                        entry,
+                        position,
+                        length,
+                    } => (position, Some(entry), length),
+                    ScanResult::NotFound { nearest_position } => (nearest_position, None, 0),
+                }
+            }
+            Bound::Unbounded => (0, None, 0),
+        };
+
+        if let Some(entry) = start_transaction {
+            if self.ids.contains(&entry.id) {
+                (self.callback)(entry);
+            }
+        }
+
+        // Continue scanning from this location forward, starting at the next page boundary after the starting transaction
+        let mut next_scan_start = next_page_start(start_location + start_length);
+        while let ScanResult::Found {
+            entry,
+            position,
+            length,
+        } = scan_for_transaction(log, &mut scratch, next_scan_start, true, self.vault)?
+        {
+            if self.ids.contains(&entry.id) {
+                (self.callback)(entry);
+            }
+            next_scan_start = dbg!(next_page_start(position + length));
+        }
+
+        Ok(())
+    }
+}
+
+const fn next_page_start(position: u64) -> u64 {
+    let page_size = PAGE_SIZE as u64;
+    (position + page_size - 1) / page_size * page_size
 }
 
 struct LogWriter<F> {
@@ -274,7 +408,7 @@ impl<F: ManagedFile> FileOp<F> for LogWriter<F> {
         let mut scratch = [0_u8; PAGE_SIZE];
         let mut completed_transactions = Vec::with_capacity(self.transactions.len());
         for transaction in self.transactions.drain(..) {
-            completed_transactions.push(transaction.id);
+            completed_transactions.push((transaction.id, Some(*log_position)));
             let mut bytes = transaction.serialize()?;
             if let Some(vault) = &self.vault {
                 bytes = vault.encrypt(&bytes);
@@ -342,6 +476,22 @@ impl<'a> LogEntry<'a> {
                 .into_iter()
                 .map(|(key, value)| (Cow::Owned(key.to_vec()), value.into_owned()))
                 .collect(),
+        }
+    }
+
+    pub fn push(&mut self, tree: &[u8], document_id: u64, sequence_id: u64) {
+        let entry = Entry {
+            document_id: U64::from(document_id),
+            sequence_id: U64::from(sequence_id),
+        };
+        if let Some(existing_entry) = self.changes.get_mut(tree) {
+            match existing_entry {
+                Entries::Owned(entries) => entries.push(entry),
+                Entries::Borrowed(_) => unreachable!("Cannot modify a borrowed entry"),
+            }
+        } else {
+            self.changes
+                .insert(Cow::Owned(tree.to_vec()), Entries::Owned(vec![entry]));
         }
     }
 }
@@ -533,9 +683,9 @@ fn guess_page(
     } else {
         // Go backwards from upper
         let avg_per_page = upper_id as f64 / total_pages as f64;
-        let id_delta = upper_id - looking_for;
+        let id_delta = dbg!(upper_id) - dbg!(looking_for);
         let delta_estimated_pages = (id_delta as f64 * avg_per_page).ceil() as u64;
-        let delta_bytes = delta_estimated_pages * PAGE_SIZE as u64;
+        let delta_bytes = dbg!(delta_estimated_pages) * PAGE_SIZE as u64;
         upper_location.saturating_sub(delta_bytes)
     }
 }
@@ -631,6 +781,24 @@ mod tests {
                     }
                 }
             }
+
+            // Test scanning
+            let mut first_ten = Vec::new();
+            transactions
+                .scan(.., |entry| {
+                    first_ten.push(entry);
+                    first_ten.len() < 10
+                })
+                .unwrap();
+            assert_eq!(first_ten.len(), 10);
+            let mut after_first = None;
+            transactions
+                .scan(first_ten[0].id + 1.., |entry| {
+                    after_first = Some(entry);
+                    false
+                })
+                .unwrap();
+            assert_eq!(after_first.as_ref(), first_ten.get(1));
         }
     }
 
@@ -729,6 +897,6 @@ mod tests {
             handle.join().unwrap();
         }
 
-        assert_eq!(manager.current_transaction_id(), 10_001);
+        assert_eq!(manager.next_transaction_id(), 10_001);
     }
 }

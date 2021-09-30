@@ -26,7 +26,7 @@ struct ActiveState {
     current_transaction_id: AtomicU64,
     tree_locks: Mutex<HashMap<Cow<'static, [u8]>, TreeLock>>,
     log_position: Mutex<u64>,
-    known_completed_transactions: Mutex<LruCache<u64, bool>>,
+    known_completed_transactions: Mutex<LruCache<u64, Option<u64>>>,
 }
 
 impl State {
@@ -56,7 +56,14 @@ impl State {
         *state_position = log_position;
     }
 
-    pub fn current_transaction_id(&self) -> u64 {
+    pub fn current_transaction_id(&self) -> Option<u64> {
+        match self.state.current_transaction_id.load(Ordering::SeqCst) {
+            UNINITIALIZED_ID | 1 => None,
+            other => Some(other - 1),
+        }
+    }
+
+    pub fn next_transaction_id(&self) -> u64 {
         self.state.current_transaction_id.load(Ordering::SeqCst)
     }
 
@@ -99,19 +106,24 @@ impl State {
         }
     }
 
-    pub(crate) fn note_transaction_id_status(&self, transaction_id: u64, completed: bool) {
+    pub(crate) fn note_transaction_id_status(&self, transaction_id: u64, position: Option<u64>) {
         let mut cache = self.state.known_completed_transactions.lock();
-        cache.put(transaction_id, completed);
+        cache.put(transaction_id, position);
     }
 
-    pub(crate) fn note_transaction_ids_completed(&self, transaction_ids: &[u64]) {
+    pub(crate) fn note_transaction_ids_completed(&self, transaction_ids: &[(u64, Option<u64>)]) {
         let mut cache = self.state.known_completed_transactions.lock();
-        for id in transaction_ids {
-            cache.put(*id, true);
+        for (id, position) in transaction_ids {
+            cache.put(*id, *position);
         }
     }
 
-    pub(crate) fn transaction_id_is_valid(&self, transaction_id: u64) -> Option<bool> {
+    /// Returns an option representing whether the transaction id has
+    /// information cached about it. The inner option contains the cache
+    /// contents: either a valid position, or None if the transaction ID
+    /// couldn't be found when it was last searched for.
+    #[allow(clippy::option_option)]
+    pub(crate) fn transaction_id_position(&self, transaction_id: u64) -> Option<Option<u64>> {
         let mut cache = self.state.known_completed_transactions.lock();
         cache.get(&transaction_id).copied()
     }

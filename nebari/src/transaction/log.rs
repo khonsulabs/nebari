@@ -298,6 +298,11 @@ fn fetch_entry<F: ManagedFile>(
 
     let mut upper_id = state.next_transaction_id();
     let mut upper_location = state.len();
+    if upper_id <= id {
+        return Ok(ScanResult::NotFound {
+            nearest_position: upper_location,
+        });
+    }
     let mut lower_id = None;
     let mut lower_location = None;
     loop {
@@ -367,8 +372,8 @@ impl<'a, R: RangeBounds<u64>, F: ManagedFile, Callback: FnMut(LogEntry<'static>)
         };
 
         if let Some(entry) = start_transaction {
-            if self.ids.contains(&entry.id) {
-                (self.callback)(entry);
+            if self.ids.contains(&entry.id) && !(self.callback)(entry) {
+                return Ok(());
             }
         }
 
@@ -380,10 +385,10 @@ impl<'a, R: RangeBounds<u64>, F: ManagedFile, Callback: FnMut(LogEntry<'static>)
             length,
         } = scan_for_transaction(log, &mut scratch, next_scan_start, true, self.vault)?
         {
-            if self.ids.contains(&entry.id) {
-                (self.callback)(entry);
+            if self.ids.contains(&entry.id) && !(self.callback)(entry) {
+                break;
             }
-            next_scan_start = dbg!(next_page_start(position + length));
+            next_scan_start = next_page_start(position + length);
         }
 
         Ok(())
@@ -699,9 +704,9 @@ fn guess_page(
     } else {
         // Go backwards from upper
         let avg_per_page = upper_id as f64 / total_pages as f64;
-        let id_delta = dbg!(upper_id) - dbg!(looking_for);
+        let id_delta = upper_id - looking_for;
         let delta_estimated_pages = (id_delta as f64 * avg_per_page).ceil() as u64;
-        let delta_bytes = dbg!(delta_estimated_pages) * PAGE_SIZE as u64;
+        let delta_bytes = delta_estimated_pages * PAGE_SIZE as u64;
         upper_location.saturating_sub(delta_bytes)
     }
 }
@@ -890,6 +895,10 @@ mod tests {
             cache,
         };
         let manager = TransactionManager::spawn(&temp_dir, context).unwrap();
+        assert_eq!(manager.current_transaction_id(), None);
+        assert_eq!(manager.len(), 0);
+        assert!(manager.is_empty());
+
         let mut handles = Vec::new();
         for _ in 0..10 {
             let manager = manager.clone();
@@ -900,7 +909,7 @@ mod tests {
                     tx.transaction.changes.insert(
                         Cow::Borrowed(b"tree1"),
                         Entries::Owned(vec![Entry {
-                            document_id: U64::new(2),
+                            document_id: U64::new(id),
                             sequence_id: U64::new(3),
                         }]),
                     );
@@ -913,6 +922,24 @@ mod tests {
             handle.join().unwrap();
         }
 
+        assert_eq!(manager.current_transaction_id(), Some(10_000));
         assert_eq!(manager.next_transaction_id(), 10_001);
+
+        assert!(manager
+            .transaction_was_successful(manager.current_transaction_id().unwrap())
+            .unwrap());
+
+        assert!(!manager
+            .transaction_was_successful(manager.next_transaction_id())
+            .unwrap());
+
+        let mut ten = None;
+        manager
+            .scan(10.., |entry| {
+                ten = Some(entry);
+                false
+            })
+            .unwrap();
+        assert_eq!(ten.unwrap().id, 10);
     }
 }

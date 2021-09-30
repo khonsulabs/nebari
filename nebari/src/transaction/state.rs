@@ -15,6 +15,7 @@ use super::{LogEntry, TransactionChanges, TransactionHandle, TreeLock, TreeLocks
 
 const UNINITIALIZED_ID: u64 = 0;
 
+/// The transaction log state.
 #[derive(Clone, Debug)]
 pub struct State {
     state: Arc<ActiveState>,
@@ -30,6 +31,7 @@ struct ActiveState {
 }
 
 impl State {
+    /// Creates a new uninitialized state for a transaction log located at `path`.
     pub fn from_path(path: impl AsRef<Path>) -> Self {
         Self {
             state: Arc::new(ActiveState {
@@ -42,7 +44,7 @@ impl State {
         }
     }
 
-    pub fn initialize(&self, current_transaction_id: u64, log_position: u64) {
+    pub(crate) fn initialize(&self, current_transaction_id: u64, log_position: u64) {
         let mut state_position = self.state.log_position.lock();
         self.state
             .current_transaction_id
@@ -56,6 +58,9 @@ impl State {
         *state_position = log_position;
     }
 
+    /// Returns the last successfully written transaction id, or None if no
+    /// transactions have been recorded yet.
+    #[must_use]
     pub fn current_transaction_id(&self) -> Option<u64> {
         match self.state.current_transaction_id.load(Ordering::SeqCst) {
             UNINITIALIZED_ID | 1 => None,
@@ -63,17 +68,29 @@ impl State {
         }
     }
 
+    /// Returns the next transaction id that will be used.
+    #[must_use]
     pub fn next_transaction_id(&self) -> u64 {
         self.state.current_transaction_id.load(Ordering::SeqCst)
     }
 
+    /// Returns the path to the file.
+    #[must_use]
     pub fn path(&self) -> &Path {
         &self.state.path
     }
 
+    /// Returns the current length of the log.
+    #[must_use]
     pub fn len(&self) -> u64 {
         let position = self.state.log_position.lock();
         *position
+    }
+
+    /// Returns if the log is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     fn fetch_tree_locks<'a>(&'a self, trees: &'a [&[u8]], locks: &mut TreeLocks) {
@@ -90,6 +107,8 @@ impl State {
         }
     }
 
+    /// Creates a new transaction, exclusively locking `trees`. Will block the thread until the trees can be locked.
+    #[must_use]
     pub fn new_transaction(&self, trees: &[&[u8]]) -> TransactionHandle {
         let mut locked_trees = Vec::with_capacity(trees.len());
         self.fetch_tree_locks(trees, &mut locked_trees);
@@ -130,7 +149,7 @@ impl State {
 }
 
 impl State {
-    pub fn lock_for_write(&self) -> MutexGuard<'_, u64> {
+    pub(crate) fn lock_for_write(&self) -> MutexGuard<'_, u64> {
         self.state.log_position.lock()
     }
 }

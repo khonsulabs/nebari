@@ -9,10 +9,11 @@ use std::{
 
 use parking_lot::Mutex;
 
-use super::{EntryFetcher, LogEntry, State, TransactionLog};
+use super::{log::EntryFetcher, LogEntry, State, TransactionLog};
 use crate::{
     error::InternalError,
     managed_file::{ManagedFile, OpenableFile},
+    transaction::log::ScanResult,
     Context, Error, FileManager,
 };
 
@@ -101,12 +102,12 @@ impl<M: FileManager> TransactionManager<M> {
                 vault: self.context.vault(),
             })?;
             match transaction {
-                super::ScanResult::Found { position, .. } => {
+                ScanResult::Found { position, .. } => {
                     self.state
                         .note_transaction_id_status(transaction_id, Some(position));
                     Ok(Some(position))
                 }
-                super::ScanResult::NotFound { .. } => {
+                ScanResult::NotFound { .. } => {
                     self.state.note_transaction_id_status(transaction_id, None);
                     Ok(None)
                 }
@@ -186,20 +187,25 @@ fn transaction_writer_thread<F: ManagedFile>(
     }
 }
 
+/// A handle to an executing transaction.
 pub struct TransactionHandle {
-    pub transaction: LogEntry<'static>,
-    pub locked_trees: TreeLocks,
+    /// The transaction being executed.
+    pub(crate) transaction: LogEntry<'static>,
+    /// The trees locked by this transaction.
+    pub(crate) locked_trees: TreeLocks,
 }
 
+/// A collection of handles that keep trees locked.
 pub type TreeLocks = Vec<TreeLockHandle>;
 
+/// An acquirable lock for a tree.
 #[derive(Debug)]
 pub struct TreeLock {
     data: Arc<TreeLockData>,
 }
 
 impl TreeLock {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             data: Arc::new(TreeLockData {
                 locked: AtomicBool::new(false),
@@ -208,7 +214,7 @@ impl TreeLock {
         }
     }
 
-    pub fn lock(&self) -> TreeLockHandle {
+    pub(crate) fn lock(&self) -> TreeLockHandle {
         // Loop until we acquire a lock
         loop {
             // Try to acquire the lock without any possibility of blocking
@@ -260,6 +266,7 @@ struct TreeLockData {
     blocked: Mutex<Vec<flume::Sender<()>>>,
 }
 
+/// A handle to a lock. Upon dropping, the lock will be released.
 #[derive(Debug)]
 pub struct TreeLockHandle(TreeLock);
 

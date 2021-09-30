@@ -56,8 +56,9 @@ use crate::{
     chunk_cache::CacheEntry,
     managed_file::{FileManager, FileOp, ManagedFile, OpenableFile},
     roots::AbortError,
+    transaction::TransactionManager,
     tree::{btree_entry::ScanArgs, state::ActiveState},
-    Buffer, ChunkCache, Context, Error, TransactionManager, Vault,
+    Buffer, ChunkCache, Context, Error, Vault,
 };
 
 mod btree_entry;

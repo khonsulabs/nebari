@@ -268,7 +268,8 @@ fn scan_for_transaction<F: ManagedFile>(
     })
 }
 
-pub struct EntryFetcher<'a> {
+#[allow(clippy::redundant_pub_crate)]
+pub(crate) struct EntryFetcher<'a> {
     pub state: &'a State,
     pub id: u64,
     pub vault: Option<&'a dyn Vault>,
@@ -461,13 +462,18 @@ impl<F: ManagedFile> FileOp<F> for LogWriter<F> {
     }
 }
 
+/// An entry in a transaction log.
 #[derive(Eq, PartialEq, Debug)]
 pub struct LogEntry<'a> {
+    /// The unique id of this entry.
     pub id: u64,
+    /// Information about what has been changed.
     pub changes: TransactionChanges<'a>,
 }
 
 impl<'a> LogEntry<'a> {
+    /// Convert this entry into a `'static` lifetime.
+    #[must_use]
     pub fn into_owned(self) -> LogEntry<'static> {
         LogEntry {
             id: self.id,
@@ -479,6 +485,7 @@ impl<'a> LogEntry<'a> {
         }
     }
 
+    /// Append information about a changed document in a tree.
     pub fn push(&mut self, tree: &[u8], document_id: u64, sequence_id: u64) {
         let entry = Entry {
             document_id: U64::from(document_id),
@@ -496,10 +503,11 @@ impl<'a> LogEntry<'a> {
     }
 }
 
+/// A map of entries by their tree names.
 pub type TransactionChanges<'a> = BTreeMap<Cow<'a, [u8]>, Entries<'a>>;
 
 impl<'a> LogEntry<'a> {
-    pub fn serialize(&self) -> Result<Vec<u8>, Error> {
+    pub(crate) fn serialize(&self) -> Result<Vec<u8>, Error> {
         let mut buffer = Vec::new();
         // Transaction ID
         buffer.write_u64::<BigEndian>(self.id)?;
@@ -519,7 +527,7 @@ impl<'a> LogEntry<'a> {
         Ok(buffer)
     }
 
-    pub fn deserialize(mut buffer: &'a [u8]) -> Result<Self, Error> {
+    pub(crate) fn deserialize(mut buffer: &'a [u8]) -> Result<Self, Error> {
         let id = buffer.read_u64::<BigEndian>()?;
         let number_of_trees = buffer.read_u16::<BigEndian>()?;
         let mut changes = BTreeMap::new();
@@ -551,13 +559,18 @@ impl<'a> LogEntry<'a> {
     }
 }
 
+/// A collection of entries that might be borrowed.
 #[derive(Debug)]
 pub enum Entries<'a> {
+    /// An owned collection of entries.
     Owned(Vec<Entry>),
+    /// A borrowed collection of entries.
     Borrowed(LayoutVerified<&'a [u8], [Entry]>),
 }
 
 impl<'a> Entries<'a> {
+    /// Converts the entries into a `'static` lifetime.
+    #[must_use]
     pub fn into_owned(self) -> Entries<'static> {
         match self {
             Entries::Owned(entries) => Entries::Owned(entries),
@@ -594,10 +607,13 @@ impl<'a> PartialEq for Entries<'a> {
     }
 }
 
+/// A single record of a change.
 #[derive(Debug, Clone, Eq, PartialEq, FromBytes, AsBytes, Unaligned)]
 #[repr(C)]
 pub struct Entry {
+    /// The document id that was changed.
     pub document_id: U64<BigEndian>,
+    /// The sequence id that was changed.
     pub sequence_id: U64<BigEndian>,
 }
 

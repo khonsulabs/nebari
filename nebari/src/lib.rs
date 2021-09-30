@@ -21,7 +21,7 @@
 mod managed_file;
 mod error;
 mod roots;
-mod transaction;
+pub mod transaction;
 pub mod tree;
 mod vault;
 
@@ -40,6 +40,5 @@ pub use self::{
     roots::{
         AbortError, CompareAndSwapError, Config, ExecutingTransaction, Roots, TransactionTree, Tree,
     },
-    transaction::{TransactionLog, TransactionManager},
     vault::Vault,
 };

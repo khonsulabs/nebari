@@ -1360,6 +1360,14 @@
 <span id="1360">1360</span>
 <span id="1361">1361</span>
 <span id="1362">1362</span>
+<span id="1363">1363</span>
+<span id="1364">1364</span>
+<span id="1365">1365</span>
+<span id="1366">1366</span>
+<span id="1367">1367</span>
+<span id="1368">1368</span>
+<span id="1369">1369</span>
+<span id="1370">1370</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Append-only B-Tree implementation</span>
 <span class="doccomment">//!</span>
@@ -2261,7 +2269,6 @@
     <span class="ident">file</span>.<span class="ident">seek</span>(<span class="ident">SeekFrom::Start</span>(<span class="ident">position</span>))<span class="question-mark">?</span>;
     <span class="ident">file</span>.<span class="ident">read_exact</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">header</span>)<span class="question-mark">?</span>;
     <span class="kw">let</span> <span class="ident">length</span> <span class="op">=</span> <span class="ident">BigEndian::read_u32</span>(<span class="kw-2">&amp;</span><span class="ident">header</span>[<span class="number">0</span>..<span class="number">4</span>]) <span class="kw">as</span> <span class="ident">usize</span>;
-    <span class="kw">let</span> <span class="ident">crc</span> <span class="op">=</span> <span class="ident">BigEndian::read_u32</span>(<span class="kw-2">&amp;</span><span class="ident">header</span>[<span class="number">4</span>..<span class="number">8</span>]);
 
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">data_start</span> <span class="op">=</span> <span class="ident">position</span> <span class="op">+</span> <span class="number">8</span>;
     <span class="comment">// If the data starts on a page boundary, there will have been a page</span>
@@ -2301,12 +2308,21 @@
     <span class="comment">// the length is incorrect is a sign that the byte removal loop is bad.</span>
     <span class="macro">debug_assert_eq!</span>(<span class="ident">scratch</span>.<span class="ident">len</span>(), <span class="ident">length</span>);
 
-    <span class="kw">let</span> <span class="ident">computed_crc</span> <span class="op">=</span> <span class="ident">CRC32</span>.<span class="ident">checksum</span>(<span class="kw-2">&amp;</span><span class="ident">scratch</span>);
-    <span class="kw">if</span> <span class="ident">crc</span> <span class="op">!</span><span class="op">=</span> <span class="ident">computed_crc</span> {
-        <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::data_integrity</span>(<span class="macro">format!</span>(
-            <span class="string">&quot;crc32 failure on chunk at position {}&quot;</span>,
-            <span class="ident">position</span>
-        )));
+    <span class="doccomment">/// CRC checks in append-only formats are mostly about catching drifting</span>
+    <span class="doccomment">/// bits, caused either by the hard drive itself having an error or</span>
+    <span class="doccomment">/// something as rare as a cosmic ray. Rather than take the performance</span>
+    <span class="doccomment">/// penalty on every read, our plan is to have a validation process that can</span>
+    <span class="doccomment">/// be invoked occasionally: https://github.com/khonsulabs/nebari/issues/9</span>
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">debug_asertions</span>)]</span>
+    {
+        <span class="kw">let</span> <span class="ident">crc</span> <span class="op">=</span> <span class="ident">BigEndian::read_u32</span>(<span class="kw-2">&amp;</span><span class="ident">header</span>[<span class="number">4</span>..<span class="number">8</span>]);
+        <span class="kw">let</span> <span class="ident">computed_crc</span> <span class="op">=</span> <span class="ident">CRC32</span>.<span class="ident">checksum</span>(<span class="kw-2">&amp;</span><span class="ident">scratch</span>);
+        <span class="kw">if</span> <span class="ident">crc</span> <span class="op">!</span><span class="op">=</span> <span class="ident">computed_crc</span> {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::data_integrity</span>(<span class="macro">format!</span>(
+                <span class="string">&quot;crc32 failure on chunk at position {}&quot;</span>,
+                <span class="ident">position</span>
+            )));
+        }
     }
 
     <span class="kw">let</span> <span class="ident">decrypted</span> <span class="op">=</span> <span class="ident">Buffer::from</span>(<span class="kw">match</span> <span class="ident">vault</span> {

@@ -174,13 +174,18 @@
 <span id="174">174</span>
 <span id="175">175</span>
 <span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">borrow::Cow</span>,
     <span class="ident">cmp::Ordering</span>,
     <span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Write</span>},
     <span class="ident">io</span>::{<span class="self">self</span>, <span class="ident">ErrorKind</span>, <span class="ident">Read</span>},
-    <span class="ident">ops::Deref</span>,
+    <span class="ident">ops</span>::{<span class="ident">Bound</span>, <span class="ident">Deref</span>},
     <span class="ident">sync::Arc</span>,
 };
 
@@ -349,7 +354,12 @@
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="ident">Domain</span> <span class="kw">for</span> <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
-    <span class="kw">const</span> <span class="ident">DISCRETE</span>: <span class="ident">bool</span> <span class="op">=</span> <span class="bool-val">true</span>;
+    <span class="kw">const</span> <span class="ident">DISCRETE</span>: <span class="ident">bool</span> <span class="op">=</span> <span class="bool-val">false</span>;
+
+    <span class="attribute">#[<span class="ident">must_use</span>]</span>
+    <span class="kw">fn</span> <span class="ident">minimum</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Bound</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+        <span class="ident">Bound::Included</span>(<span class="ident">Buffer::from</span>(<span class="string">b&quot;&quot;</span>))
+    }
 }
 </pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="nebari" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>

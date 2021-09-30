@@ -42,7 +42,6 @@
 <span id="42">42</span>
 <span id="43">43</span>
 <span id="44">44</span>
-<span id="45">45</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Transactional append-only B-Tree storage for `BonsaiDb`.</span>
 
@@ -67,7 +66,7 @@
 <span class="kw">mod</span> <span class="ident">managed_file</span>;
 <span class="kw">mod</span> <span class="ident">error</span>;
 <span class="kw">mod</span> <span class="ident">roots</span>;
-<span class="kw">mod</span> <span class="ident">transaction</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">transaction</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">tree</span>;
 <span class="kw">mod</span> <span class="ident">vault</span>;
 
@@ -86,7 +85,6 @@
     <span class="ident">roots</span>::{
         <span class="ident">AbortError</span>, <span class="ident">CompareAndSwapError</span>, <span class="ident">Config</span>, <span class="ident">ExecutingTransaction</span>, <span class="ident">Roots</span>, <span class="ident">TransactionTree</span>, <span class="ident">Tree</span>,
     },
-    <span class="ident">transaction</span>::{<span class="ident">TransactionLog</span>, <span class="ident">TransactionManager</span>},
     <span class="ident">vault::Vault</span>,
 };
 </pre></div>

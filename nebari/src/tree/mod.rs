@@ -898,7 +898,6 @@ fn read_chunk<F: ManagedFile>(
     file.seek(SeekFrom::Start(position))?;
     file.read_exact(&mut header)?;
     let length = BigEndian::read_u32(&header[0..4]) as usize;
-    let crc = BigEndian::read_u32(&header[4..8]);
 
     let mut data_start = position + 8;
     // If the data starts on a page boundary, there will have been a page
@@ -938,12 +937,21 @@ fn read_chunk<F: ManagedFile>(
     // the length is incorrect is a sign that the byte removal loop is bad.
     debug_assert_eq!(scratch.len(), length);
 
-    let computed_crc = CRC32.checksum(&scratch);
-    if crc != computed_crc {
-        return Err(Error::data_integrity(format!(
-            "crc32 failure on chunk at position {}",
-            position
-        )));
+    /// CRC checks in append-only formats are mostly about catching drifting
+    /// bits, caused either by the hard drive itself having an error or
+    /// something as rare as a cosmic ray. Rather than take the performance
+    /// penalty on every read, our plan is to have a validation process that can
+    /// be invoked occasionally: https://github.com/khonsulabs/nebari/issues/9
+    #[cfg(debug_asertions)]
+    {
+        let crc = BigEndian::read_u32(&header[4..8]);
+        let computed_crc = CRC32.checksum(&scratch);
+        if crc != computed_crc {
+            return Err(Error::data_integrity(format!(
+                "crc32 failure on chunk at position {}",
+                position
+            )));
+        }
     }
 
     let decrypted = Buffer::from(match vault {

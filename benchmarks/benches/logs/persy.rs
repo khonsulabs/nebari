@@ -1,7 +1,10 @@
 use persy::{ByteVec, Config, Persy, ValueMode};
 
 use super::{InsertConfig, LogEntry, LogEntryBatchGenerator, ReadConfig, ReadState};
-use crate::{BenchConfig, SimpleBench};
+use crate::{
+    logs::{ScanConfig, ScanState},
+    BenchConfig, SimpleBench,
+};
 
 pub struct InsertLogs {
     // _tempfile: NamedTempFile,
@@ -28,7 +31,7 @@ impl SimpleBench for InsertLogs {
         let _ = std::fs::remove_file("/tmp/persy");
         let db = Persy::open_or_create_with("/tmp/persy", Config::default(), |persy| {
             let mut tx = persy.begin()?;
-            tx.create_index::<u64, ByteVec>("index", ValueMode::Replace)?;
+            tx.create_index::<i64, ByteVec>("index", ValueMode::Replace)?;
             let prepared = tx.prepare()?;
             prepared.commit()?;
             Ok(())
@@ -73,7 +76,7 @@ impl SimpleBench for ReadLogs {
         let _ = std::fs::remove_file("/tmp/persy");
         let db = Persy::open_or_create_with("/tmp/persy", Config::default(), |persy| {
             let mut tx = persy.begin()?;
-            tx.create_index::<u64, ByteVec>("index", ValueMode::Replace)?;
+            tx.create_index::<i64, ByteVec>("index", ValueMode::Replace)?;
             let prepared = tx.prepare()?;
             prepared.commit()?;
             Ok(())
@@ -125,6 +128,63 @@ impl SimpleBench for ReadLogs {
                     .expect("value not found");
             }
         }
+        Ok(())
+    }
+}
+
+pub struct ScanLogs {
+    db: Persy,
+    state: ScanState,
+}
+
+impl SimpleBench for ScanLogs {
+    type GroupState = ();
+    type Config = ScanConfig;
+    const BACKEND: &'static str = "persy";
+
+    fn initialize_group(
+        config: &Self::Config,
+        _group_state: &<Self::Config as BenchConfig>::GroupState,
+    ) -> Self::GroupState {
+        let _ = std::fs::remove_file("/tmp/persy");
+        let db = Persy::open_or_create_with("/tmp/persy", Config::default(), |persy| {
+            let mut tx = persy.begin()?;
+            tx.create_index::<i64, ByteVec>("index", ValueMode::Replace)?;
+            let prepared = tx.prepare()?;
+            prepared.commit()?;
+            Ok(())
+        })
+        .unwrap();
+
+        config.for_each_database_chunk(100_000, |chunk| {
+            let mut tx = db.begin().unwrap();
+            for entry in chunk {
+                tx.put(
+                    "index",
+                    entry.id,
+                    ByteVec::new(pot::to_vec(&entry).unwrap()),
+                )
+                .unwrap();
+            }
+            let prepared = tx.prepare().unwrap();
+            prepared.commit().unwrap();
+        });
+    }
+
+    fn initialize(
+        _group_state: &Self::GroupState,
+        config: &Self::Config,
+        config_group_state: &<Self::Config as BenchConfig>::GroupState,
+    ) -> Result<Self, anyhow::Error> {
+        let db = Persy::open("/tmp/persy", Config::default()).unwrap();
+        let state = config.initialize(config_group_state);
+        Ok(Self { db, state })
+    }
+
+    fn execute_measured(&mut self, config: &Self::Config) -> Result<(), anyhow::Error> {
+        let range = self.state.next().unwrap();
+        let results = self.db.range::<i64, ByteVec, _>("index", range)?;
+        assert_eq!(results.count(), config.element_count);
         Ok(())
     }
 }

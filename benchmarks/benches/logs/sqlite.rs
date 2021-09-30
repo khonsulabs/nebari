@@ -2,7 +2,10 @@ use rusqlite::{params, Connection};
 use tempfile::NamedTempFile;
 
 use super::{InsertConfig, LogEntry, LogEntryBatchGenerator, ReadConfig, ReadState};
-use crate::{BenchConfig, SimpleBench};
+use crate::{
+    logs::{ScanConfig, ScanState},
+    BenchConfig, SimpleBench,
+};
 
 pub struct InsertLogs {
     sqlite: Connection,
@@ -126,10 +129,10 @@ impl SimpleBench for ReadLogs {
             let entry = self.state.next().unwrap();
             let fetched = self.sqlite.query_row(
                 "SELECT id, timestamp, message FROM logs WHERE id = ?",
-                [entry.id as i64],
+                [entry.id],
                 |row| {
                     Ok(LogEntry {
-                        id: row.get::<_, i64>(0)? as u64,
+                        id: row.get(0)?,
                         timestamp: row.get::<_, i64>(1)? as u64,
                         message: row.get(2)?,
                     })
@@ -147,13 +150,82 @@ impl SimpleBench for ReadLogs {
             ))?;
             let rows = prepared.query([])?.mapped(|row| {
                 Ok(LogEntry {
-                    id: row.get::<_, i64>(0)? as u64,
+                    id: row.get(0)?,
                     timestamp: row.get::<_, i64>(1)? as u64,
                     message: row.get(2)?,
                 })
             });
             assert_eq!(rows.count(), config.get_count);
         }
+        Ok(())
+    }
+}
+
+pub struct ScanLogs {
+    sqlite: Connection,
+    state: ScanState,
+}
+
+impl SimpleBench for ScanLogs {
+    type GroupState = NamedTempFile;
+    type Config = ScanConfig;
+    const BACKEND: &'static str = "sqlite";
+
+    fn initialize_group(
+        config: &Self::Config,
+        _group_state: &<Self::Config as BenchConfig>::GroupState,
+    ) -> Self::GroupState {
+        let tempfile = NamedTempFile::new().unwrap();
+        let sqlite = Connection::open(tempfile.path()).unwrap();
+        sqlite
+            .execute(
+                "create table logs (id integer primary key, timestamp integer, message text)",
+                [],
+            )
+            .unwrap();
+
+        let mut prepared = sqlite
+            .prepare("insert into logs (id, timestamp, message) values (?, ?, ?)")
+            .unwrap();
+        config.for_each_database_chunk(1_000_000, |chunk| {
+            sqlite.execute("begin transaction;", []).unwrap();
+            for log in chunk {
+                // sqlite doesn't support u64, so we're going to cast to i64
+                prepared
+                    .execute(params![log.id as i64, log.timestamp as i64, log.message])
+                    .unwrap();
+            }
+
+            sqlite.execute("commit transaction;", []).unwrap();
+        });
+        tempfile
+    }
+
+    fn initialize(
+        group_state: &Self::GroupState,
+        config: &Self::Config,
+        config_group_state: &<Self::Config as BenchConfig>::GroupState,
+    ) -> Result<Self, anyhow::Error> {
+        let sqlite = Connection::open(group_state.path())?;
+        Ok(Self {
+            sqlite,
+            state: config.initialize(config_group_state),
+        })
+    }
+
+    fn execute_measured(&mut self, config: &Self::Config) -> Result<(), anyhow::Error> {
+        let range = self.state.next().unwrap();
+        let mut prepared = self
+            .sqlite
+            .prepare("SELECT id, timestamp, message FROM logs WHERE id >= ? AND id <= ?")?;
+        let rows = prepared.query([range.start(), range.end()])?.mapped(|row| {
+            Ok(LogEntry {
+                id: row.get(0)?,
+                timestamp: row.get::<_, i64>(1)? as u64,
+                message: row.get(2)?,
+            })
+        });
+        assert_eq!(rows.count(), config.element_count);
         Ok(())
     }
 }

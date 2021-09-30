@@ -2,152 +2,218 @@
 <html lang="en">
 
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Nebari Benchmarks Overview</title>
-    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/minstyle.io@1.1.0/css/minstyle.io.css">
-    <script type="text/javascript"
-        src="https://cdn.jsdelivr.net/npm/dark-mode-switcher@0.0.1/dist/dark.min.js"></script>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Nebari Benchmarks Overview</title>
+        <link rel="stylesheet" type="text/css"
+                href="https://cdn.jsdelivr.net/npm/minstyle.io@1.1.0/css/minstyle.io.css">
+        <script type="text/javascript"
+                src="https://cdn.jsdelivr.net/npm/dark-mode-switcher@0.0.1/dist/dark.min.js"></script>
 
-    <style>
-        img {
-            background-color: #BBB;
-        }
+        <style>
+                img {
+                        background-color: #BBB;
+                }
 
-        h3,
-        h4 {
-            text-align: center;
-        }
+                h3,
+                h4 {
+                        text-align: center;
+                }
 
-        h5 {
-            padding-top: 1em;
-        }
-    </style>
+                h5 {
+                        padding-top: 1em;
+                }
+        </style>
 </head>
 
 <body>
-    <div class="container">
-        <h1>Nebari Benchmarks Overview</h1>
-        <p>These benchmarks were built from git revision <a
-                href="https://github.com/khonsulabs/nebari/tree/GITREV">GITREV</a>. They were executed at TIMESTAMP
-            ENVIRONMENT. The full <a href="https://github.com/bheisler/criterion.rs">Criterion</a> report is <a
-                href="./report/index.html">available
-                here.</a>
-        </p>
-        <div class="ms-alert ms-warning">
-            <p>Do not use these measurements as a predicator for your application's performance. Every application
-                performs differently. These micro-benchmarks are not meant to be used for anything beyond answering
-                two questions:</p>
+        <div class="container">
+                <h1>Nebari Benchmarks Overview</h1>
+                <p>These benchmarks were built from git revision <a
+                                href="https://github.com/khonsulabs/nebari/tree/GITREV">GITREV</a>. They were executed
+                        at TIMESTAMP
+                        ENVIRONMENT. The full <a href="https://github.com/bheisler/criterion.rs">Criterion</a> report is
+                        <a href="./report/index.html">available
+                                here.</a>
+                </p>
+                <div class="ms-alert ms-warning">
+                        <p>Do not use these measurements as a predicator for your application's performance. Every
+                                application
+                                performs differently. These micro-benchmarks are not meant to be used for anything
+                                beyond answering
+                                two questions:</p>
 
-            <ol>
-                <li>What is "reasonable" performance for a given benchmark?</li>
-                <li>Are there any areas that Nebari's performance is sub-par that can be improved?</li>
-            </ol>
+                        <ol>
+                                <li>What is "reasonable" performance for a given benchmark?</li>
+                                <li>Are there any areas that Nebari's performance is sub-par that can be improved?</li>
+                        </ol>
 
-            <p>By including other engines in these benchmarks, we can better assess where Nebari can stand to improve.
-                Each database engine has their strengths and weaknesses, and these benchmarks are purposely aimed at
-                the functionality provided by Nebari only.</p>
+                        <p>By including other engines in these benchmarks, we can better assess where Nebari can stand
+                                to improve.
+                                Each database engine has their strengths and weaknesses, and these benchmarks are
+                                purposely aimed at
+                                the functionality provided by Nebari only.</p>
+                </div>
+                <h3>ACID-compliant Transactional Inserts</h3>
+                <h5>1 row per transaction, random u64 IDs</h5>
+                <a href="./logs-insert-rdm/1%20r_tx/report/index.html"><img
+                                src="./logs-insert-rdm/1%20r_tx/report/violin.svg" /></a>
+                <h5>1 row per transaction, sequential u64 IDs</h5>
+                <a href="./logs-insert-seq/1%20r_tx/report/index.html"><img
+                                src="./logs-insert-seq/1%20r_tx/report/violin.svg" /></a>
+                <hr />
+                <h5>100 rows per transaction, random u64 IDs</h5>
+                <a href="./logs-insert-rdm/100%20r_tx/report/index.html"><img
+                                src="./logs-insert-rdm/100%20r_tx/report/violin.svg" /></a>
+                <h5>100 rows per transaction, sequential u64 IDs</h5>
+                <a href="./logs-insert-seq/100%20r_tx/report/index.html"><img
+                                src="./logs-insert-seq/100%20r_tx/report/violin.svg" /></a>
+                <hr />
+                <h5>1,000 rows per transaction, random u64 IDs</h5>
+                <a href="./logs-insert-rdm/1000%20r_tx/report/index.html"><img
+                                src="./logs-insert-rdm/1000%20r_tx/report/violin.svg" /></a>
+                <h5>1,000 rows per transaction, sequential u64 IDs</h5>
+                <a href="./logs-insert-seq/1000%20r_tx/report/index.html"><img
+                                src="./logs-insert-seq/1000%20r_tx/report/violin.svg" /></a>
+                <hr />
+                <h5>10,000 rows per transaction, random u64 IDs</h5>
+                <a href="./logs-insert-rdm/10000%20r_tx/report/index.html"><img
+                                src="./logs-insert-rdm/10000%20r_tx/report/violin.svg" /></a>
+                <h5>10,000 rows per transaction, sequential u64 IDs</h5>
+                <a href="./logs-insert-seq/10000%20r_tx/report/index.html"><img
+                                src="./logs-insert-seq/10000%20r_tx/report/violin.svg" /></a>
+
+
+                <hr />
+                <h3>Primary-Key Queries</h3>
+
+                <h4>Dataset containing 1,000 records with random u64 IDs</h4>
+                <h5>Single-record</h5>
+                <a href="./logs-get-1k-rdm/1 row/report/index.html"><img
+                                src="./logs-get-1k-rdm/1 row/report/violin.svg" /></a>
+                <h5>32-records</h5>
+                <a href="./logs-get-1k-rdm/32 rows/report/index.html"><img
+                                src="./logs-get-1k-rdm/32 rows/report/violin.svg" /></a>
+                <h5>64-records</h5>
+                <a href="./logs-get-1k-rdm/64 rows/report/index.html"><img
+                                src="./logs-get-1k-rdm/64 rows/report/violin.svg" /></a>
+
+                <hr />
+                <h4>Dataset containing 1,000 records with sequential u64 IDs</h4>
+                <h5>Single-record</h5>
+                <a href="./logs-get-1k-seq/1 row/report/index.html"><img
+                                src="./logs-get-1k-seq/1 row/report/violin.svg" /></a>
+                <h5>32-records</h5>
+                <a href="./logs-get-1k-seq/32 rows/report/index.html"><img
+                                src="./logs-get-1k-seq/32 rows/report/violin.svg" /></a>
+                <h5>64-records</h5>
+                <a href="./logs-get-1k-seq/64 rows/report/index.html"><img
+                                src="./logs-get-1k-seq/64 rows/report/violin.svg" /></a>
+
+                <hr />
+                <h4>Dataset containing 10,000 records with random u64 IDs</h4>
+                <h5>Single-record</h5>
+                <a href="./logs-get-10k-rdm/1 row/report/index.html"><img
+                                src="./logs-get-10k-rdm/1 row/report/violin.svg" /></a>
+                <h5>100-records</h5>
+                <a href="./logs-get-10k-rdm/100 rows/report/index.html"><img
+                                src="./logs-get-10k-rdm/100 rows/report/violin.svg" /></a>
+                <h5>625-records</h5>
+                <a href="./logs-get-10k-rdm/625 rows/report/index.html"><img
+                                src="./logs-get-10k-rdm/625 rows/report/violin.svg" /></a>
+
+                <hr />
+                <h4>Dataset containing 10,000 records with sequential u64 IDs</h4>
+                <h5>Single-record</h5>
+                <a href="./logs-get-10k-seq/1 row/report/index.html"><img
+                                src="./logs-get-10k-seq/1 row/report/violin.svg" /></a>
+                <h5>100-records</h5>
+                <a href="./logs-get-10k-seq/100 rows/report/index.html"><img
+                                src="./logs-get-10k-seq/100 rows/report/violin.svg" /></a>
+                <h5>625-records</h5>
+                <a href="./logs-get-10k-seq/625 rows/report/index.html"><img
+                                src="./logs-get-10k-seq/625 rows/report/violin.svg" /></a>
+
+                <hr />
+                <h4>Dataset containing 1,000,000 records with random u64 IDs</h4>
+                <h5>Single-record</h5>
+                <a href="./logs-get-1m-rdm/1 row/report/index.html"><img
+                                src="./logs-get-1m-rdm/1 row/report/violin.svg" /></a>
+                <h5>1,000-records</h5>
+                <a href="./logs-get-1m-rdm/1000 rows/report/index.html"><img
+                                src="./logs-get-1m-rdm/1000 rows/report/violin.svg" /></a>
+                <h5>62,500-records</h5>
+                <a href="./logs-get-1m-rdm/62500 rows/report/index.html"><img
+                                src="./logs-get-1m-rdm/62500 rows/report/violin.svg" /></a>
+
+                <hr />
+                <h4>Dataset containing 1,000,000 records with sequential u64 IDs</h4>
+                <h5>Single-record</h5>
+                <a href="./logs-get-1m-seq/1 row/report/index.html"><img
+                                src="./logs-get-1m-seq/1 row/report/violin.svg" /></a>
+                <h5>1,000-records</h5>
+                <a href="./logs-get-1m-seq/1000 rows/report/index.html"><img
+                                src="./logs-get-1m-seq/1000 rows/report/violin.svg" /></a>
+                <h5>62,500-records</h5>
+                <a href="./logs-get-1m-seq/62500 rows/report/index.html"><img
+                                src="./logs-get-1m-seq/62500 rows/report/violin.svg" /></a>
+
+                <hr />
+                <h3>Primary-Key Range Queries</h3>
+
+                <h4>Dataset containing 1,000 records with random u64 IDs</h4>
+                <h5>32-records</h5>
+                <a href="./logs-scan-1k-rdm/32 elements/report/index.html"><img
+                                src="./logs-scan-1k-rdm/32 elements/report/violin.svg" /></a>
+                <h5>64-records</h5>
+                <a href="./logs-scan-1k-rdm/64 elements/report/index.html"><img
+                                src="./logs-scan-1k-rdm/64 elements/report/violin.svg" /></a>
+
+                <hr />
+                <h4>Dataset containing 1,000 records with sequential u64 IDs</h4>
+                <h5>32-records</h5>
+                <a href="./logs-scan-1k-seq/32 elements/report/index.html"><img
+                                src="./logs-scan-1k-seq/32 elements/report/violin.svg" /></a>
+                <h5>64-records</h5>
+                <a href="./logs-scan-1k-seq/64 elements/report/index.html"><img
+                                src="./logs-scan-1k-seq/64 elements/report/violin.svg" /></a>
+
+                <hr />
+                <h4>Dataset containing 10,000 records with random u64 IDs</h4>
+                <h5>100-records</h5>
+                <a href="./logs-scan-10k-rdm/100 elements/report/index.html"><img
+                                src="./logs-scan-10k-rdm/100 elements/report/violin.svg" /></a>
+                <h5>625-records</h5>
+                <a href="./logs-scan-10k-rdm/625 elements/report/index.html"><img
+                                src="./logs-scan-10k-rdm/625 elements/report/violin.svg" /></a>
+
+                <hr />
+                <h4>Dataset containing 10,000 records with sequential u64 IDs</h4>
+                <h5>100-records</h5>
+                <a href="./logs-scan-10k-seq/100 elements/report/index.html"><img
+                                src="./logs-scan-10k-seq/100 elements/report/violin.svg" /></a>
+                <h5>625-records</h5>
+                <a href="./logs-scan-10k-seq/625 elements/report/index.html"><img
+                                src="./logs-scan-10k-seq/625 elements/report/violin.svg" /></a>
+
+                <hr />
+                <h4>Dataset containing 1,000,000 records with random u64 IDs</h4>
+                <h5>1,000-records</h5>
+                <a href="./logs-scan-1m-rdm/1000 elements/report/index.html"><img
+                                src="./logs-scan-1m-rdm/1000 elements/report/violin.svg" /></a>
+                <h5>62,500-records</h5>
+                <a href="./logs-scan-1m-rdm/62500 elements/report/index.html"><img
+                                src="./logs-scan-1m-rdm/62500 elements/report/violin.svg" /></a>
+
+                <hr />
+                <h4>Dataset containing 1,000,000 records with sequential u64 IDs</h4>
+                <h5>1,000-records</h5>
+                <a href="./logs-scan-1m-seq/1000 elements/report/index.html"><img
+                                src="./logs-scan-1m-seq/1000 elements/report/violin.svg" /></a>
+                <h5>62,500-records</h5>
+                <a href="./logs-scan-1m-seq/62500 elements/report/index.html"><img
+                                src="./logs-scan-1m-seq/62500 elements/report/violin.svg" /></a>
         </div>
-        <h3>ACID-compliant Transactional Inserts</h3>
-        <h5>1 row per transaction, random u64 IDs</h5>
-        <a href="./logs-insert-rdm/1%20r_tx/report/index.html"><img
-                src="./logs-insert-rdm/1%20r_tx/report/violin.svg" /></a>
-        <h5>1 row per transaction, sequential u64 IDs</h5>
-        <a href="./logs-insert-seq/1%20r_tx/report/index.html"><img
-                src="./logs-insert-seq/1%20r_tx/report/violin.svg" /></a>
-        <hr />
-        <h5>100 rows per transaction, random u64 IDs</h5>
-        <a href="./logs-insert-rdm/100%20r_tx/report/index.html"><img
-                src="./logs-insert-rdm/100%20r_tx/report/violin.svg" /></a>
-        <h5>100 rows per transaction, sequential u64 IDs</h5>
-        <a href="./logs-insert-seq/100%20r_tx/report/index.html"><img
-                src="./logs-insert-seq/100%20r_tx/report/violin.svg" /></a>
-        <hr />
-        <h5>1,000 rows per transaction, random u64 IDs</h5>
-        <a href="./logs-insert-rdm/1000%20r_tx/report/index.html"><img
-                src="./logs-insert-rdm/1000%20r_tx/report/violin.svg" /></a>
-        <h5>1,000 rows per transaction, sequential u64 IDs</h5>
-        <a href="./logs-insert-seq/1000%20r_tx/report/index.html"><img
-                src="./logs-insert-seq/1000%20r_tx/report/violin.svg" /></a>
-        <hr />
-        <h5>10,000 rows per transaction, random u64 IDs</h5>
-        <a href="./logs-insert-rdm/10000%20r_tx/report/index.html"><img
-                src="./logs-insert-rdm/10000%20r_tx/report/violin.svg" /></a>
-        <h5>10,000 rows per transaction, sequential u64 IDs</h5>
-        <a href="./logs-insert-seq/10000%20r_tx/report/index.html"><img
-                src="./logs-insert-seq/10000%20r_tx/report/violin.svg" /></a>
-
-
-        <hr />
-        <h3>Primary-Key Queries</h3>
-
-        <h4>Dataset containing 1,000 records with random u64 IDs</h4>
-        <h5>Single-record</h5>
-        <a href="./logs-get-1k-rdm/1 row/report/index.html"><img src="./logs-get-1k-rdm/1 row/report/violin.svg" /></a>
-        <h5>32-records</h5>
-        <a href="./logs-get-1k-rdm/32 rows/report/index.html"><img
-                src="./logs-get-1k-rdm/32 rows/report/violin.svg" /></a>
-        <h5>64-records</h5>
-        <a href="./logs-get-1k-rdm/64 rows/report/index.html"><img
-                src="./logs-get-1k-rdm/64 rows/report/violin.svg" /></a>
-
-        <hr />
-        <h4>Dataset containing 1,000 records with sequential u64 IDs</h4>
-        <h5>Single-record</h5>
-        <a href="./logs-get-1k-seq/1 row/report/index.html"><img src="./logs-get-1k-seq/1 row/report/violin.svg" /></a>
-        <h5>32-records</h5>
-        <a href="./logs-get-1k-seq/32 rows/report/index.html"><img
-                src="./logs-get-1k-seq/32 rows/report/violin.svg" /></a>
-        <h5>64-records</h5>
-        <a href="./logs-get-1k-seq/64 rows/report/index.html"><img
-                src="./logs-get-1k-seq/64 rows/report/violin.svg" /></a>
-
-        <hr />
-        <h4>Dataset containing 10,000 records with random u64 IDs</h4>
-        <h5>Single-record</h5>
-        <a href="./logs-get-10k-rdm/1 row/report/index.html"><img
-                src="./logs-get-10k-rdm/1 row/report/violin.svg" /></a>
-        <h5>100-records</h5>
-        <a href="./logs-get-10k-rdm/100 rows/report/index.html"><img
-                src="./logs-get-10k-rdm/100 rows/report/violin.svg" /></a>
-        <h5>625-records</h5>
-        <a href="./logs-get-10k-rdm/625 rows/report/index.html"><img
-                src="./logs-get-10k-rdm/625 rows/report/violin.svg" /></a>
-
-        <hr />
-        <h4>Dataset containing 10,000 records with sequential u64 IDs</h4>
-        <h5>Single-record</h5>
-        <a href="./logs-get-10k-seq/1 row/report/index.html"><img
-                src="./logs-get-10k-seq/1 row/report/violin.svg" /></a>
-        <h5>100-records</h5>
-        <a href="./logs-get-10k-seq/100 rows/report/index.html"><img
-                src="./logs-get-10k-seq/100 rows/report/violin.svg" /></a>
-        <h5>625-records</h5>
-        <a href="./logs-get-10k-seq/625 rows/report/index.html"><img
-                src="./logs-get-10k-seq/625 rows/report/violin.svg" /></a>
-
-        <hr />
-        <h4>Dataset containing 1,000,000 records with random u64 IDs</h4>
-        <h5>Single-record</h5>
-        <a href="./logs-get-1m-rdm/1 row/report/index.html"><img src="./logs-get-1m-rdm/1 row/report/violin.svg" /></a>
-        <h5>1,000-records</h5>
-        <a href="./logs-get-1m-rdm/1000 rows/report/index.html"><img
-                src="./logs-get-1m-rdm/1000 rows/report/violin.svg" /></a>
-        <h5>62,500-records</h5>
-        <a href="./logs-get-1m-rdm/62500 rows/report/index.html"><img
-                src="./logs-get-1m-rdm/62500 rows/report/violin.svg" /></a>
-
-        <hr />
-        <h4>Dataset containing 1,000,000 records with sequential u64 IDs</h4>
-        <h5>Single-record</h5>
-        <a href="./logs-get-1m-seq/1 row/report/index.html"><img src="./logs-get-1m-seq/1 row/report/violin.svg" /></a>
-        <h5>1,000-records</h5>
-        <a href="./logs-get-1m-seq/1000 rows/report/index.html"><img
-                src="./logs-get-1m-seq/1000 rows/report/violin.svg" /></a>
-        <h5>62,500-records</h5>
-        <a href="./logs-get-1m-seq/62500 rows/report/index.html"><img
-                src="./logs-get-1m-seq/62500 rows/report/violin.svg" /></a>
-    </div>
 </body>
 
 </html>

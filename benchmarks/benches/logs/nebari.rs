@@ -9,7 +9,10 @@ use nebari::{
 use tempfile::TempDir;
 
 use super::{InsertConfig, LogEntry, LogEntryBatchGenerator, ReadConfig, ReadState};
-use crate::{BenchConfig, SimpleBench};
+use crate::{
+    logs::{ScanConfig, ScanState},
+    BenchConfig, SimpleBench,
+};
 
 pub struct InsertLogs<B: NebariBenchmark> {
     _tempfile: TempDir,
@@ -185,6 +188,86 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
             let buffers = self.tree.get_multiple(&entry_keys, false)?;
             assert_eq!(buffers.len(), config.get_count);
         }
+        Ok(())
+    }
+}
+
+pub struct ScanLogs<B: NebariBenchmark> {
+    tree: TreeFile<B::Root, StdFile>,
+    state: ScanState,
+}
+
+impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
+    type GroupState = TempDir;
+    type Config = ScanConfig;
+    const BACKEND: &'static str = B::BACKEND;
+
+    fn initialize_group(
+        config: &Self::Config,
+        _group_state: &<Self::Config as BenchConfig>::GroupState,
+    ) -> Self::GroupState {
+        let tempfile = TempDir::new().unwrap();
+        let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
+        let file = manager.append(tempfile.path().join("tree")).unwrap();
+        let mut tree = TreeFile::<B::Root, StdFile>::new(
+            file,
+            State::initialized(),
+            None,
+            Some(ChunkCache::new(2000, 160_384)),
+        )
+        .unwrap();
+
+        config.for_each_database_chunk(1_000_000, |chunk| {
+            tree.modify(Modification {
+                transaction_id: 0,
+                keys: chunk
+                    .iter()
+                    .map(|e| Buffer::from(e.id.to_be_bytes()))
+                    .collect(),
+                operation: Operation::SetEach(
+                    chunk
+                        .iter()
+                        .map(|e| Buffer::from(pot::to_vec(e).unwrap()))
+                        .collect(),
+                ),
+            })
+            .unwrap();
+        });
+        tempfile
+    }
+
+    fn initialize(
+        group_state: &Self::GroupState,
+        config: &Self::Config,
+        config_group_state: &<Self::Config as BenchConfig>::GroupState,
+    ) -> Result<Self, anyhow::Error> {
+        let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
+        let context = Context {
+            file_manager: manager,
+            vault: None,
+            cache: Some(ChunkCache::new(2000, 160_384)),
+        };
+        let file_path = group_state.path().join("tree");
+        let file = context.file_manager.append(&file_path).unwrap();
+        let state = State::default();
+        TreeFile::<B::Root, StdFile>::initialize_state(&state, &file_path, &context, None).unwrap();
+        let tree = TreeFile::<B::Root, StdFile>::new(
+            file,
+            state,
+            context.vault.clone(),
+            context.cache.clone(),
+        )
+        .unwrap();
+        let state = config.initialize(config_group_state);
+        Ok(Self { tree, state })
+    }
+
+    fn execute_measured(&mut self, config: &Self::Config) -> Result<(), anyhow::Error> {
+        let range = self.state.next().unwrap();
+        let range =
+            Buffer::from(range.start().to_be_bytes())..=Buffer::from(range.end().to_be_bytes());
+        let entries = self.tree.get_range(range, false)?;
+        assert_eq!(entries.len(), config.element_count);
         Ok(())
     }
 }

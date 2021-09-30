@@ -3,7 +3,7 @@ use std::{
     cmp::Ordering,
     fmt::{Debug, Write},
     io::{self, ErrorKind, Read},
-    ops::Deref,
+    ops::{Bound, Deref},
     sync::Arc,
 };
 
@@ -172,5 +172,10 @@ impl<'a> Read for Buffer<'a> {
 }
 
 impl<'a> Domain for Buffer<'a> {
-    const DISCRETE: bool = true;
+    const DISCRETE: bool = false;
+
+    #[must_use]
+    fn minimum() -> Bound<Self> {
+        Bound::Included(Buffer::from(b""))
+    }
 }

@@ -1,3 +1,9 @@
+//! IO abstractions for Nebari.
+//!
+//! Nebari was written to have the flexibility of multiple backend options. This
+//! may allow Nebari to target `no_std` in the future or allow for other IO
+//! strategies to be implemented in addition to the ones seen here today.
+
 use std::{
     io::{Read, Seek, Write},
     path::Path,
@@ -5,7 +11,9 @@ use std::{
 
 use crate::error::Error;
 
+/// Filesystem IO provided by `std::fs`.
 pub mod fs;
+/// A virtual memory-based filesystem.
 pub mod memory;
 
 /// A file that can be interacted with using async operations.
@@ -61,6 +69,9 @@ pub trait FileManager: Send + Sync + Clone + Default + std::fmt::Debug + 'static
 
     /// Check if the file exists.
     fn delete(&self, path: impl AsRef<Path> + Send) -> Result<bool, Error>;
+
+    /// Removes a directory and all of its contents.
+    fn delete_directory(&self, path: impl AsRef<Path> + Send) -> Result<(), Error>;
 }
 
 /// A file that can have operations performed on it.

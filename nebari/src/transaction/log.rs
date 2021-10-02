@@ -17,7 +17,7 @@ use zerocopy::{AsBytes, FromBytes, LayoutVerified, Unaligned, U64};
 
 use super::{State, TransactionHandle};
 use crate::{
-    managed_file::{FileManager, FileOp, ManagedFile, OpenableFile},
+    io::{FileManager, FileOp, ManagedFile, OpenableFile},
     Context, Error, Vault,
 };
 
@@ -720,7 +720,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        managed_file::{
+        io::{
             fs::{StdFile, StdFileManager},
             memory::MemoryFile,
             ManagedFile,
@@ -738,15 +738,6 @@ mod tests {
     #[test]
     fn memory_log_file_tests() {
         log_file_tests::<MemoryFile>("memory_log_file", None, None);
-    }
-
-    #[test]
-    fn file_encrypted_log_manager_tests() {
-        log_manager_tests::<StdFile>(
-            "encrypted_file_log_manager",
-            Some(Arc::new(RotatorVault::new(13))),
-            None,
-        );
     }
 
     fn log_file_tests<F: ManagedFile>(
@@ -879,6 +870,15 @@ mod tests {
     #[test]
     fn memory_log_manager_tests() {
         log_manager_tests::<MemoryFile>("memory_log_manager", None, None);
+    }
+
+    #[test]
+    fn file_encrypted_log_manager_tests() {
+        log_manager_tests::<StdFile>(
+            "encrypted_file_log_manager",
+            Some(Arc::new(RotatorVault::new(13))),
+            None,
+        );
     }
 
     fn log_manager_tests<F: ManagedFile>(

@@ -8,13 +8,14 @@ use std::{
 };
 
 use crate::{
+    io::ManagedFile,
     roots::AnyTransactionTree,
     transaction::TransactionManager,
     tree::{
         btree_entry::ScanArgs, state::AnyTreeState, KeyEvaluation, KeyRange, Modification,
         PageHeader, PagedWriter, State, TreeFile,
     },
-    AbortError, Buffer, ChunkCache, Context, Error, ManagedFile, TransactionTree, Vault,
+    AbortError, Buffer, ChunkCache, Context, Error, TransactionTree, Vault,
 };
 
 /// A B-Tree root implementation.

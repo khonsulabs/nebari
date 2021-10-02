@@ -91,6 +91,7 @@ impl Read for StdFile {
     }
 }
 
+/// The [`FileManager`] for [`StdFile`].
 #[derive(Debug, Default, Clone)]
 pub struct StdFileManager {
     file_id_counter: Arc<AtomicU64>,
@@ -115,6 +116,24 @@ impl StdFileManager {
     fn remove_file_id_for_path(&self, path: &Path) -> Option<u64> {
         let mut file_ids = self.file_ids.write();
         file_ids.remove(path)
+    }
+
+    fn remove_file_ids_for_path_prefix(&self, path: &Path) -> Vec<u64> {
+        let mut file_ids = self.file_ids.write();
+        let mut ids_to_remove = Vec::new();
+        let mut paths_to_remove = Vec::new();
+        for (file, id) in file_ids.iter() {
+            if file.starts_with(path) {
+                paths_to_remove.push(file.clone());
+                ids_to_remove.push(*id);
+            }
+        }
+
+        for path in paths_to_remove {
+            file_ids.remove(&path);
+        }
+
+        ids_to_remove
     }
 }
 
@@ -149,15 +168,16 @@ impl FileManager for StdFileManager {
         // based Lru cache might work.
         let path = path.as_ref();
         let file_id = self.file_id_for_path(path);
-        {
-            let mut reader_files = self.reader_files.lock();
-            if let Some(file) = reader_files.get_mut(&file_id).and_then(VecDeque::pop_front) {
-                return Ok(OpenStdFile {
-                    file: Some(file),
-                    manager: Some(self.clone()),
-                    reader: true,
-                });
-            }
+
+        let mut reader_files = self.reader_files.lock();
+        let files = reader_files.entry(file_id).or_default();
+
+        if let Some(file) = files.pop_front() {
+            return Ok(OpenStdFile {
+                file: Some(file),
+                manager: Some(self.clone()),
+                reader: true,
+            });
         }
 
         let file = StdFile::open_for_read(path, Some(file_id))?;
@@ -185,8 +205,26 @@ impl FileManager for StdFileManager {
             Ok(false)
         }
     }
+
+    fn delete_directory(&self, path: impl AsRef<Path> + Send) -> Result<(), Error> {
+        let path = path.as_ref();
+        let removed_ids = self.remove_file_ids_for_path_prefix(path);
+        let mut open_files = self.open_files.lock();
+        let mut reader_files = self.reader_files.lock();
+        for id in removed_ids {
+            open_files.remove(&id);
+            reader_files.remove(&id);
+        }
+
+        if path.exists() {
+            std::fs::remove_dir_all(path)?;
+        }
+
+        Ok(())
+    }
 }
 
+/// An open [`StdFile`] that belongs to a [`StdFileManager`].
 pub struct OpenStdFile {
     file: Option<StdFile>,
     manager: Option<StdFileManager>,
@@ -211,11 +249,14 @@ impl Drop for OpenStdFile {
             if let Some(file_id) = file.id {
                 if self.reader {
                     let mut reader_files = manager.reader_files.lock();
-                    let path_files = reader_files.entry(file_id).or_default();
-                    path_files.push_front(file);
+                    if let Some(path_files) = reader_files.get_mut(&file_id) {
+                        path_files.push_front(file);
+                    }
                 } else {
                     let mut writer_files = manager.open_files.lock();
-                    *writer_files.get_mut(&file_id).unwrap() = Some(file);
+                    if let Some(writer_file) = writer_files.get_mut(&file_id) {
+                        *writer_file = Some(file);
+                    }
                 }
             }
         }

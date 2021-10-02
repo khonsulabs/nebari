@@ -12,9 +12,9 @@ use parking_lot::Mutex;
 use super::{log::EntryFetcher, LogEntry, State, TransactionLog};
 use crate::{
     error::InternalError,
-    managed_file::{ManagedFile, OpenableFile},
+    io::{FileManager, ManagedFile, OpenableFile},
     transaction::log::ScanResult,
-    Context, Error, FileManager,
+    Context, Error,
 };
 
 /// A shared [`TransactionLog`] manager. Allows multiple threads to interact with a single transaction log.
@@ -35,7 +35,7 @@ impl<M: FileManager> TransactionManager<M> {
         let (state_sender, state_receiver) = flume::bounded(1);
         let thread_context = context.clone();
         std::thread::Builder::new()
-            .name(String::from("bonsaidb-txlog"))
+            .name(String::from("nebari-txlog"))
             .spawn(move || {
                 transaction_writer_thread::<M::File>(
                     state_sender,

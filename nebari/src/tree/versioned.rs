@@ -19,13 +19,14 @@ use super::{
 use crate::{
     chunk_cache::CacheEntry,
     error::InternalError,
+    io::ManagedFile,
     roots::AbortError,
     tree::{
         btree_entry::{KeyOperation, ModificationContext, ScanArgs},
         modify::Operation,
         PageHeader, Root,
     },
-    Buffer, ChunkCache, Error, ManagedFile, Vault,
+    Buffer, ChunkCache, Error, Vault,
 };
 
 const UNINITIALIZED_SEQUENCE: u64 = 0;

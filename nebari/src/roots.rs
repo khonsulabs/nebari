@@ -20,12 +20,13 @@ use parking_lot::Mutex;
 
 use crate::{
     context::Context,
+    io::{FileManager, ManagedFile},
     transaction::{LogEntry, TransactionHandle, TransactionManager},
     tree::{
         self, state::AnyTreeState, CompareSwap, KeyEvaluation, KeyOperation, Modification,
         Operation, State, TreeFile, TreeRoot, VersionedTreeRoot,
     },
-    Buffer, ChunkCache, Error, FileManager, ManagedFile, Vault,
+    Buffer, ChunkCache, Error, Vault,
 };
 
 /// A multi-tree transactional B-Tree database.
@@ -44,7 +45,11 @@ struct Data<F: ManagedFile> {
 }
 
 impl<F: ManagedFile> Roots<F> {
-    fn open<P: Into<PathBuf> + Send>(path: P, context: Context<F::Manager>) -> Result<Self, Error> {
+    fn open<P: Into<PathBuf> + Send>(
+        path: P,
+        context: Context<F::Manager>,
+        thread_pool: ThreadPool<F>,
+    ) -> Result<Self, Error> {
         let path = path.into();
         if !path.exists() {
             fs::create_dir_all(&path)?;
@@ -61,7 +66,7 @@ impl<F: ManagedFile> Roots<F> {
                 context,
                 path,
                 transactions,
-                thread_pool: ThreadPool::default(),
+                thread_pool,
                 tree_states: Mutex::default(),
             }),
         })
@@ -519,6 +524,8 @@ pub struct Config<F: ManagedFile> {
     path: PathBuf,
     vault: Option<Arc<dyn Vault>>,
     cache: Option<ChunkCache>,
+    file_manager: Option<F::Manager>,
+    thread_pool: Option<ThreadPool<F>>,
     _file: PhantomData<F>,
 }
 
@@ -529,6 +536,8 @@ impl<F: ManagedFile> Config<F> {
             path: path.as_ref().to_path_buf(),
             vault: None,
             cache: None,
+            thread_pool: None,
+            file_manager: None,
             _file: PhantomData,
         }
     }
@@ -545,15 +554,30 @@ impl<F: ManagedFile> Config<F> {
         self
     }
 
+    /// Sets the file manager.
+    pub fn file_manager(mut self, file_manager: F::Manager) -> Self {
+        self.file_manager = Some(file_manager);
+        self
+    }
+
+    /// Uses the `thread_pool` provided instead of creating its own. This will
+    /// allow a single thread pool to manage multiple [`Roots`] instances'
+    /// transactions.
+    pub fn shared_thread_pool(mut self, thread_pool: &ThreadPool<F>) -> Self {
+        self.thread_pool = Some(thread_pool.clone());
+        self
+    }
+
     /// Opens the database, or creates one if the target path doesn't exist.
     pub fn open(self) -> Result<Roots<F>, Error> {
         Roots::open(
             self.path,
             Context {
-                file_manager: F::Manager::default(),
+                file_manager: self.file_manager.unwrap_or_default(),
                 vault: self.vault,
                 cache: self.cache,
             },
+            self.thread_pool.unwrap_or_default(),
         )
     }
 }
@@ -778,18 +802,19 @@ impl AbortError<Infallible> {
     }
 }
 
+/// A thread pool that commits transactions to disk in parallel.
 #[derive(Debug)]
-struct ThreadPool<F>
+pub struct ThreadPool<F>
 where
     F: ManagedFile,
 {
     sender: flume::Sender<ThreadCommit<F>>,
     receiver: flume::Receiver<ThreadCommit<F>>,
-    thread_count: AtomicU16,
+    thread_count: Arc<AtomicU16>,
 }
 
 impl<F: ManagedFile> ThreadPool<F> {
-    pub fn commit_trees(
+    fn commit_trees(
         &self,
         mut trees: Vec<Box<dyn AnyTransactionTree<F>>>,
     ) -> Result<Vec<Box<dyn AnyTransactionTree<F>>>, Error> {
@@ -850,15 +875,13 @@ impl<F: ManagedFile> ThreadPool<F> {
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
-fn transaction_commit_thread<F: ManagedFile>(receiver: flume::Receiver<ThreadCommit<F>>) {
-    while let Ok(ThreadCommit {
-        mut tree,
-        completion_sender,
-    }) = receiver.recv()
-    {
-        let result = tree.commit().map(move |_| tree);
-        drop(completion_sender.send(result));
+impl<F: ManagedFile> Clone for ThreadPool<F> {
+    fn clone(&self) -> Self {
+        Self {
+            sender: self.sender.clone(),
+            receiver: self.receiver.clone(),
+            thread_count: self.thread_count.clone(),
+        }
     }
 }
 
@@ -868,8 +891,20 @@ impl<F: ManagedFile> Default for ThreadPool<F> {
         Self {
             sender,
             receiver,
-            thread_count: AtomicU16::new(0),
+            thread_count: Arc::new(AtomicU16::new(0)),
         }
+    }
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn transaction_commit_thread<F: ManagedFile>(receiver: flume::Receiver<ThreadCommit<F>>) {
+    while let Ok(ThreadCommit {
+        mut tree,
+        completion_sender,
+    }) = receiver.recv()
+    {
+        let result = tree.commit().map(move |_| tree);
+        drop(completion_sender.send(result));
     }
 }
 
@@ -886,7 +921,10 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
-    use crate::{managed_file::memory::MemoryFile, tree::Root, ManagedFile, StdFile};
+    use crate::{
+        io::{fs::StdFile, memory::MemoryFile, ManagedFile},
+        tree::Root,
+    };
 
     fn basic_get_set<F: ManagedFile>() {
         let tempdir = tempdir().unwrap();

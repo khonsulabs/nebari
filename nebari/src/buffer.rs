@@ -117,6 +117,18 @@ impl<'a> From<Vec<u8>> for Buffer<'a> {
     }
 }
 
+impl<'a> From<String> for Buffer<'a> {
+    fn from(buffer: String) -> Self {
+        Self::from(buffer.into_bytes())
+    }
+}
+
+impl<'a> From<&'a str> for Buffer<'a> {
+    fn from(buffer: &'a str) -> Self {
+        Self::from(buffer.as_bytes())
+    }
+}
+
 impl<'a> From<&'a [u8]> for Buffer<'a> {
     fn from(buffer: &'a [u8]) -> Self {
         Self {

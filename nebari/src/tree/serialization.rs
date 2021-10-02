@@ -1,5 +1,5 @@
 use super::PagedWriter;
-use crate::{Buffer, Error, ManagedFile};
+use crate::{io::ManagedFile, Buffer, Error};
 
 pub trait BinarySerialization: Send + Sync + Sized {
     fn serialize_to<F: ManagedFile>(

@@ -18,7 +18,7 @@
 )]
 
 #[macro_use]
-mod managed_file;
+pub mod io;
 mod error;
 mod roots;
 pub mod transaction;
@@ -36,9 +36,9 @@ pub use self::{
     chunk_cache::ChunkCache,
     context::Context,
     error::Error,
-    managed_file::{fs::StdFile, FileManager, ManagedFile},
     roots::{
-        AbortError, CompareAndSwapError, Config, ExecutingTransaction, Roots, TransactionTree, Tree,
+        AbortError, CompareAndSwapError, Config, ExecutingTransaction, Roots, ThreadPool,
+        TransactionTree, Tree,
     },
     vault::Vault,
 };

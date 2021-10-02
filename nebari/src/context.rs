@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{ChunkCache, FileManager, Vault};
+use crate::{io::FileManager, ChunkCache, Vault};
 
 /// A shared environment for database operations.
 #[derive(Debug, Clone)]

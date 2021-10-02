@@ -18,13 +18,14 @@ use super::{
 use crate::{
     chunk_cache::CacheEntry,
     error::InternalError,
+    io::ManagedFile,
     roots::AbortError,
     tree::{
         btree_entry::{KeyOperation, ModificationContext, ScanArgs},
         versioned::ChangeResult,
         PageHeader, Root,
     },
-    Buffer, ChunkCache, Error, ManagedFile, Vault,
+    Buffer, ChunkCache, Error, Vault,
 };
 
 const MAX_ORDER: usize = 1000;

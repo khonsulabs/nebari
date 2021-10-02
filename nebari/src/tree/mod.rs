@@ -54,7 +54,7 @@ use crc::{Crc, CRC_32_BZIP2};
 
 use crate::{
     chunk_cache::CacheEntry,
-    managed_file::{FileManager, FileOp, ManagedFile, OpenableFile},
+    io::{FileManager, FileOp, ManagedFile, OpenableFile},
     roots::AbortError,
     transaction::TransactionManager,
     tree::{btree_entry::ScanArgs, state::ActiveState},
@@ -589,6 +589,7 @@ impl<'a> Iterator for KeyRange<'a> {
     }
 }
 
+#[derive(Clone, Copy)]
 /// The result of evaluating a key that was scanned.
 pub enum KeyEvaluation {
     /// Read the data for this key.
@@ -989,12 +990,11 @@ mod tests {
 
     use super::*;
     use crate::{
-        managed_file::{
-            fs::StdFileManager,
+        io::{
+            fs::{StdFile, StdFileManager},
             memory::{MemoryFile, MemoryFileManager},
         },
         tree::unversioned::UnversionedTreeRoot,
-        StdFile,
     };
 
     fn test_paged_write(offset: usize, length: usize) -> Result<(), Error> {
@@ -1060,7 +1060,6 @@ mod tests {
             }
         };
         let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
-        println!("Inserting: {:?}", id_buffer);
         {
             let state = State::default();
             if ids.len() > 1 {
@@ -1110,7 +1109,6 @@ mod tests {
         id: u64,
     ) {
         let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
-        println!("Removing: {:?}", id_buffer);
         {
             let state = State::default();
             TreeFile::<VersionedTreeRoot, F>::initialize_state(&state, file_path, context, None)

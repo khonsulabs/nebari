@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{serialization::BinarySerialization, PagedWriter};
-use crate::{Buffer, Error, ManagedFile};
+use crate::{io::ManagedFile, Buffer, Error};
 
 #[derive(Debug, Clone)]
 pub struct KeyEntry<I> {

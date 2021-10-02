@@ -149,6 +149,8 @@ impl std::io::Write for MemoryFile {
     }
 }
 
+/// The [`FileManager`] implementation for [`MemoryFile`]. Simulates a
+/// persistent in-memory filesystem.
 #[derive(Debug, Default, Clone)]
 pub struct MemoryFileManager {
     file_id_counter: Arc<AtomicU64>,
@@ -167,6 +169,24 @@ impl MemoryFileManager {
                 .entry(path.to_path_buf())
                 .or_insert_with(|| self.file_id_counter.fetch_add(1, Ordering::SeqCst))
         }
+    }
+
+    fn remove_file_ids_for_path_prefix(&self, path: &Path) -> Vec<u64> {
+        let mut file_ids = self.file_ids.write();
+        let mut ids_to_remove = Vec::new();
+        let mut paths_to_remove = Vec::new();
+        for (file, id) in file_ids.iter() {
+            if file.starts_with(path) {
+                paths_to_remove.push(file.clone());
+                ids_to_remove.push(*id);
+            }
+        }
+
+        for path in paths_to_remove {
+            file_ids.remove(&path);
+        }
+
+        ids_to_remove
     }
 
     fn lookup_file(
@@ -226,8 +246,20 @@ impl FileManager for MemoryFileManager {
         let mut open_files = self.open_files.lock();
         Ok(open_files.remove(&id).is_some())
     }
+
+    fn delete_directory(&self, path: impl AsRef<Path> + Send) -> Result<(), Error> {
+        let path = path.as_ref();
+        let removed_ids = self.remove_file_ids_for_path_prefix(path);
+        let mut open_files = self.open_files.lock();
+        for id in removed_ids {
+            open_files.remove(&id);
+        }
+
+        Ok(())
+    }
 }
 
+/// An open [`MemoryFile`] that is owned by a [`MemoryFileManager`].
 pub struct OpenMemoryFile(Arc<Mutex<MemoryFile>>);
 
 impl OpenableFile<MemoryFile> for OpenMemoryFile {

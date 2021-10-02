@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};
-use crate::{Buffer, Error, ManagedFile};
+use crate::{io::ManagedFile, Buffer, Error};
 
 #[derive(Clone, Debug)]
 pub struct BySequenceIndex {

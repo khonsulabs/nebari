@@ -15,7 +15,7 @@ use super::{
     versioned::ChangeResult,
     KeyRange, PagedWriter,
 };
-use crate::{tree::KeyEvaluation, AbortError, Buffer, ChunkCache, Error, ManagedFile, Vault};
+use crate::{io::ManagedFile, tree::KeyEvaluation, AbortError, Buffer, ChunkCache, Error, Vault};
 
 /// A B-Tree entry that stores a list of key-`I` pairs.
 #[derive(Clone, Debug)]

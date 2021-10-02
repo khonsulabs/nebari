@@ -9,7 +9,9 @@ use super::{
     btree_entry::{BTreeEntry, Reducer},
     read_chunk, BinarySerialization, PagedWriter,
 };
-use crate::{chunk_cache::CacheEntry, AbortError, Buffer, ChunkCache, Error, ManagedFile, Vault};
+use crate::{
+    chunk_cache::CacheEntry, io::ManagedFile, AbortError, Buffer, ChunkCache, Error, Vault,
+};
 
 #[derive(Clone, Debug)]
 pub struct Interior<I, R> {

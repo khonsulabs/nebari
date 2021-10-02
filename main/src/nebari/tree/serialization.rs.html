@@ -25,7 +25,7 @@
 <span id="25">25</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="kw">super</span><span class="ident">::PagedWriter</span>;
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">Buffer</span>, <span class="ident">Error</span>, <span class="ident">ManagedFile</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">io::ManagedFile</span>, <span class="ident">Buffer</span>, <span class="ident">Error</span>};
 
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">BinarySerialization</span>: <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Sized</span> {
     <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(

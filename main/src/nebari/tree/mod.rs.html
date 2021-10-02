@@ -1382,8 +1382,6 @@
 <span id="1382">1382</span>
 <span id="1383">1383</span>
 <span id="1384">1384</span>
-<span id="1385">1385</span>
-<span id="1386">1386</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Append-only B-Tree implementation</span>
 <span class="doccomment">//!</span>
@@ -1441,7 +1439,7 @@
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">chunk_cache::CacheEntry</span>,
-    <span class="ident">managed_file</span>::{<span class="ident">FileManager</span>, <span class="ident">FileOp</span>, <span class="ident">ManagedFile</span>, <span class="ident">OpenableFile</span>},
+    <span class="ident">io</span>::{<span class="ident">FileManager</span>, <span class="ident">FileOp</span>, <span class="ident">ManagedFile</span>, <span class="ident">OpenableFile</span>},
     <span class="ident">roots::AbortError</span>,
     <span class="ident">transaction::TransactionManager</span>,
     <span class="ident">tree</span>::{<span class="ident">btree_entry::ScanArgs</span>, <span class="ident">state::ActiveState</span>},
@@ -1976,6 +1974,7 @@
     }
 }
 
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Copy</span>)]</span>
 <span class="doccomment">/// The result of evaluating a key that was scanned.</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">KeyEvaluation</span> {
     <span class="doccomment">/// Read the data for this key.</span>
@@ -2376,12 +2375,11 @@
 
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="kw">crate</span>::{
-        <span class="ident">managed_file</span>::{
-            <span class="ident">fs::StdFileManager</span>,
+        <span class="ident">io</span>::{
+            <span class="ident">fs</span>::{<span class="ident">StdFile</span>, <span class="ident">StdFileManager</span>},
             <span class="ident">memory</span>::{<span class="ident">MemoryFile</span>, <span class="ident">MemoryFileManager</span>},
         },
         <span class="ident">tree::unversioned::UnversionedTreeRoot</span>,
-        <span class="ident">StdFile</span>,
     };
 
     <span class="kw">fn</span> <span class="ident">test_paged_write</span>(<span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">length</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
@@ -2447,7 +2445,6 @@
             }
         };
         <span class="kw">let</span> <span class="ident">id_buffer</span> <span class="op">=</span> <span class="ident">Buffer::from</span>(<span class="ident">id</span>.<span class="ident">to_be_bytes</span>().<span class="ident">to_vec</span>());
-        <span class="macro">println!</span>(<span class="string">&quot;Inserting: {:?}&quot;</span>, <span class="ident">id_buffer</span>);
         {
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State::default</span>();
             <span class="kw">if</span> <span class="ident">ids</span>.<span class="ident">len</span>() <span class="op">&gt;</span> <span class="number">1</span> {
@@ -2497,7 +2494,6 @@
         <span class="ident">id</span>: <span class="ident">u64</span>,
     ) {
         <span class="kw">let</span> <span class="ident">id_buffer</span> <span class="op">=</span> <span class="ident">Buffer::from</span>(<span class="ident">id</span>.<span class="ident">to_be_bytes</span>().<span class="ident">to_vec</span>());
-        <span class="macro">println!</span>(<span class="string">&quot;Removing: {:?}&quot;</span>, <span class="ident">id_buffer</span>);
         {
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State::default</span>();
             <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span>, <span class="ident">F</span><span class="op">&gt;</span><span class="ident">::initialize_state</span>(<span class="kw-2">&amp;</span><span class="ident">state</span>, <span class="ident">file_path</span>, <span class="ident">context</span>, <span class="prelude-val">None</span>)

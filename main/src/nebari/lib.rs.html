@@ -63,7 +63,7 @@
 )]</span>
 
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
-<span class="kw">mod</span> <span class="ident">managed_file</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">io</span>;
 <span class="kw">mod</span> <span class="ident">error</span>;
 <span class="kw">mod</span> <span class="ident">roots</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">transaction</span>;
@@ -81,9 +81,9 @@
     <span class="ident">chunk_cache::ChunkCache</span>,
     <span class="ident">context::Context</span>,
     <span class="ident">error::Error</span>,
-    <span class="ident">managed_file</span>::{<span class="ident">fs::StdFile</span>, <span class="ident">FileManager</span>, <span class="ident">ManagedFile</span>},
     <span class="ident">roots</span>::{
-        <span class="ident">AbortError</span>, <span class="ident">CompareAndSwapError</span>, <span class="ident">Config</span>, <span class="ident">ExecutingTransaction</span>, <span class="ident">Roots</span>, <span class="ident">TransactionTree</span>, <span class="ident">Tree</span>,
+        <span class="ident">AbortError</span>, <span class="ident">CompareAndSwapError</span>, <span class="ident">Config</span>, <span class="ident">ExecutingTransaction</span>, <span class="ident">Roots</span>, <span class="ident">ThreadPool</span>,
+        <span class="ident">TransactionTree</span>, <span class="ident">Tree</span>,
     },
     <span class="ident">vault::Vault</span>,
 };

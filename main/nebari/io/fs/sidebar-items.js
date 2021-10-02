@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["OpenStdFile","An open [`StdFile`] that belongs to a [`StdFileManager`]."],["StdFile","An open file that uses [`std::fs`]."],["StdFileManager","The [`FileManager`] for [`StdFile`]."]]});

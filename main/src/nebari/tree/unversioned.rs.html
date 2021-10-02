@@ -286,6 +286,7 @@
 <span id="286">286</span>
 <span id="287">287</span>
 <span id="288">288</span>
+<span id="289">289</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">convert::TryFrom</span>,
@@ -307,13 +308,14 @@
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">chunk_cache::CacheEntry</span>,
     <span class="ident">error::InternalError</span>,
+    <span class="ident">io::ManagedFile</span>,
     <span class="ident">roots::AbortError</span>,
     <span class="ident">tree</span>::{
         <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">ScanArgs</span>},
         <span class="ident">versioned::ChangeResult</span>,
         <span class="ident">PageHeader</span>, <span class="ident">Root</span>,
     },
-    <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">Error</span>, <span class="ident">ManagedFile</span>, <span class="ident">Vault</span>,
+    <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">Error</span>, <span class="ident">Vault</span>,
 };
 
 <span class="kw">const</span> <span class="ident">MAX_ORDER</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">1000</span>;

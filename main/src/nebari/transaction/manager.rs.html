@@ -310,9 +310,9 @@
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">log::EntryFetcher</span>, <span class="ident">LogEntry</span>, <span class="ident">State</span>, <span class="ident">TransactionLog</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">error::InternalError</span>,
-    <span class="ident">managed_file</span>::{<span class="ident">ManagedFile</span>, <span class="ident">OpenableFile</span>},
+    <span class="ident">io</span>::{<span class="ident">FileManager</span>, <span class="ident">ManagedFile</span>, <span class="ident">OpenableFile</span>},
     <span class="ident">transaction::log::ScanResult</span>,
-    <span class="ident">Context</span>, <span class="ident">Error</span>, <span class="ident">FileManager</span>,
+    <span class="ident">Context</span>, <span class="ident">Error</span>,
 };
 
 <span class="doccomment">/// A shared [`TransactionLog`] manager. Allows multiple threads to interact with a single transaction log.</span>
@@ -333,7 +333,7 @@
         <span class="kw">let</span> (<span class="ident">state_sender</span>, <span class="ident">state_receiver</span>) <span class="op">=</span> <span class="ident">flume::bounded</span>(<span class="number">1</span>);
         <span class="kw">let</span> <span class="ident">thread_context</span> <span class="op">=</span> <span class="ident">context</span>.<span class="ident">clone</span>();
         <span class="ident">std::thread::Builder::new</span>()
-            .<span class="ident">name</span>(<span class="ident">String::from</span>(<span class="string">&quot;bonsaidb-txlog&quot;</span>))
+            .<span class="ident">name</span>(<span class="ident">String::from</span>(<span class="string">&quot;nebari-txlog&quot;</span>))
             .<span class="ident">spawn</span>(<span class="kw">move</span> <span class="op">|</span><span class="op">|</span> {
                 <span class="ident">transaction_writer_thread</span>::<span class="op">&lt;</span><span class="ident">M::File</span><span class="op">&gt;</span>(
                     <span class="ident">state_sender</span>,

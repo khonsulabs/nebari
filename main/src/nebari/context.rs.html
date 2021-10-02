@@ -27,12 +27,12 @@
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std::sync::Arc</span>;
 
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">ChunkCache</span>, <span class="ident">FileManager</span>, <span class="ident">Vault</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">io::FileManager</span>, <span class="ident">ChunkCache</span>, <span class="ident">Vault</span>};
 
 <span class="doccomment">/// A shared environment for database operations.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Clone</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Context</span><span class="op">&lt;</span><span class="ident">M</span>: <span class="ident">FileManager</span><span class="op">&gt;</span> {
-    <span class="doccomment">/// The file manager for the [`ManagedFile`](crate::ManagedFile) implementor.</span>
+    <span class="doccomment">/// The file manager for the [`ManagedFile`](crate::io::ManagedFile) implementor.</span>
     <span class="kw">pub</span> <span class="ident">file_manager</span>: <span class="ident">M</span>,
     <span class="doccomment">/// The optional vault in use.</span>
     <span class="kw">pub</span> <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span><span class="op">&gt;</span>,

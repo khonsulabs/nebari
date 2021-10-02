@@ -963,7 +963,7 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">State</span>, <span class="ident">TransactionHandle</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">managed_file</span>::{<span class="ident">FileManager</span>, <span class="ident">FileOp</span>, <span class="ident">ManagedFile</span>, <span class="ident">OpenableFile</span>},
+    <span class="ident">io</span>::{<span class="ident">FileManager</span>, <span class="ident">FileOp</span>, <span class="ident">ManagedFile</span>, <span class="ident">OpenableFile</span>},
     <span class="ident">Context</span>, <span class="ident">Error</span>, <span class="ident">Vault</span>,
 };
 
@@ -1666,7 +1666,7 @@
 
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="kw">crate</span>::{
-        <span class="ident">managed_file</span>::{
+        <span class="ident">io</span>::{
             <span class="ident">fs</span>::{<span class="ident">StdFile</span>, <span class="ident">StdFileManager</span>},
             <span class="ident">memory::MemoryFile</span>,
             <span class="ident">ManagedFile</span>,
@@ -1684,15 +1684,6 @@
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">memory_log_file_tests</span>() {
         <span class="ident">log_file_tests</span>::<span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span>(<span class="string">&quot;memory_log_file&quot;</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
-    }
-
-    <span class="attribute">#[<span class="ident">test</span>]</span>
-    <span class="kw">fn</span> <span class="ident">file_encrypted_log_manager_tests</span>() {
-        <span class="ident">log_manager_tests</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span>(
-            <span class="string">&quot;encrypted_file_log_manager&quot;</span>,
-            <span class="prelude-val">Some</span>(<span class="ident">Arc::new</span>(<span class="ident">RotatorVault::new</span>(<span class="number">13</span>))),
-            <span class="prelude-val">None</span>,
-        );
     }
 
     <span class="kw">fn</span> <span class="ident">log_file_tests</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
@@ -1825,6 +1816,15 @@
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">memory_log_manager_tests</span>() {
         <span class="ident">log_manager_tests</span>::<span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span>(<span class="string">&quot;memory_log_manager&quot;</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">file_encrypted_log_manager_tests</span>() {
+        <span class="ident">log_manager_tests</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span>(
+            <span class="string">&quot;encrypted_file_log_manager&quot;</span>,
+            <span class="prelude-val">Some</span>(<span class="ident">Arc::new</span>(<span class="ident">RotatorVault::new</span>(<span class="number">13</span>))),
+            <span class="prelude-val">None</span>,
+        );
     }
 
     <span class="kw">fn</span> <span class="ident">log_manager_tests</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(

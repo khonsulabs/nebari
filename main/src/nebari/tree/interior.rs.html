@@ -201,6 +201,8 @@
 <span id="201">201</span>
 <span id="202">202</span>
 <span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">convert::TryFrom</span>,
@@ -213,7 +215,9 @@
     <span class="ident">btree_entry</span>::{<span class="ident">BTreeEntry</span>, <span class="ident">Reducer</span>},
     <span class="ident">read_chunk</span>, <span class="ident">BinarySerialization</span>, <span class="ident">PagedWriter</span>,
 };
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">chunk_cache::CacheEntry</span>, <span class="ident">AbortError</span>, <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">Error</span>, <span class="ident">ManagedFile</span>, <span class="ident">Vault</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{
+    <span class="ident">chunk_cache::CacheEntry</span>, <span class="ident">io::ManagedFile</span>, <span class="ident">AbortError</span>, <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">Error</span>, <span class="ident">Vault</span>,
+};
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Interior</span><span class="op">&lt;</span><span class="ident">I</span>, <span class="ident">R</span><span class="op">&gt;</span> {

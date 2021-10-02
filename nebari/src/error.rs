@@ -19,6 +19,9 @@ pub enum Error {
     /// A key was too large.
     #[error("key too large")]
     KeyTooLarge,
+    /// A value was too large.
+    #[error("value too large")]
+    ValueTooLarge,
     /// A multi-key operation did not have its keys ordered.
     #[error("multi-key operation did not have its keys ordered")]
     KeysNotOrdered,

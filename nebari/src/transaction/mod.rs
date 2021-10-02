@@ -5,7 +5,7 @@ mod manager;
 mod state;
 
 pub use self::{
-    log::{Entries, Entry, LogEntry, TransactionChanges, TransactionLog},
+    log::{LogEntry, TransactionLog},
     manager::*,
     state::*,
 };

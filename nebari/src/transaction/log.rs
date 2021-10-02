@@ -1,24 +1,21 @@
 use std::{
     borrow::Cow,
     cmp::Ordering,
-    collections::BTreeMap,
     convert::TryFrom,
     fs::OpenOptions,
     io::{SeekFrom, Write},
     marker::PhantomData,
-    mem::size_of,
-    ops::{Bound, Deref, RangeBounds},
+    ops::{Bound, RangeBounds},
     path::Path,
     sync::Arc,
 };
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use zerocopy::{AsBytes, FromBytes, LayoutVerified, Unaligned, U64};
 
 use super::{State, TransactionHandle};
 use crate::{
     io::{FileManager, FileOp, ManagedFile, OpenableFile},
-    Context, Error, Vault,
+    Buffer, Context, Error, Vault,
 };
 
 const PAGE_SIZE: usize = 1024;
@@ -472,8 +469,7 @@ impl<F: ManagedFile> FileOp<F> for LogWriter<F> {
 pub struct LogEntry<'a> {
     /// The unique id of this entry.
     pub id: u64,
-    /// Information about what has been changed.
-    pub changes: TransactionChanges<'a>,
+    pub(crate) data: Option<Buffer<'a>>,
 }
 
 impl<'a> LogEntry<'a> {
@@ -482,192 +478,85 @@ impl<'a> LogEntry<'a> {
     pub fn into_owned(self) -> LogEntry<'static> {
         LogEntry {
             id: self.id,
-            changes: self
-                .changes
-                .into_iter()
-                .map(|(key, value)| (Cow::Owned(key.to_vec()), value.into_owned()))
-                .collect(),
-        }
-    }
-
-    /// Append information about a changed document in a tree.
-    pub fn push(&mut self, tree: &[u8], document_id: u64, sequence_id: u64) {
-        let entry = Entry {
-            document_id: U64::from(document_id),
-            sequence_id: U64::from(sequence_id),
-        };
-        if let Some(existing_entry) = self.changes.get_mut(tree) {
-            match existing_entry {
-                Entries::Owned(entries) => entries.push(entry),
-                Entries::Borrowed(_) => unreachable!("Cannot modify a borrowed entry"),
-            }
-        } else {
-            self.changes
-                .insert(Cow::Owned(tree.to_vec()), Entries::Owned(vec![entry]));
+            data: self.data.as_ref().map(Buffer::to_owned),
         }
     }
 }
 
-/// A map of entries by their tree names.
-pub type TransactionChanges<'a> = BTreeMap<Cow<'a, [u8]>, Entries<'a>>;
-
 impl<'a> LogEntry<'a> {
+    /// Returns the associated data, if any.
+    #[must_use]
+    pub const fn data(&self) -> Option<&Buffer<'a>> {
+        self.data.as_ref()
+    }
+
+    /// Sets the associated data that will be stored in the transaction log.
+    /// Limited to a length 16,777,208 (2^24 - 8) bytes -- just shy of 16MB.
+    pub fn set_data(&mut self, data: impl Into<Buffer<'a>>) -> Result<(), Error> {
+        let data = data.into();
+        if data.len() <= 2_usize.pow(24) - 8 {
+            self.data = Some(data);
+            Ok(())
+        } else {
+            Err(Error::ValueTooLarge)
+        }
+    }
+
     pub(crate) fn serialize(&self) -> Result<Vec<u8>, Error> {
         let mut buffer = Vec::new();
         // Transaction ID
         buffer.write_u64::<BigEndian>(self.id)?;
-        // Number of trees in the transaction
-        buffer.write_u16::<BigEndian>(convert_usize(self.changes.len())?)?;
-        for (tree, entries) in &self.changes {
-            // Length of tree name
-            buffer.write_u16::<BigEndian>(convert_usize(tree.len())?)?;
-            // The tree name
-            buffer.write_all(tree)?;
-            // Number of `Entry`s
-            buffer.write_u32::<BigEndian>(convert_usize(entries.len())?)?;
-            for entry in entries.iter() {
-                buffer.write_all(entry.as_bytes())?;
-            }
+        if let Some(data) = &self.data {
+            // The rest of the entry is the data. Since the header of the log entry
+            // contains the length, we don't need to waste space encoding it again.
+            buffer.write_all(data)?;
         }
+
         Ok(buffer)
     }
 
     pub(crate) fn deserialize(mut buffer: &'a [u8]) -> Result<Self, Error> {
         let id = buffer.read_u64::<BigEndian>()?;
-        let number_of_trees = buffer.read_u16::<BigEndian>()?;
-        let mut changes = BTreeMap::new();
-        for _ in 0..number_of_trees {
-            let name_len = usize::from(buffer.read_u16::<BigEndian>()?);
-            if name_len > buffer.len() {
-                return Err(Error::message("invalid tree name length"));
-            }
-            let name_bytes = &buffer[0..name_len];
-            let name = Cow::Borrowed(name_bytes);
-            buffer = &buffer[name_len..];
-
-            let entry_count = usize::try_from(buffer.read_u32::<BigEndian>()?).unwrap();
-            let byte_len = entry_count * size_of::<Entry>();
-            if byte_len > buffer.len() {
-                return Err(Error::message("invalid entry length"));
-            }
-            let entries = LayoutVerified::new_slice(&buffer[..byte_len])
-                .ok_or_else(|| Error::message("invalid entry slice"))?;
-            buffer = &buffer[byte_len..];
-
-            changes.insert(name, Entries::Borrowed(entries));
-        }
-        if buffer.is_empty() {
-            Ok(Self { id, changes })
+        let data = if buffer.is_empty() {
+            None
         } else {
-            Err(Error::message("unexpected trailing bytes"))
-        }
+            Some(Buffer::from(buffer))
+        };
+        Ok(Self { id, data })
     }
-}
-
-/// A collection of entries that might be borrowed.
-#[derive(Debug)]
-pub enum Entries<'a> {
-    /// An owned collection of entries.
-    Owned(Vec<Entry>),
-    /// A borrowed collection of entries.
-    Borrowed(LayoutVerified<&'a [u8], [Entry]>),
-}
-
-impl<'a> Entries<'a> {
-    /// Converts the entries into a `'static` lifetime.
-    #[must_use]
-    pub fn into_owned(self) -> Entries<'static> {
-        match self {
-            Entries::Owned(entries) => Entries::Owned(entries),
-            Entries::Borrowed(borrowed) => Entries::Owned(borrowed.to_vec()),
-        }
-    }
-}
-
-impl<'a> Clone for Entries<'a> {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Owned(owned) => Self::Owned(owned.clone()),
-            Self::Borrowed(borrowed) => Self::Owned(borrowed.to_vec()),
-        }
-    }
-}
-
-impl<'a> Deref for Entries<'a> {
-    type Target = [Entry];
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Entries::Owned(entries) => entries,
-            Entries::Borrowed(entries) => entries,
-        }
-    }
-}
-
-impl<'a> Eq for Entries<'a> {}
-
-impl<'a> PartialEq for Entries<'a> {
-    fn eq(&self, other: &Self) -> bool {
-        **self == **other
-    }
-}
-
-/// A single record of a change.
-#[derive(Debug, Clone, Eq, PartialEq, FromBytes, AsBytes, Unaligned)]
-#[repr(C)]
-pub struct Entry {
-    /// The document id that was changed.
-    pub document_id: U64<BigEndian>,
-    /// The sequence id that was changed.
-    pub sequence_id: U64<BigEndian>,
-}
-
-fn convert_usize<T: TryFrom<usize>>(value: usize) -> Result<T, Error> {
-    T::try_from(value).map_err(|_| Error::message("too many changed trees in a transaction"))
 }
 
 #[test]
 fn serialization_tests() {
-    let mut transaction = LogEntry {
+    let transaction = LogEntry {
         id: 1,
-        changes: BTreeMap::default(),
+        data: Some(Buffer::from(b"hello")),
     };
-    transaction.changes.insert(
-        Cow::Borrowed(b"tree1"),
-        Entries::Owned(vec![Entry {
-            document_id: U64::new(2),
-            sequence_id: U64::new(3),
-        }]),
-    );
     let serialized = transaction.serialize().unwrap();
     let deserialized = LogEntry::deserialize(&serialized).unwrap();
     assert_eq!(transaction, deserialized);
 
-    // Multiple trees
-    let mut transaction = LogEntry {
-        id: 1,
-        changes: BTreeMap::default(),
+    let transaction = LogEntry {
+        id: u64::MAX,
+        data: None,
     };
-    transaction.changes.insert(
-        Cow::Borrowed(b"tree1"),
-        Entries::Owned(vec![Entry {
-            document_id: U64::new(2),
-            sequence_id: U64::new(3),
-        }]),
-    );
-    transaction.changes.insert(
-        Cow::Borrowed(b"tree2"),
-        Entries::Owned(vec![
-            Entry {
-                document_id: U64::new(4),
-                sequence_id: U64::new(5),
-            },
-            Entry {
-                document_id: U64::new(6),
-                sequence_id: U64::new(7),
-            },
-        ]),
-    );
+    let serialized = transaction.serialize().unwrap();
+    let deserialized = LogEntry::deserialize(&serialized).unwrap();
+    assert_eq!(transaction, deserialized);
+
+    // Test the data length limits
+    let mut transaction = LogEntry { id: 0, data: None };
+    let mut big_data = Vec::new();
+    big_data.resize(2_usize.pow(24), 0);
+    let mut big_data = Buffer::from(big_data);
+    assert!(matches!(
+        transaction.set_data(big_data.clone()),
+        Err(Error::ValueTooLarge)
+    ));
+
+    // Remove 8 bytes (the transaction id length) and try again.
+    let big_data = big_data.read_bytes(big_data.len() - 8).unwrap();
+    transaction.set_data(big_data).unwrap();
     let serialized = transaction.serialize().unwrap();
     let deserialized = LogEntry::deserialize(&serialized).unwrap();
     assert_eq!(transaction, deserialized);
@@ -766,13 +655,7 @@ mod tests {
             assert_eq!(transactions.current_transaction_id(), id);
             let mut tx = transactions.new_transaction(&[b"hello"]);
 
-            tx.transaction.changes.insert(
-                Cow::Borrowed(b"tree1"),
-                Entries::Owned(vec![Entry {
-                    document_id: U64::new(2),
-                    sequence_id: U64::new(3),
-                }]),
-            );
+            tx.transaction.data = Some(Buffer::from(id.to_be_bytes()));
 
             transactions.push(vec![tx.transaction]).unwrap();
             transactions.close().unwrap();
@@ -833,20 +716,12 @@ mod tests {
         let mut valid_ids = Vec::new();
         for id in 1..=10_000 {
             assert_eq!(transactions.current_transaction_id(), id);
-            let mut tx = transactions.new_transaction(&[b"hello"]);
+            let tx = transactions.new_transaction(&[b"hello"]);
             if rng.generate::<u8>() < 8 {
                 // skip a few ids.
                 continue;
             }
             valid_ids.push(tx.id);
-
-            tx.transaction.changes.insert(
-                Cow::Borrowed(b"tree1"),
-                Entries::Owned(vec![Entry {
-                    document_id: U64::new(2),
-                    sequence_id: U64::new(3),
-                }]),
-            );
 
             transactions.push(vec![tx.transaction]).unwrap();
         }
@@ -903,16 +778,8 @@ mod tests {
         for _ in 0..10 {
             let manager = manager.clone();
             handles.push(std::thread::spawn(move || {
-                for id in 0..1_000 {
-                    let mut tx = manager.new_transaction(&[id.as_bytes()]);
-
-                    tx.transaction.changes.insert(
-                        Cow::Borrowed(b"tree1"),
-                        Entries::Owned(vec![Entry {
-                            document_id: U64::new(id),
-                            sequence_id: U64::new(3),
-                        }]),
-                    );
+                for id in 0_u32..1_000 {
+                    let tx = manager.new_transaction(&[&id.to_be_bytes()]);
                     manager.push(tx).unwrap();
                 }
             }));

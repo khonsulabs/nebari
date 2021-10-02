@@ -19,6 +19,12 @@ pub struct Buffer<'a> {
     position: usize,
 }
 
+impl<'a> Default for Buffer<'a> {
+    fn default() -> Self {
+        Self::from(b"")
+    }
+}
+
 impl<'a> Debug for Buffer<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut slice = self.as_slice();

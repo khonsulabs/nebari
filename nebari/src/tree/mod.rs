@@ -805,8 +805,7 @@ impl<'a, F: ManagedFile> PagedWriter<'a, F> {
             || Cow::Borrowed(contents),
             |vault| Cow::Owned(vault.encrypt(contents)),
         );
-        let length = u32::try_from(possibly_encrypted.len())
-            .map_err(|_| Error::data_integrity("chunk too large"))?;
+        let length = u32::try_from(possibly_encrypted.len()).map_err(|_| Error::ValueTooLarge)?;
         let crc = CRC32.checksum(&possibly_encrypted);
         let mut position = self.current_position();
         // Ensure that the chunk header can be read contiguously

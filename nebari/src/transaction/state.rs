@@ -11,7 +11,7 @@ use std::{
 use lru::LruCache;
 use parking_lot::{Mutex, MutexGuard};
 
-use super::{LogEntry, TransactionChanges, TransactionHandle, TreeLock, TreeLocks};
+use super::{LogEntry, TransactionHandle, TreeLock, TreeLocks};
 
 const UNINITIALIZED_ID: u64 = 0;
 
@@ -120,7 +120,7 @@ impl State {
                     .state
                     .current_transaction_id
                     .fetch_add(1, Ordering::SeqCst),
-                changes: TransactionChanges::default(),
+                data: None,
             },
         }
     }

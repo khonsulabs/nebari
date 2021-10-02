@@ -58,7 +58,7 @@ use crate::{
     roots::AbortError,
     transaction::TransactionManager,
     tree::{btree_entry::ScanArgs, state::ActiveState},
-    Buffer, ChunkCache, Context, Error, Vault,
+    Buffer, ChunkCache, CompareAndSwapError, Context, Error, Vault,
 };
 
 mod btree_entry;
@@ -317,6 +317,75 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
         })
     }
 
+    /// Compares the value of `key` against `old`. If the values match, key will
+    /// be set to the new value if `new` is `Some` or removed if `new` is
+    /// `None`.
+    pub fn compare_and_swap(
+        &mut self,
+        key: &[u8],
+        old: Option<&Buffer<'_>>,
+        mut new: Option<Buffer<'_>>,
+        transaction_id: u64,
+    ) -> Result<(), CompareAndSwapError> {
+        let mut result = Ok(());
+        self.modify(Modification {
+            transaction_id,
+            keys: vec![Buffer::from(key)],
+            operation: Operation::CompareSwap(CompareSwap::new(&mut |_key, value| {
+                if value.as_ref() == old {
+                    match new.take() {
+                        Some(new) => KeyOperation::Set(new.to_owned()),
+                        None => KeyOperation::Remove,
+                    }
+                } else {
+                    result = Err(CompareAndSwapError::Conflict(value));
+                    KeyOperation::Skip
+                }
+            })),
+        })?;
+        result
+    }
+
+    /// Removes `key` and returns the existing value, if present.
+    pub fn remove(
+        &mut self,
+        key: &[u8],
+        transaction_id: u64,
+    ) -> Result<Option<Buffer<'static>>, Error> {
+        let mut existing_value = None;
+        self.modify(Modification {
+            transaction_id,
+            keys: vec![Buffer::from(key)],
+            operation: Operation::CompareSwap(CompareSwap::new(&mut |_key, value| {
+                existing_value = value;
+                KeyOperation::Remove
+            })),
+        })?;
+        Ok(existing_value)
+    }
+
+    /// Sets `key` to `value`. If a value already exists, it will be returned.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn replace(
+        &mut self,
+        key: impl Into<Buffer<'static>>,
+        value: impl Into<Buffer<'static>>,
+        transaction_id: u64,
+    ) -> Result<Option<Buffer<'static>>, Error> {
+        let mut existing_value = None;
+        let mut value = Some(value.into());
+        self.modify(Modification {
+            transaction_id,
+            keys: vec![key.into()],
+            operation: Operation::CompareSwap(CompareSwap::new(&mut |_, stored_value| {
+                existing_value = stored_value;
+                KeyOperation::Set(value.take().unwrap())
+            })),
+        })?;
+
+        Ok(existing_value)
+    }
+
     /// Gets the value stored for `key`.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn get<'k>(
@@ -418,6 +487,53 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
             _phantom: PhantomData,
         })?;
         Ok(())
+    }
+
+    /// Returns the last key of the tree.
+    pub fn last_key(&mut self, in_transaction: bool) -> Result<Option<Buffer<'static>>, Error> {
+        let mut result = None;
+        self.scan(
+            ..,
+            false,
+            in_transaction,
+            |key| {
+                result = Some(key.clone());
+                KeyEvaluation::Stop
+            },
+            |_key, _value| Ok(()),
+        )
+        .map_err(AbortError::infallible)?;
+
+        Ok(result)
+    }
+
+    /// Returns the last key and value of the tree.
+    pub fn last(
+        &mut self,
+        in_transaction: bool,
+    ) -> Result<Option<(Buffer<'static>, Buffer<'static>)>, Error> {
+        let mut result = None;
+        let mut key_requested = false;
+        self.scan(
+            ..,
+            false,
+            in_transaction,
+            |_| {
+                if key_requested {
+                    KeyEvaluation::Stop
+                } else {
+                    key_requested = true;
+                    KeyEvaluation::ReadData
+                }
+            },
+            |key, value| {
+                result = Some((key, value));
+                Ok(())
+            },
+        )
+        .map_err(AbortError::infallible)?;
+
+        Ok(result)
     }
 
     /// Commits the tree. This is only needed if writes were done with a

@@ -23,8 +23,8 @@ use crate::{
     io::{FileManager, ManagedFile},
     transaction::{LogEntry, TransactionHandle, TransactionManager},
     tree::{
-        self, state::AnyTreeState, CompareSwap, KeyEvaluation, KeyOperation, Modification,
-        Operation, State, TreeFile, TreeRoot, VersionedTreeRoot,
+        self, state::AnyTreeState, KeyEvaluation, Modification, Operation, State, TreeFile,
+        TreeRoot, VersionedTreeRoot,
     },
     Buffer, ChunkCache, Error, Vault,
 };
@@ -351,18 +351,7 @@ impl<Root: tree::Root, F: ManagedFile> TransactionTree<Root, F> {
         key: impl Into<Buffer<'static>>,
         value: impl Into<Buffer<'static>>,
     ) -> Result<Option<Buffer<'static>>, Error> {
-        let mut existing_value = None;
-        let mut value = Some(value.into());
-        self.tree.modify(Modification {
-            transaction_id: self.transaction_id,
-            keys: vec![key.into()],
-            operation: Operation::CompareSwap(CompareSwap::new(&mut |_, stored_value| {
-                existing_value = stored_value;
-                KeyOperation::Set(value.take().unwrap())
-            })),
-        })?;
-
-        Ok(existing_value)
+        self.tree.replace(key, value, self.transaction_id)
     }
 
     /// Returns the current value of `key`. This will return updated information
@@ -373,16 +362,7 @@ impl<Root: tree::Root, F: ManagedFile> TransactionTree<Root, F> {
 
     /// Removes `key` and returns the existing value, if present.
     pub fn remove(&mut self, key: &[u8]) -> Result<Option<Buffer<'static>>, Error> {
-        let mut existing_value = None;
-        self.tree.modify(Modification {
-            transaction_id: self.transaction_id,
-            keys: vec![Buffer::from(key)],
-            operation: Operation::CompareSwap(CompareSwap::new(&mut |_key, value| {
-                existing_value = value;
-                KeyOperation::Remove
-            })),
-        })?;
-        Ok(existing_value)
+        self.tree.remove(key, self.transaction_id)
     }
 
     /// Compares the value of `key` against `old`. If the values match, key will
@@ -392,25 +372,10 @@ impl<Root: tree::Root, F: ManagedFile> TransactionTree<Root, F> {
         &mut self,
         key: &[u8],
         old: Option<&Buffer<'_>>,
-        mut new: Option<Buffer<'_>>,
+        new: Option<Buffer<'_>>,
     ) -> Result<(), CompareAndSwapError> {
-        let mut result = Ok(());
-        self.tree.modify(Modification {
-            transaction_id: self.transaction_id,
-            keys: vec![Buffer::from(key)],
-            operation: Operation::CompareSwap(CompareSwap::new(&mut |_key, value| {
-                if value.as_ref() == old {
-                    match new.take() {
-                        Some(new) => KeyOperation::Set(new.to_owned()),
-                        None => KeyOperation::Remove,
-                    }
-                } else {
-                    result = Err(CompareAndSwapError::Conflict(value));
-                    KeyOperation::Skip
-                }
-            })),
-        })?;
-        result
+        self.tree
+            .compare_and_swap(key, old, new, self.transaction_id)
     }
 
     /// Retrieves the values of `keys`. If any keys are not found, they will be
@@ -460,49 +425,13 @@ impl<Root: tree::Root, F: ManagedFile> TransactionTree<Root, F> {
     /// Returns the last  of the tree.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn last_key(&mut self) -> Result<Option<Buffer<'static>>, Error> {
-        let mut result = None;
-        self.tree
-            .scan(
-                ..,
-                false,
-                true,
-                |key| {
-                    result = Some(key.clone());
-                    KeyEvaluation::Stop
-                },
-                |_key, _value| Ok(()),
-            )
-            .map_err(AbortError::infallible)?;
-
-        Ok(result)
+        self.tree.last_key(true)
     }
 
     /// Returns the last key and value of the tree.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn last(&mut self) -> Result<Option<(Buffer<'static>, Buffer<'static>)>, Error> {
-        let mut result = None;
-        let mut key_requested = false;
-        self.tree
-            .scan(
-                ..,
-                false,
-                true,
-                |_| {
-                    if key_requested {
-                        KeyEvaluation::Stop
-                    } else {
-                        key_requested = true;
-                        KeyEvaluation::ReadData
-                    }
-                },
-                |key, value| {
-                    result = Some((key, value));
-                    Ok(())
-                },
-            )
-            .map_err(AbortError::infallible)?;
-
-        Ok(result)
+        self.tree.last(true)
     }
 }
 
@@ -729,20 +658,7 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
             Some(self.roots.transactions()),
         )?;
 
-        let mut result = None;
-        tree.scan(
-            ..,
-            false,
-            false,
-            |key| {
-                result = Some(key.clone());
-                KeyEvaluation::Stop
-            },
-            |_key, _value| Ok(()),
-        )
-        .map_err(AbortError::infallible)?;
-
-        Ok(result)
+        tree.last_key(false)
     }
 
     /// Returns the last key and value of the tree.
@@ -755,28 +671,7 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
             Some(self.roots.transactions()),
         )?;
 
-        let mut result = None;
-        let mut key_requested = false;
-        tree.scan(
-            ..,
-            false,
-            false,
-            |_| {
-                if key_requested {
-                    KeyEvaluation::Stop
-                } else {
-                    key_requested = true;
-                    KeyEvaluation::ReadData
-                }
-            },
-            |key, value| {
-                result = Some((key, value));
-                Ok(())
-            },
-        )
-        .map_err(AbortError::infallible)?;
-
-        Ok(result)
+        tree.last(false)
     }
 }
 

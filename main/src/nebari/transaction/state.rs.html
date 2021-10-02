@@ -167,7 +167,7 @@
 <span class="kw">use</span> <span class="ident">lru::LruCache</span>;
 <span class="kw">use</span> <span class="ident">parking_lot</span>::{<span class="ident">Mutex</span>, <span class="ident">MutexGuard</span>};
 
-<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">LogEntry</span>, <span class="ident">TransactionChanges</span>, <span class="ident">TransactionHandle</span>, <span class="ident">TreeLock</span>, <span class="ident">TreeLocks</span>};
+<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">LogEntry</span>, <span class="ident">TransactionHandle</span>, <span class="ident">TreeLock</span>, <span class="ident">TreeLocks</span>};
 
 <span class="kw">const</span> <span class="ident">UNINITIALIZED_ID</span>: <span class="ident">u64</span> <span class="op">=</span> <span class="number">0</span>;
 
@@ -276,7 +276,7 @@
                     .<span class="ident">state</span>
                     .<span class="ident">current_transaction_id</span>
                     .<span class="ident">fetch_add</span>(<span class="number">1</span>, <span class="ident">Ordering::SeqCst</span>),
-                <span class="ident">changes</span>: <span class="ident">TransactionChanges::default</span>(),
+                <span class="ident">data</span>: <span class="prelude-val">None</span>,
             },
         }
     }

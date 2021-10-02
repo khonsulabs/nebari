@@ -1,3 +1,0 @@
-(function() {var implementors = {};
-implementors["nebari"] = [{"text":"impl AsBytes for <a class=\"struct\" href=\"nebari/transaction/struct.Entry.html\" title=\"struct nebari::transaction::Entry\">Entry</a>","synthetic":false,"types":["nebari::transaction::log::Entry"]}];
-if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

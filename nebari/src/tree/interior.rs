@@ -11,7 +11,8 @@ use super::{
     read_chunk, BinarySerialization, PagedWriter,
 };
 use crate::{
-    chunk_cache::CacheEntry, io::ManagedFile, AbortError, Buffer, ChunkCache, Error, Vault,
+    chunk_cache::CacheEntry, io::ManagedFile, tree::btree_entry::NodeInclusion, AbortError, Buffer,
+    ChunkCache, Error, Vault,
 };
 
 #[derive(Clone, Debug)]
@@ -98,6 +99,15 @@ impl<
         }
     }
 
+    pub fn position(&self) -> Option<u64> {
+        match self {
+            Pointer::OnDisk(location) => Some(*location),
+            Pointer::Loaded {
+                previous_location, ..
+            } => *previous_location,
+        }
+    }
+
     pub fn map_loaded_entry<
         Output,
         E: Display + Debug,
@@ -141,12 +151,15 @@ impl<
         R: Reducer<I> + Clone + BinarySerialization + Debug + 'static,
     > Interior<I, R>
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn copy_data_to<F, Callback>(
         &mut self,
+        include_nodes: NodeInclusion,
         file: &mut F,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, F>,
         vault: Option<&dyn Vault>,
+        scratch: &mut Vec<u8>,
         index_callback: &mut Callback,
     ) -> Result<bool, Error>
     where
@@ -161,13 +174,33 @@ impl<
         ) -> Result<bool, Error>,
     {
         self.position.load(file, true, vault, None, 0)?;
-        self.position.get_mut().unwrap().copy_data_to(
+        let node = self.position.get_mut().unwrap();
+        let mut any_data_copied = node.copy_data_to(
+            include_nodes,
             file,
             copied_chunks,
             writer,
             vault,
+            scratch,
             index_callback,
-        )
+        )?;
+
+        // Serialize if we are supposed to
+        let position = if include_nodes.should_include() {
+            any_data_copied = true;
+            scratch.clear();
+            node.serialize_to(scratch, writer)?;
+            Some(writer.write_chunk(scratch, false)?)
+        } else {
+            self.position.position()
+        };
+
+        // Remove the node from memory to save RAM during the compaction process.
+        if let Some(position) = position {
+            self.position = Pointer::OnDisk(position);
+        }
+
+        Ok(any_data_copied)
     }
 }
 

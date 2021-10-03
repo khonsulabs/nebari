@@ -99,6 +99,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     /// file positions.
     fn copy_data_to<F: ManagedFile>(
         &mut self,
+        include_nodes: bool,
         file: &mut F,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, F>,

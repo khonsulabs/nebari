@@ -23,7 +23,7 @@ use crate::{
     io::ManagedFile,
     roots::AbortError,
     tree::{
-        btree_entry::{KeyOperation, ModificationContext, ScanArgs},
+        btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
         copy_chunk,
         modify::Operation,
         PageHeader, Root,
@@ -387,6 +387,7 @@ impl Root for VersionedTreeRoot {
     // TODO can we make compaction smarter to not get rid of *all* old data in a versioned file?
     fn copy_data_to<F: ManagedFile>(
         &mut self,
+        include_nodes: bool,
         file: &mut F,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, F>,
@@ -396,11 +397,18 @@ impl Root for VersionedTreeRoot {
         let mut sequence_indexes = Vec::with_capacity(
             usize::try_from(self.by_id_root.stats().alive_documents).unwrap_or(usize::MAX),
         );
+        let mut scratch = Vec::new();
         self.by_id_root.copy_data_to(
+            if include_nodes {
+                NodeInclusion::IncludeNext
+            } else {
+                NodeInclusion::Exclude
+            },
             file,
             copied_chunks,
             writer,
             vault,
+            &mut scratch,
             &mut |key, index: &mut VersionedByIdIndex, from_file, copied_chunks, to_file, vault| {
                 let new_position =
                     copy_chunk(index.position, from_file, copied_chunks, to_file, vault)?;

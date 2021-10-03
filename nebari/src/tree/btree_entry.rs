@@ -597,12 +597,15 @@ where
         Ok(true)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn copy_data_to<F, Callback>(
         &mut self,
+        include_nodes: NodeInclusion,
         file: &mut F,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, F>,
         vault: Option<&dyn Vault>,
+        scratch: &mut Vec<u8>,
         index_callback: &mut Callback,
     ) -> Result<bool, Error>
     where
@@ -627,15 +630,41 @@ where
             }
             BTreeNode::Interior(children) => {
                 for child in children {
-                    any_changes =
-                        child.copy_data_to(file, copied_chunks, writer, vault, index_callback)?
-                            || any_changes;
+                    any_changes = child.copy_data_to(
+                        include_nodes.next(),
+                        file,
+                        copied_chunks,
+                        writer,
+                        vault,
+                        scratch,
+                        index_callback,
+                    )? || any_changes;
                 }
             }
             BTreeNode::Uninitialized => unreachable!(),
         }
         self.dirty |= any_changes;
         Ok(any_changes)
+    }
+}
+
+#[derive(Clone, Debug, Copy, Eq, PartialEq)]
+pub enum NodeInclusion {
+    Exclude,
+    IncludeNext,
+    Include,
+}
+
+impl NodeInclusion {
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Exclude => Self::Exclude,
+            Self::IncludeNext | Self::Include => Self::Include,
+        }
+    }
+
+    pub const fn should_include(self) -> bool {
+        matches!(self, Self::Include)
     }
 }
 

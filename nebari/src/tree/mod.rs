@@ -604,7 +604,7 @@ impl<'a, Root: root::Root, F: ManagedFile> FileOp<F> for TreeCompactor<'a, Root,
         let mut copied_chunks = HashMap::new();
         let read_state = self.state.read();
         let mut temporary_header = read_state.header.clone();
-        temporary_header.copy_data_to(file, &mut copied_chunks, &mut writer, self.vault)?;
+        temporary_header.copy_data_to(false, file, &mut copied_chunks, &mut writer, self.vault)?;
         drop(read_state);
 
         // Now, do the same with the write state, which should be very fast,
@@ -612,7 +612,7 @@ impl<'a, Root: root::Root, F: ManagedFile> FileOp<F> for TreeCompactor<'a, Root,
         let mut write_state = self.state.lock();
         write_state
             .header
-            .copy_data_to(file, &mut copied_chunks, &mut writer, self.vault)?;
+            .copy_data_to(true, file, &mut copied_chunks, &mut writer, self.vault)?;
 
         save_tree(
             &mut write_state,

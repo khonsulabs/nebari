@@ -1176,21 +1176,17 @@ mod tests {
         };
         let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
         {
-            let state = State::default();
-            if ids.len() > 1 {
-                TreeFile::<VersionedTreeRoot, F>::initialize_state(
-                    &state, file_path, context, None,
-                )
-                .unwrap();
-            }
+            let state = if ids.len() > 1 {
+                let state = State::default();
+                TreeFile::<R, F>::initialize_state(&state, file_path, context, None).unwrap();
+                state
+            } else {
+                State::initialized()
+            };
             let file = context.file_manager.append(file_path).unwrap();
-            let mut tree = TreeFile::<VersionedTreeRoot, F>::new(
-                file,
-                state,
-                context.vault.clone(),
-                context.cache.clone(),
-            )
-            .unwrap();
+            let mut tree =
+                TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
+                    .unwrap();
             tree.push(0, id_buffer.clone(), Buffer::from(b"hello world"))
                 .unwrap();
 
@@ -1202,17 +1198,12 @@ mod tests {
         // Try loading the file up and retrieving the data.
         {
             let state = State::default();
-            TreeFile::<VersionedTreeRoot, F>::initialize_state(&state, file_path, context, None)
-                .unwrap();
+            TreeFile::<R, F>::initialize_state(&state, file_path, context, None).unwrap();
 
             let file = context.file_manager.append(file_path).unwrap();
-            let mut tree = TreeFile::<VersionedTreeRoot, F>::new(
-                file,
-                state,
-                context.vault.clone(),
-                context.cache.clone(),
-            )
-            .unwrap();
+            let mut tree =
+                TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
+                    .unwrap();
             let value = tree.get(&id_buffer, false).unwrap();
             assert_eq!(&*value.unwrap(), b"hello world");
         }
@@ -1226,16 +1217,11 @@ mod tests {
         let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
         {
             let state = State::default();
-            TreeFile::<VersionedTreeRoot, F>::initialize_state(&state, file_path, context, None)
-                .unwrap();
+            TreeFile::<R, F>::initialize_state(&state, file_path, context, None).unwrap();
             let file = context.file_manager.append(file_path).unwrap();
-            let mut tree = TreeFile::<VersionedTreeRoot, F>::new(
-                file,
-                state,
-                context.vault.clone(),
-                context.cache.clone(),
-            )
-            .unwrap();
+            let mut tree =
+                TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
+                    .unwrap();
             tree.modify(Modification {
                 transaction_id: 0,
                 keys: vec![id_buffer.clone()],
@@ -1251,17 +1237,12 @@ mod tests {
         // Try loading the file up and retrieving the data.
         {
             let state = State::default();
-            TreeFile::<VersionedTreeRoot, F>::initialize_state(&state, file_path, context, None)
-                .unwrap();
+            TreeFile::<R, F>::initialize_state(&state, file_path, context, None).unwrap();
 
             let file = context.file_manager.append(file_path).unwrap();
-            let mut tree = TreeFile::<VersionedTreeRoot, F>::new(
-                file,
-                state,
-                context.vault.clone(),
-                context.cache.clone(),
-            )
-            .unwrap();
+            let mut tree =
+                TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
+                    .unwrap();
             let value = tree.get(&id_buffer, false).unwrap();
             assert_eq!(value, None);
         }

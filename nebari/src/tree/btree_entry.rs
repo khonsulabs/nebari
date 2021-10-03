@@ -175,7 +175,8 @@ where
     {
         let mut last_index = 0;
         let mut any_changes = false;
-        while !modification.keys.is_empty() && children.len() < context.current_order {
+        let max_len = children.len().max(context.current_order);
+        while !modification.keys.is_empty() && children.len() <= max_len {
             let key = modification.keys.last().unwrap();
             let search_result = children[last_index..].binary_search_by(|child| child.key.cmp(key));
             match search_result {
@@ -323,9 +324,7 @@ where
         let mut last_index = 0;
         let mut any_changes = false;
         while let Some(key) = modification.keys.last().cloned() {
-            if children.len() >= context.current_order
-                || max_key.map(|max_key| &key > max_key).unwrap_or_default()
-            {
+            if max_key.map(|max_key| &key > max_key).unwrap_or_default() {
                 break;
             }
             let containing_node_index = children[last_index..]
@@ -346,12 +345,21 @@ where
 
             last_index += containing_node_index;
             let child = &mut children[last_index];
-            child.position.load(writer, context.current_order)?;
+            child.position.load(
+                writer.file,
+                false,
+                writer.vault,
+                writer.cache,
+                context.current_order,
+            )?;
             let child_entry = child.position.get_mut().unwrap();
-            match child_entry
-                // TODO evaluate whether Some(key) is right here -- shouldn't it be the max of key/child.key?
-                .modify(modification, context, Some(&key), changes, writer)?
-            {
+            match child_entry.modify(
+                modification,
+                context,
+                Some(&key.max(child.key.clone())),
+                changes,
+                writer,
+            )? {
                 ChangeResult::Unchanged => {}
                 ChangeResult::Changed => {
                     child.key = child_entry.max_key().clone();
@@ -362,7 +370,9 @@ where
                     child.key = child_entry.max_key().clone();
                     child.stats = child_entry.stats();
 
-                    if children.capacity() < children.len() + 1 {
+                    if children.capacity() < children.len() + 1
+                        && context.current_order > children.len()
+                    {
                         children.reserve(context.current_order - children.len());
                     }
                     children.insert(last_index + 1, Interior::from(upper));
@@ -519,9 +529,11 @@ where
         match &self.node {
             BTreeNode::Leaf(children) => {
                 let mut last_index = 0;
+                let mut took_one_key = false;
                 while let Some(key) = keys.current_key() {
                     match children[last_index..].binary_search_by(|child| (&*child.key).cmp(key)) {
                         Ok(matching) => {
+                            took_one_key = true;
                             keys.next();
                             last_index += matching;
                             let entry = &children[last_index];
@@ -534,9 +546,16 @@ where
                                 KeyEvaluation::Stop => return Ok(false),
                             }
                         }
-                        Err(_) => {
-                            // No longer matching within this tree
-                            break;
+                        Err(location) => {
+                            last_index += location;
+                            if last_index == children.len() && took_one_key {
+                                // No longer matching within this tree
+                                break;
+                            }
+
+                            // Key not found.
+                            took_one_key = true;
+                            keys.next();
                         }
                     }
                 }

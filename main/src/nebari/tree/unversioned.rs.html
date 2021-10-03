@@ -287,8 +287,45 @@
 <span id="287">287</span>
 <span id="288">288</span>
 <span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
+    <span class="ident">collections::HashMap</span>,
     <span class="ident">convert::TryFrom</span>,
     <span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Display</span>},
     <span class="ident">marker::PhantomData</span>,
@@ -312,6 +349,7 @@
     <span class="ident">roots::AbortError</span>,
     <span class="ident">tree</span>::{
         <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">ScanArgs</span>},
+        <span class="ident">copy_chunk</span>,
         <span class="ident">versioned::ChangeResult</span>,
         <span class="ident">PageHeader</span>, <span class="ident">Root</span>,
     },
@@ -499,7 +537,7 @@
 
         <span class="kw">for</span> (<span class="ident">key</span>, <span class="ident">position</span>) <span class="kw">in</span> <span class="ident">positions_to_read</span> {
             <span class="kw">if</span> <span class="ident">position</span> <span class="op">&gt;</span> <span class="number">0</span> {
-                <span class="kw">match</span> <span class="ident">read_chunk</span>(<span class="ident">position</span>, <span class="ident">file</span>, <span class="ident">vault</span>, <span class="ident">cache</span>)<span class="question-mark">?</span> {
+                <span class="kw">match</span> <span class="ident">read_chunk</span>(<span class="ident">position</span>, <span class="bool-val">false</span>, <span class="ident">file</span>, <span class="ident">vault</span>, <span class="ident">cache</span>)<span class="question-mark">?</span> {
                     <span class="ident">CacheEntry::Buffer</span>(<span class="ident">contents</span>) <span class="op">=</span><span class="op">&gt;</span> {
                         <span class="ident">key_reader</span>(<span class="ident">key</span>, <span class="ident">contents</span>)<span class="question-mark">?</span>;
                     }
@@ -544,7 +582,7 @@
 
         <span class="kw">for</span> (<span class="ident">key</span>, <span class="ident">position</span>) <span class="kw">in</span> <span class="ident">positions_to_read</span> {
             <span class="kw">if</span> <span class="ident">position</span> <span class="op">&gt;</span> <span class="number">0</span> {
-                <span class="kw">match</span> <span class="ident">read_chunk</span>(<span class="ident">position</span>, <span class="ident">file</span>, <span class="ident">vault</span>, <span class="ident">cache</span>)<span class="question-mark">?</span> {
+                <span class="kw">match</span> <span class="ident">read_chunk</span>(<span class="ident">position</span>, <span class="bool-val">false</span>, <span class="ident">file</span>, <span class="ident">vault</span>, <span class="ident">cache</span>)<span class="question-mark">?</span> {
                     <span class="ident">CacheEntry::Buffer</span>(<span class="ident">contents</span>) <span class="op">=</span><span class="op">&gt;</span> {
                         (<span class="ident">args</span>.<span class="ident">key_reader</span>)(<span class="ident">key</span>, <span class="ident">contents</span>)<span class="question-mark">?</span>;
                     }
@@ -552,6 +590,40 @@
                 };
             }
         }
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="kw">fn</span> <span class="ident">copy_data_to</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">F</span>,
+        <span class="ident">copied_chunks</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">u64</span><span class="op">&gt;</span>,
+        <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">F</span><span class="op">&gt;</span>,
+        <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">copy_data_to</span>(
+            <span class="ident">file</span>,
+            <span class="ident">copied_chunks</span>,
+            <span class="ident">writer</span>,
+            <span class="ident">vault</span>,
+            <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="op">|</span><span class="ident">_key</span>,
+                  <span class="ident">index</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">UnversionedByIdIndex</span>,
+                  <span class="ident">from_file</span>,
+                  <span class="ident">copied_chunks</span>,
+                  <span class="ident">to_file</span>,
+                  <span class="ident">vault</span><span class="op">|</span> {
+                <span class="kw">let</span> <span class="ident">new_position</span> <span class="op">=</span>
+                    <span class="ident">copy_chunk</span>(<span class="ident">index</span>.<span class="ident">position</span>, <span class="ident">from_file</span>, <span class="ident">copied_chunks</span>, <span class="ident">to_file</span>, <span class="ident">vault</span>)<span class="question-mark">?</span>;
+
+                <span class="kw">if</span> <span class="ident">new_position</span> <span class="op">=</span><span class="op">=</span> <span class="ident">index</span>.<span class="ident">position</span> {
+                    <span class="comment">// Data is already in the new file</span>
+                    <span class="prelude-val">Ok</span>(<span class="bool-val">false</span>)
+                } <span class="kw">else</span> {
+                    <span class="ident">index</span>.<span class="ident">position</span> <span class="op">=</span> <span class="ident">new_position</span>;
+                    <span class="prelude-val">Ok</span>(<span class="bool-val">true</span>)
+                }
+            },
+        )<span class="question-mark">?</span>;
+
         <span class="prelude-val">Ok</span>(())
     }
 }

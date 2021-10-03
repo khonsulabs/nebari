@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     convert::TryFrom,
     fmt::{Debug, Display},
 };
@@ -59,12 +60,15 @@ impl<
 {
     pub fn load<F: ManagedFile>(
         &mut self,
-        writer: &mut PagedWriter<'_, F>,
+        file: &mut F,
+        validate_crc: bool,
+        vault: Option<&dyn Vault>,
+        cache: Option<&ChunkCache>,
         current_order: usize,
     ) -> Result<(), Error> {
         match self {
             Pointer::OnDisk(position) => {
-                let entry = match writer.read_chunk(*position)? {
+                let entry = match read_chunk(*position, validate_crc, file, vault, cache)? {
                     CacheEntry::Buffer(mut buffer) => {
                         // It's worthless to store this node in the cache
                         // because if we mutate, we'll be rewritten.
@@ -108,7 +112,7 @@ impl<
         callback: Cb,
     ) -> Result<Output, AbortError<E>> {
         match self {
-            Pointer::OnDisk(position) => match read_chunk(*position, file, vault, cache)? {
+            Pointer::OnDisk(position) => match read_chunk(*position, false, file, vault, cache)? {
                 CacheEntry::Buffer(mut buffer) => {
                     let decoded = BTreeEntry::deserialize_from(&mut buffer, current_order)?;
 
@@ -129,6 +133,41 @@ impl<
             },
             Pointer::Loaded { entry, .. } => callback(entry, file),
         }
+    }
+}
+
+impl<
+        I: Clone + BinarySerialization + Debug + 'static,
+        R: Reducer<I> + Clone + BinarySerialization + Debug + 'static,
+    > Interior<I, R>
+{
+    pub fn copy_data_to<F, Callback>(
+        &mut self,
+        file: &mut F,
+        copied_chunks: &mut HashMap<u64, u64>,
+        writer: &mut PagedWriter<'_, F>,
+        vault: Option<&dyn Vault>,
+        index_callback: &mut Callback,
+    ) -> Result<bool, Error>
+    where
+        F: ManagedFile,
+        Callback: FnMut(
+            &Buffer<'static>,
+            &mut I,
+            &mut F,
+            &mut HashMap<u64, u64>,
+            &mut PagedWriter<'_, F>,
+            Option<&dyn Vault>,
+        ) -> Result<bool, Error>,
+    {
+        self.position.load(file, true, vault, None, 0)?;
+        self.position.get_mut().unwrap().copy_data_to(
+            file,
+            copied_chunks,
+            writer,
+            vault,
+            index_callback,
+        )
     }
 }
 

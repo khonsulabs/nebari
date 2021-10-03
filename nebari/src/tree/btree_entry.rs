@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     convert::Infallible,
     fmt::{Debug, Display},
     marker::PhantomData,
@@ -594,6 +595,47 @@ where
             BTreeNode::Uninitialized => unreachable!(),
         }
         Ok(true)
+    }
+
+    pub fn copy_data_to<F, Callback>(
+        &mut self,
+        file: &mut F,
+        copied_chunks: &mut HashMap<u64, u64>,
+        writer: &mut PagedWriter<'_, F>,
+        vault: Option<&dyn Vault>,
+        index_callback: &mut Callback,
+    ) -> Result<bool, Error>
+    where
+        F: ManagedFile,
+        Callback: FnMut(
+            &Buffer<'static>,
+            &mut I,
+            &mut F,
+            &mut HashMap<u64, u64>,
+            &mut PagedWriter<'_, F>,
+            Option<&dyn Vault>,
+        ) -> Result<bool, Error>,
+    {
+        let mut any_changes = false;
+        match &mut self.node {
+            BTreeNode::Leaf(children) => {
+                for child in children {
+                    any_changes =
+                        child.copy_data_to(file, copied_chunks, writer, vault, index_callback)?
+                            || any_changes;
+                }
+            }
+            BTreeNode::Interior(children) => {
+                for child in children {
+                    any_changes =
+                        child.copy_data_to(file, copied_chunks, writer, vault, index_callback)?
+                            || any_changes;
+                }
+            }
+            BTreeNode::Uninitialized => unreachable!(),
+        }
+        self.dirty |= any_changes;
+        Ok(any_changes)
     }
 }
 

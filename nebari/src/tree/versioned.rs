@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     convert::TryFrom,
     fmt::{Debug, Display},
     marker::PhantomData,
@@ -23,6 +24,7 @@ use crate::{
     roots::AbortError,
     tree::{
         btree_entry::{KeyOperation, ModificationContext, ScanArgs},
+        copy_chunk,
         modify::Operation,
         PageHeader, Root,
     },
@@ -326,7 +328,7 @@ impl Root for VersionedTreeRoot {
 
         for (key, position) in positions_to_read {
             if position > 0 {
-                match read_chunk(position, file, vault, cache)? {
+                match read_chunk(position, false, file, vault, cache)? {
                     CacheEntry::Buffer(contents) => {
                         key_reader(key, contents)?;
                     }
@@ -371,7 +373,7 @@ impl Root for VersionedTreeRoot {
 
         for (key, position) in positions_to_read {
             if position > 0 {
-                match read_chunk(position, file, vault, cache)? {
+                match read_chunk(position, false, file, vault, cache)? {
                     CacheEntry::Buffer(contents) => {
                         (args.key_reader)(key, contents)?;
                     }
@@ -379,6 +381,79 @@ impl Root for VersionedTreeRoot {
                 };
             }
         }
+        Ok(())
+    }
+
+    // TODO can we make compaction smarter to not get rid of *all* old data in a versioned file?
+    fn copy_data_to<F: ManagedFile>(
+        &mut self,
+        file: &mut F,
+        copied_chunks: &mut HashMap<u64, u64>,
+        writer: &mut PagedWriter<'_, F>,
+        vault: Option<&dyn Vault>,
+    ) -> Result<(), Error> {
+        // Copy all of the data using the ID root.
+        let mut sequence_indexes = Vec::with_capacity(
+            usize::try_from(self.by_id_root.stats().alive_documents).unwrap_or(usize::MAX),
+        );
+        self.by_id_root.copy_data_to(
+            file,
+            copied_chunks,
+            writer,
+            vault,
+            &mut |key, index: &mut VersionedByIdIndex, from_file, copied_chunks, to_file, vault| {
+                let new_position =
+                    copy_chunk(index.position, from_file, copied_chunks, to_file, vault)?;
+
+                sequence_indexes.push(BySequenceIndex {
+                    document_id: key.clone(),
+                    document_size: index.document_size,
+                    position: new_position,
+                });
+
+                if new_position == index.position {
+                    // Data is already in the new file
+                    Ok(false)
+                } else {
+                    index.position = new_position;
+                    Ok(true)
+                }
+            },
+        )?;
+
+        // Replace our by_sequence index with a new truncated one.
+        self.by_sequence_root = BTreeEntry::default();
+
+        sequence_indexes.sort_by(|a, b| a.document_id.cmp(&b.document_id));
+        let by_sequence_order = dynamic_order::<MAX_ORDER>(sequence_indexes.len() as u64);
+
+        // This modification copies the `sequence_indexes` into the sequence root.
+        self.by_sequence_root.modify(
+            &mut Modification {
+                transaction_id: self.transaction_id,
+                keys: sequence_indexes
+                    .iter()
+                    .map(|index| index.document_id.clone())
+                    .collect(),
+                operation: Operation::SetEach(sequence_indexes),
+            },
+            &ModificationContext {
+                current_order: by_sequence_order,
+                indexer: |_key: &Buffer<'_>,
+                          value: Option<&BySequenceIndex>,
+                          _existing_index: Option<&BySequenceIndex>,
+                          _changes: &mut EntryChanges,
+                          _writer: &mut PagedWriter<'_, F>| {
+                    Ok(KeyOperation::Set(value.unwrap().clone()))
+                },
+                loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_, F>| unreachable!(),
+                _phantom: PhantomData,
+            },
+            None,
+            &mut EntryChanges::default(),
+            writer,
+        )?;
+
         Ok(())
     }
 }

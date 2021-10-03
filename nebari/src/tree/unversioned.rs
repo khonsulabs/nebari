@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     convert::TryFrom,
     fmt::{Debug, Display},
     marker::PhantomData,
@@ -22,6 +23,7 @@ use crate::{
     roots::AbortError,
     tree::{
         btree_entry::{KeyOperation, ModificationContext, ScanArgs},
+        copy_chunk,
         versioned::ChangeResult,
         PageHeader, Root,
     },
@@ -209,7 +211,7 @@ impl Root for UnversionedTreeRoot {
 
         for (key, position) in positions_to_read {
             if position > 0 {
-                match read_chunk(position, file, vault, cache)? {
+                match read_chunk(position, false, file, vault, cache)? {
                     CacheEntry::Buffer(contents) => {
                         key_reader(key, contents)?;
                     }
@@ -254,7 +256,7 @@ impl Root for UnversionedTreeRoot {
 
         for (key, position) in positions_to_read {
             if position > 0 {
-                match read_chunk(position, file, vault, cache)? {
+                match read_chunk(position, false, file, vault, cache)? {
                     CacheEntry::Buffer(contents) => {
                         (args.key_reader)(key, contents)?;
                     }
@@ -262,6 +264,40 @@ impl Root for UnversionedTreeRoot {
                 };
             }
         }
+        Ok(())
+    }
+
+    fn copy_data_to<F: ManagedFile>(
+        &mut self,
+        file: &mut F,
+        copied_chunks: &mut HashMap<u64, u64>,
+        writer: &mut PagedWriter<'_, F>,
+        vault: Option<&dyn Vault>,
+    ) -> Result<(), Error> {
+        self.by_id_root.copy_data_to(
+            file,
+            copied_chunks,
+            writer,
+            vault,
+            &mut |_key,
+                  index: &mut UnversionedByIdIndex,
+                  from_file,
+                  copied_chunks,
+                  to_file,
+                  vault| {
+                let new_position =
+                    copy_chunk(index.position, from_file, copied_chunks, to_file, vault)?;
+
+                if new_position == index.position {
+                    // Data is already in the new file
+                    Ok(false)
+                } else {
+                    index.position = new_position;
+                    Ok(true)
+                }
+            },
+        )?;
+
         Ok(())
     }
 }

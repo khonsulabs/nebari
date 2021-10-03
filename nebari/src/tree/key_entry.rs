@@ -1,14 +1,45 @@
-use std::convert::TryFrom;
+use std::{collections::HashMap, convert::TryFrom};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{serialization::BinarySerialization, PagedWriter};
-use crate::{io::ManagedFile, Buffer, Error};
+use crate::{io::ManagedFile, Buffer, Error, Vault};
 
 #[derive(Debug, Clone)]
 pub struct KeyEntry<I> {
     pub key: Buffer<'static>,
     pub index: I,
+}
+
+impl<I: BinarySerialization> KeyEntry<I> {
+    pub fn copy_data_to<F, Callback>(
+        &mut self,
+        file: &mut F,
+        copied_chunks: &mut HashMap<u64, u64>,
+        writer: &mut PagedWriter<'_, F>,
+        vault: Option<&dyn Vault>,
+        index_callback: &mut Callback,
+    ) -> Result<bool, Error>
+    where
+        F: ManagedFile,
+        Callback: FnMut(
+            &Buffer<'static>,
+            &mut I,
+            &mut F,
+            &mut HashMap<u64, u64>,
+            &mut PagedWriter<'_, F>,
+            Option<&dyn Vault>,
+        ) -> Result<bool, Error>,
+    {
+        index_callback(
+            &self.key,
+            &mut self.index,
+            file,
+            copied_chunks,
+            writer,
+            vault,
+        )
+    }
 }
 
 impl<I: BinarySerialization> BinarySerialization for KeyEntry<I> {

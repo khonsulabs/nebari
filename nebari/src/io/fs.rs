@@ -3,21 +3,19 @@ use std::{
     fs::{File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
+    sync::Arc,
 };
 
-use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
+use parking_lot::Mutex;
 
 use super::{FileManager, FileOp, ManagedFile, OpenableFile};
-use crate::Error;
+use crate::{io::PathIds, Error};
 
 /// An open file that uses [`std::fs`].
 #[derive(Debug)]
 pub struct StdFile {
     file: File,
+    path: PathBuf,
     id: Option<u64>,
 }
 
@@ -27,6 +25,10 @@ impl ManagedFile for StdFile {
         self.id
     }
 
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
     fn open_for_read(
         path: impl AsRef<std::path::Path> + Send,
         id: Option<u64>,
@@ -34,6 +36,7 @@ impl ManagedFile for StdFile {
         let path = path.as_ref();
         Ok(Self {
             file: File::open(path).unwrap(),
+            path: path.to_path_buf(),
             id,
         })
     }
@@ -50,6 +53,7 @@ impl ManagedFile for StdFile {
                 .read(true)
                 .create(true)
                 .open(path)?,
+            path: path.to_path_buf(),
             id,
         })
     }
@@ -94,55 +98,17 @@ impl Read for StdFile {
 /// The [`FileManager`] for [`StdFile`].
 #[derive(Debug, Default, Clone)]
 pub struct StdFileManager {
-    file_id_counter: Arc<AtomicU64>,
-    file_ids: Arc<RwLock<HashMap<PathBuf, u64>>>,
+    file_ids: PathIds,
     open_files: Arc<Mutex<HashMap<u64, Option<StdFile>>>>,
     reader_files: Arc<Mutex<HashMap<u64, VecDeque<StdFile>>>>,
-}
-
-impl StdFileManager {
-    fn file_id_for_path(&self, path: &Path) -> u64 {
-        let file_ids = self.file_ids.upgradable_read();
-        if let Some(id) = file_ids.get(path) {
-            *id
-        } else {
-            let mut file_ids = RwLockUpgradableReadGuard::upgrade(file_ids);
-            *file_ids
-                .entry(path.to_path_buf())
-                .or_insert_with(|| self.file_id_counter.fetch_add(1, Ordering::SeqCst))
-        }
-    }
-
-    fn remove_file_id_for_path(&self, path: &Path) -> Option<u64> {
-        let mut file_ids = self.file_ids.write();
-        file_ids.remove(path)
-    }
-
-    fn remove_file_ids_for_path_prefix(&self, path: &Path) -> Vec<u64> {
-        let mut file_ids = self.file_ids.write();
-        let mut ids_to_remove = Vec::new();
-        let mut paths_to_remove = Vec::new();
-        for (file, id) in file_ids.iter() {
-            if file.starts_with(path) {
-                paths_to_remove.push(file.clone());
-                ids_to_remove.push(*id);
-            }
-        }
-
-        for path in paths_to_remove {
-            file_ids.remove(&path);
-        }
-
-        ids_to_remove
-    }
 }
 
 impl FileManager for StdFileManager {
     type File = StdFile;
     type FileHandle = OpenStdFile;
-    fn append(&self, path: impl AsRef<Path> + Send) -> Result<Self::FileHandle, Error> {
+    fn append(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error> {
         let path = path.as_ref();
-        let file_id = self.file_id_for_path(path);
+        let file_id = self.file_ids.file_id_for_path(path);
         let mut open_files = self.open_files.lock();
         if let Some(open_file) = open_files.get_mut(&file_id) {
             Ok(OpenStdFile {
@@ -161,13 +127,13 @@ impl FileManager for StdFileManager {
         }
     }
 
-    fn read(&self, path: impl AsRef<Path> + Send) -> Result<Self::FileHandle, Error> {
+    fn read(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error> {
         // TODO we should come up with a way to cache open files. We want to
         // support more than one open reader for a file at any given time, but
         // we should be able to limit the number of open files. A time+capacity
         // based Lru cache might work.
         let path = path.as_ref();
-        let file_id = self.file_id_for_path(path);
+        let file_id = self.file_ids.file_id_for_path(path);
 
         let mut reader_files = self.reader_files.lock();
         let files = reader_files.entry(file_id).or_default();
@@ -188,9 +154,9 @@ impl FileManager for StdFileManager {
         })
     }
 
-    fn delete(&self, path: impl AsRef<Path> + Send) -> Result<bool, Error> {
+    fn delete(&self, path: impl AsRef<Path>) -> Result<bool, Error> {
         let path = path.as_ref();
-        let file_id = self.remove_file_id_for_path(path);
+        let file_id = self.file_ids.remove_file_id_for_path(path);
         if let Some(file_id) = file_id {
             let mut open_files = self.open_files.lock();
             let mut reader_files = self.reader_files.lock();
@@ -206,9 +172,9 @@ impl FileManager for StdFileManager {
         }
     }
 
-    fn delete_directory(&self, path: impl AsRef<Path> + Send) -> Result<(), Error> {
+    fn delete_directory(&self, path: impl AsRef<Path>) -> Result<(), Error> {
         let path = path.as_ref();
-        let removed_ids = self.remove_file_ids_for_path_prefix(path);
+        let removed_ids = self.file_ids.remove_file_ids_for_path_prefix(path);
         let mut open_files = self.open_files.lock();
         let mut reader_files = self.reader_files.lock();
         for id in removed_ids {
@@ -222,6 +188,16 @@ impl FileManager for StdFileManager {
 
         Ok(())
     }
+
+    fn close_handles<F: FnOnce()>(&self, path: impl AsRef<Path>, publish_callback: F) {
+        if let Some(file_id) = self.file_ids.remove_file_id_for_path(path.as_ref()) {
+            let mut open_files = self.open_files.lock();
+            let mut reader_files = self.reader_files.lock();
+            open_files.remove(&file_id);
+            reader_files.remove(&file_id);
+            publish_callback();
+        }
+    }
 }
 
 /// An open [`StdFile`] that belongs to a [`StdFileManager`].
@@ -234,6 +210,15 @@ pub struct OpenStdFile {
 impl OpenableFile<StdFile> for OpenStdFile {
     fn execute<W: FileOp<StdFile>>(&mut self, mut writer: W) -> W::Output {
         writer.execute(self.file.as_mut().unwrap())
+    }
+
+    fn replace_with(self, path: &Path, manager: &StdFileManager) -> Result<Self, Error> {
+        let current_path = self.file.as_ref().unwrap().path.clone();
+        self.close()?;
+
+        std::fs::rename(path, &current_path)?;
+
+        manager.append(current_path)
     }
 
     fn close(self) -> Result<(), Error> {

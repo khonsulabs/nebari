@@ -39,13 +39,15 @@
 
 use std::{
     borrow::Cow,
+    collections::HashMap,
     convert::{Infallible, TryFrom},
     fmt::{Debug, Display},
     fs::OpenOptions,
+    hash::BuildHasher,
     io::SeekFrom,
     marker::PhantomData,
     ops::{Deref, DerefMut, RangeBounds},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -254,6 +256,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
                     }
                     let contents = match read_chunk(
                         block_start + 1,
+                        true,
                         &mut tree,
                         context.vault(),
                         context.cache(),
@@ -546,6 +549,86 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
             cache: self.cache.as_ref(),
             scratch: &mut self.scratch,
         })
+    }
+
+    /// Rewrites the database, removing all unused data in the process. For a
+    /// `VersionedTreeRoot`, this will remove old version information.
+    ///
+    /// This process is done atomically by creating a new file containing the
+    /// active data. Once the new file has all the current file's data, the file
+    /// contents are swapped using atomic file operations.
+    pub fn compact(mut self, file_manager: &F::Manager) -> Result<Self, Error> {
+        let compacted_path = self.file.execute(TreeCompactor {
+            state: &self.state,
+            vault: self.vault.as_deref(),
+            cache: self.cache.as_ref(),
+            file_manager,
+            scratch: &mut self.scratch,
+        })?;
+        self.file = self.file.replace_with(&compacted_path, file_manager)?;
+        Ok(self)
+    }
+}
+
+struct TreeCompactor<'a, Root: root::Root, M: FileManager> {
+    state: &'a State<Root>,
+    vault: Option<&'a dyn Vault>,
+    cache: Option<&'a ChunkCache>,
+    file_manager: &'a M,
+    scratch: &'a mut Vec<u8>,
+}
+impl<'a, Root: root::Root, F: ManagedFile> FileOp<F> for TreeCompactor<'a, Root, F::Manager> {
+    type Output = Result<PathBuf, Error>;
+
+    fn execute(&mut self, file: &mut F) -> Self::Output {
+        let current_path = file.path().to_path_buf();
+        let file_name = current_path
+            .file_name()
+            .ok_or_else(|| Error::message("could not retrieve file name"))?;
+        let mut compacted_name = file_name.to_os_string();
+        compacted_name.push(".compacting");
+        let compacted_path = current_path
+            .parent()
+            .ok_or_else(|| Error::message("couldn't access parent of file"))?
+            .join(compacted_name);
+
+        if compacted_path.exists() {
+            std::fs::remove_file(&compacted_path)?;
+        }
+
+        let mut new_file = F::open_for_append(&compacted_path, None)?;
+        let mut writer =
+            PagedWriter::new(PageHeader::Data, &mut new_file, self.vault, self.cache, 0);
+
+        // Use the read state to list all the currently live chunks
+        let mut copied_chunks = HashMap::new();
+        let read_state = self.state.read();
+        let mut temporary_header = read_state.header.clone();
+        temporary_header.copy_data_to(file, &mut copied_chunks, &mut writer, self.vault)?;
+        drop(read_state);
+
+        // Now, do the same with the write state, which should be very fast,
+        // since only nodes that have changed will need to be visited.
+        let mut write_state = self.state.lock();
+        write_state
+            .header
+            .copy_data_to(file, &mut copied_chunks, &mut writer, self.vault)?;
+
+        save_tree(
+            &mut write_state,
+            self.vault,
+            self.cache,
+            writer,
+            self.scratch,
+        )?;
+
+        // Close any existing handles to the file. This ensures that once we
+        // save the tree, new requests to the file manager will point to the new
+        // file.
+        self.file_manager
+            .close_handles(&current_path, || write_state.publish(self.state));
+
+        Ok(compacted_path)
     }
 }
 
@@ -961,7 +1044,7 @@ impl<'a, F: ManagedFile> PagedWriter<'a, F> {
     }
 
     fn read_chunk(&mut self, position: u64) -> Result<CacheEntry, Error> {
-        read_chunk(position, self.file, self.vault, self.cache)
+        read_chunk(position, false, self.file, self.vault, self.cache)
     }
 
     fn write_u32<B: ByteOrder>(&mut self, value: u32) -> Result<usize, Error> {
@@ -1014,6 +1097,7 @@ impl<'a, F: ManagedFile> PagedWriter<'a, F> {
 #[cfg_attr(feature = "tracing", tracing::instrument(skip(file, vault, cache)))]
 fn read_chunk<F: ManagedFile>(
     position: u64,
+    validate_crc: bool,
     file: &mut F,
     vault: Option<&dyn Vault>,
     cache: Option<&ChunkCache>,
@@ -1068,13 +1152,7 @@ fn read_chunk<F: ManagedFile>(
     // the length is incorrect is a sign that the byte removal loop is bad.
     debug_assert_eq!(scratch.len(), length);
 
-    /// CRC checks in append-only formats are mostly about catching drifting
-    /// bits, caused either by the hard drive itself having an error or
-    /// something as rare as a cosmic ray. Rather than take the performance
-    /// penalty on every read, our plan is to have a validation process that can
-    /// be invoked occasionally: https://github.com/khonsulabs/nebari/issues/9
-    #[cfg(debug_asertions)]
-    {
+    if validate_crc {
         let crc = BigEndian::read_u32(&header[4..8]);
         let computed_crc = CRC32.checksum(&scratch);
         if crc != computed_crc {
@@ -1095,6 +1173,30 @@ fn read_chunk<F: ManagedFile>(
     }
 
     Ok(CacheEntry::Buffer(decrypted))
+}
+
+pub(crate) fn copy_chunk<F: ManagedFile, S: BuildHasher>(
+    original_position: u64,
+    from_file: &mut F,
+    copied_chunks: &mut std::collections::HashMap<u64, u64, S>,
+    to_file: &mut PagedWriter<'_, F>,
+    vault: Option<&dyn crate::Vault>,
+) -> Result<u64, Error> {
+    if let Some(new_position) = copied_chunks.get(&original_position) {
+        Ok(*new_position)
+    } else {
+        // Since these are one-time copies, and receiving a Decoded entry
+        // makes things tricky, we're going to not use caching for reads
+        // here. This gives the added benefit for a long-running server to
+        // ensure it's doing CRC checks occasionally as it copies itself.
+        let chunk = match read_chunk(original_position, true, from_file, vault, None)? {
+            CacheEntry::Buffer(buffer) => buffer,
+            CacheEntry::Decoded(_) => unreachable!(),
+        };
+        let new_location = to_file.write_chunk(&chunk, false)?;
+        copied_chunks.insert(original_position, new_location);
+        Ok(new_location)
+    }
 }
 
 #[cfg(test)]
@@ -1126,7 +1228,7 @@ mod tests {
         let written_position = paged_writer.write_chunk(&scratch[..length], false)?;
         drop(paged_writer.finish()?);
 
-        match read_chunk(written_position, &mut file, None, None)? {
+        match read_chunk(written_position, true, &mut file, None, None)? {
             CacheEntry::Buffer(data) => {
                 assert_eq!(data.len(), length);
                 assert!(data.iter().all(|i| i == &1));
@@ -1294,7 +1396,7 @@ mod tests {
         let file_path = temp_dir.join("tree");
         let mut ids = HashSet::new();
         // Insert up to the limit of a LEAF, which is ORDER - 1.
-        for _ in 0..10000 {
+        for _ in 0..1000 {
             insert_one_record::<R, StdFile>(&context, &file_path, &mut ids, &mut rng);
         }
 
@@ -1476,5 +1578,49 @@ mod tests {
         let mut all_through_scan = tree.get_range(.., false).unwrap();
         all_through_scan.sort();
         assert_eq!(&all_records, &all_through_scan);
+    }
+
+    fn compact<R: Root>(label: &str) {
+        let mut rng = Pcg64::new_seed(1);
+        let context = Context {
+            file_manager: StdFileManager::default(),
+            vault: None,
+            cache: None,
+        };
+        let temp_dir = crate::test_util::TestDirectory::new(format!("btree-compact-{}", label));
+        std::fs::create_dir(&temp_dir).unwrap();
+        let file_path = temp_dir.join("tree");
+        let mut ids = HashSet::new();
+        for _ in 0..5 {
+            insert_one_record::<R, StdFile>(&context, &file_path, &mut ids, &mut rng);
+        }
+
+        let mut tree =
+            TreeFile::<R, StdFile>::write(&file_path, State::default(), &context, None).unwrap();
+        let pre_compact_size = context.file_manager.file_length(&file_path).unwrap();
+        tree = tree.compact(&context.file_manager).unwrap();
+        let after_compact_size = context.file_manager.file_length(&file_path).unwrap();
+        assert!(
+            after_compact_size < pre_compact_size,
+            "compact didn't remove any data"
+        );
+
+        // Try fetching all the records to ensure they're still present.
+        for id in ids {
+            let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
+            tree.get(&id_buffer, false)
+                .unwrap()
+                .expect("no value found");
+        }
+    }
+
+    #[test]
+    fn compact_versioned() {
+        compact::<VersionedTreeRoot>("versioned");
+    }
+
+    #[test]
+    fn compact_unversioned() {
+        compact::<UnversionedTreeRoot>("unversioned");
     }
 }

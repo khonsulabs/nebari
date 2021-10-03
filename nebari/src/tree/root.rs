@@ -1,6 +1,7 @@
 use std::{
     any::Any,
     borrow::Cow,
+    collections::HashMap,
     fmt::{Debug, Display},
     marker::PhantomData,
     ops::RangeBounds,
@@ -93,6 +94,16 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
         KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
         KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<E>>,
         KeyRangeBounds: RangeBounds<Buffer<'k>> + Debug;
+
+    /// Copies all data from `file` into `writer`, updating `self` with the new
+    /// file positions.
+    fn copy_data_to<F: ManagedFile>(
+        &mut self,
+        file: &mut F,
+        copied_chunks: &mut HashMap<u64, u64>,
+        writer: &mut PagedWriter<'_, F>,
+        vault: Option<&dyn Vault>,
+    ) -> Result<(), Error>;
 }
 
 /// A named tree root.

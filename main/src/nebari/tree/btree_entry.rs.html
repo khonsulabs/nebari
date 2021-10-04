@@ -775,6 +775,35 @@
 <span id="775">775</span>
 <span id="776">776</span>
 <span id="777">777</span>
+<span id="778">778</span>
+<span id="779">779</span>
+<span id="780">780</span>
+<span id="781">781</span>
+<span id="782">782</span>
+<span id="783">783</span>
+<span id="784">784</span>
+<span id="785">785</span>
+<span id="786">786</span>
+<span id="787">787</span>
+<span id="788">788</span>
+<span id="789">789</span>
+<span id="790">790</span>
+<span id="791">791</span>
+<span id="792">792</span>
+<span id="793">793</span>
+<span id="794">794</span>
+<span id="795">795</span>
+<span id="796">796</span>
+<span id="797">797</span>
+<span id="798">798</span>
+<span id="799">799</span>
+<span id="800">800</span>
+<span id="801">801</span>
+<span id="802">802</span>
+<span id="803">803</span>
+<span id="804">804</span>
+<span id="805">805</span>
+<span id="806">806</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
@@ -1375,12 +1404,15 @@
         <span class="prelude-val">Ok</span>(<span class="bool-val">true</span>)
     }
 
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::too_many_arguments</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">copy_data_to</span><span class="op">&lt;</span><span class="ident">F</span>, <span class="ident">Callback</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">include_nodes</span>: <span class="ident">NodeInclusion</span>,
         <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">F</span>,
         <span class="ident">copied_chunks</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">F</span><span class="op">&gt;</span>,
         <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span>,
+        <span class="ident">scratch</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">index_callback</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Callback</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span>
     <span class="kw">where</span>
@@ -1405,15 +1437,41 @@
             }
             <span class="ident">BTreeNode::Interior</span>(<span class="ident">children</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">for</span> <span class="ident">child</span> <span class="kw">in</span> <span class="ident">children</span> {
-                    <span class="ident">any_changes</span> <span class="op">=</span>
-                        <span class="ident">child</span>.<span class="ident">copy_data_to</span>(<span class="ident">file</span>, <span class="ident">copied_chunks</span>, <span class="ident">writer</span>, <span class="ident">vault</span>, <span class="ident">index_callback</span>)<span class="question-mark">?</span>
-                            <span class="op">|</span><span class="op">|</span> <span class="ident">any_changes</span>;
+                    <span class="ident">any_changes</span> <span class="op">=</span> <span class="ident">child</span>.<span class="ident">copy_data_to</span>(
+                        <span class="ident">include_nodes</span>.<span class="ident">next</span>(),
+                        <span class="ident">file</span>,
+                        <span class="ident">copied_chunks</span>,
+                        <span class="ident">writer</span>,
+                        <span class="ident">vault</span>,
+                        <span class="ident">scratch</span>,
+                        <span class="ident">index_callback</span>,
+                    )<span class="question-mark">?</span> <span class="op">|</span><span class="op">|</span> <span class="ident">any_changes</span>;
                 }
             }
             <span class="ident">BTreeNode::Uninitialized</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable!</span>(),
         }
         <span class="self">self</span>.<span class="ident">dirty</span> <span class="op">|</span><span class="op">=</span> <span class="ident">any_changes</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">any_changes</span>)
+    }
+}
+
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>, <span class="ident">Copy</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>)]</span>
+<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">NodeInclusion</span> {
+    <span class="ident">Exclude</span>,
+    <span class="ident">IncludeNext</span>,
+    <span class="ident">Include</span>,
+}
+
+<span class="kw">impl</span> <span class="ident">NodeInclusion</span> {
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">next</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="kw">match</span> <span class="self">self</span> {
+            <span class="self">Self</span><span class="ident">::Exclude</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::Exclude</span>,
+            <span class="self">Self</span><span class="ident">::IncludeNext</span> <span class="op">|</span> <span class="self">Self</span><span class="ident">::Include</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::Include</span>,
+        }
+    }
+
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">should_include</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="macro">matches!</span>(<span class="self">self</span>, <span class="self">Self</span><span class="ident">::Include</span>)
     }
 }
 

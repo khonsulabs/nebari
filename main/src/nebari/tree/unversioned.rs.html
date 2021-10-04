@@ -323,6 +323,14 @@
 <span id="323">323</span>
 <span id="324">324</span>
 <span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
@@ -348,7 +356,7 @@
     <span class="ident">io::ManagedFile</span>,
     <span class="ident">roots::AbortError</span>,
     <span class="ident">tree</span>::{
-        <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">ScanArgs</span>},
+        <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">NodeInclusion</span>, <span class="ident">ScanArgs</span>},
         <span class="ident">copy_chunk</span>,
         <span class="ident">versioned::ChangeResult</span>,
         <span class="ident">PageHeader</span>, <span class="ident">Root</span>,
@@ -595,16 +603,24 @@
 
     <span class="kw">fn</span> <span class="ident">copy_data_to</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">include_nodes</span>: <span class="ident">bool</span>,
         <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">F</span>,
         <span class="ident">copied_chunks</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">F</span><span class="op">&gt;</span>,
         <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">scratch</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
         <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">copy_data_to</span>(
+            <span class="kw">if</span> <span class="ident">include_nodes</span> {
+                <span class="ident">NodeInclusion::IncludeNext</span>
+            } <span class="kw">else</span> {
+                <span class="ident">NodeInclusion::Exclude</span>
+            },
             <span class="ident">file</span>,
             <span class="ident">copied_chunks</span>,
             <span class="ident">writer</span>,
             <span class="ident">vault</span>,
+            <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">scratch</span>,
             <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="op">|</span><span class="ident">_key</span>,
                   <span class="ident">index</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">UnversionedByIdIndex</span>,
                   <span class="ident">from_file</span>,

@@ -181,6 +181,7 @@
 <span id="181">181</span>
 <span id="182">182</span>
 <span id="183">183</span>
+<span id="184">184</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">any::Any</span>,
@@ -283,6 +284,7 @@
     <span class="doccomment">/// file positions.</span>
     <span class="kw">fn</span> <span class="ident">copy_data_to</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">include_nodes</span>: <span class="ident">bool</span>,
         <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">F</span>,
         <span class="ident">copied_chunks</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">F</span><span class="op">&gt;</span>,

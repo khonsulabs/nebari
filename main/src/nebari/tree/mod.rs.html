@@ -2231,7 +2231,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">copied_chunks</span> <span class="op">=</span> <span class="ident">HashMap::new</span>();
         <span class="kw">let</span> <span class="ident">read_state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">read</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">temporary_header</span> <span class="op">=</span> <span class="ident">read_state</span>.<span class="ident">header</span>.<span class="ident">clone</span>();
-        <span class="ident">temporary_header</span>.<span class="ident">copy_data_to</span>(<span class="ident">file</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">copied_chunks</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">writer</span>, <span class="self">self</span>.<span class="ident">vault</span>)<span class="question-mark">?</span>;
+        <span class="ident">temporary_header</span>.<span class="ident">copy_data_to</span>(<span class="bool-val">false</span>, <span class="ident">file</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">copied_chunks</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">writer</span>, <span class="self">self</span>.<span class="ident">vault</span>)<span class="question-mark">?</span>;
         <span class="ident">drop</span>(<span class="ident">read_state</span>);
 
         <span class="comment">// Now, do the same with the write state, which should be very fast,</span>
@@ -2239,7 +2239,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">write_state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>();
         <span class="ident">write_state</span>
             .<span class="ident">header</span>
-            .<span class="ident">copy_data_to</span>(<span class="ident">file</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">copied_chunks</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">writer</span>, <span class="self">self</span>.<span class="ident">vault</span>)<span class="question-mark">?</span>;
+            .<span class="ident">copy_data_to</span>(<span class="bool-val">true</span>, <span class="ident">file</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">copied_chunks</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">writer</span>, <span class="self">self</span>.<span class="ident">vault</span>)<span class="question-mark">?</span>;
 
         <span class="ident">save_tree</span>(
             <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">write_state</span>,

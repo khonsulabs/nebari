@@ -497,6 +497,14 @@
 <span id="497">497</span>
 <span id="498">498</span>
 <span id="499">499</span>
+<span id="500">500</span>
+<span id="501">501</span>
+<span id="502">502</span>
+<span id="503">503</span>
+<span id="504">504</span>
+<span id="505">505</span>
+<span id="506">506</span>
+<span id="507">507</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
@@ -523,7 +531,7 @@
     <span class="ident">io::ManagedFile</span>,
     <span class="ident">roots::AbortError</span>,
     <span class="ident">tree</span>::{
-        <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">ScanArgs</span>},
+        <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">NodeInclusion</span>, <span class="ident">ScanArgs</span>},
         <span class="ident">copy_chunk</span>,
         <span class="ident">modify::Operation</span>,
         <span class="ident">PageHeader</span>, <span class="ident">Root</span>,
@@ -887,6 +895,7 @@
     <span class="comment">// TODO can we make compaction smarter to not get rid of *all* old data in a versioned file?</span>
     <span class="kw">fn</span> <span class="ident">copy_data_to</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">include_nodes</span>: <span class="ident">bool</span>,
         <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">F</span>,
         <span class="ident">copied_chunks</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">F</span><span class="op">&gt;</span>,
@@ -896,11 +905,18 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">sequence_indexes</span> <span class="op">=</span> <span class="ident">Vec::with_capacity</span>(
             <span class="ident">usize::try_from</span>(<span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">stats</span>().<span class="ident">alive_documents</span>).<span class="ident">unwrap_or</span>(<span class="ident">usize::MAX</span>),
         );
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">scratch</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
         <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">copy_data_to</span>(
+            <span class="kw">if</span> <span class="ident">include_nodes</span> {
+                <span class="ident">NodeInclusion::IncludeNext</span>
+            } <span class="kw">else</span> {
+                <span class="ident">NodeInclusion::Exclude</span>
+            },
             <span class="ident">file</span>,
             <span class="ident">copied_chunks</span>,
             <span class="ident">writer</span>,
             <span class="ident">vault</span>,
+            <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">scratch</span>,
             <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="op">|</span><span class="ident">key</span>, <span class="ident">index</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">VersionedByIdIndex</span>, <span class="ident">from_file</span>, <span class="ident">copied_chunks</span>, <span class="ident">to_file</span>, <span class="ident">vault</span><span class="op">|</span> {
                 <span class="kw">let</span> <span class="ident">new_position</span> <span class="op">=</span>
                     <span class="ident">copy_chunk</span>(<span class="ident">index</span>.<span class="ident">position</span>, <span class="ident">from_file</span>, <span class="ident">copied_chunks</span>, <span class="ident">to_file</span>, <span class="ident">vault</span>)<span class="question-mark">?</span>;

@@ -242,6 +242,39 @@
 <span id="242">242</span>
 <span id="243">243</span>
 <span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
@@ -256,7 +289,8 @@
     <span class="ident">read_chunk</span>, <span class="ident">BinarySerialization</span>, <span class="ident">PagedWriter</span>,
 };
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">chunk_cache::CacheEntry</span>, <span class="ident">io::ManagedFile</span>, <span class="ident">AbortError</span>, <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">Error</span>, <span class="ident">Vault</span>,
+    <span class="ident">chunk_cache::CacheEntry</span>, <span class="ident">io::ManagedFile</span>, <span class="ident">tree::btree_entry::NodeInclusion</span>, <span class="ident">AbortError</span>, <span class="ident">Buffer</span>,
+    <span class="ident">ChunkCache</span>, <span class="ident">Error</span>, <span class="ident">Vault</span>,
 };
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
@@ -343,6 +377,15 @@
         }
     }
 
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">position</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> {
+        <span class="kw">match</span> <span class="self">self</span> {
+            <span class="ident">Pointer::OnDisk</span>(<span class="ident">location</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Some</span>(<span class="kw-2">*</span><span class="ident">location</span>),
+            <span class="ident">Pointer::Loaded</span> {
+                <span class="ident">previous_location</span>, ..
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="ident">previous_location</span>,
+        }
+    }
+
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">map_loaded_entry</span><span class="op">&lt;</span>
         <span class="ident">Output</span>,
         <span class="ident">E</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
@@ -386,12 +429,15 @@
         <span class="ident">R</span>: <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">I</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">BinarySerialization</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
     <span class="op">&gt;</span> <span class="ident">Interior</span><span class="op">&lt;</span><span class="ident">I</span>, <span class="ident">R</span><span class="op">&gt;</span>
 {
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::too_many_arguments</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">copy_data_to</span><span class="op">&lt;</span><span class="ident">F</span>, <span class="ident">Callback</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">include_nodes</span>: <span class="ident">NodeInclusion</span>,
         <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">F</span>,
         <span class="ident">copied_chunks</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">F</span><span class="op">&gt;</span>,
         <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span>,
+        <span class="ident">scratch</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">index_callback</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Callback</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span>
     <span class="kw">where</span>
@@ -406,13 +452,33 @@
         ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span>,
     {
         <span class="self">self</span>.<span class="ident">position</span>.<span class="ident">load</span>(<span class="ident">file</span>, <span class="bool-val">true</span>, <span class="ident">vault</span>, <span class="prelude-val">None</span>, <span class="number">0</span>)<span class="question-mark">?</span>;
-        <span class="self">self</span>.<span class="ident">position</span>.<span class="ident">get_mut</span>().<span class="ident">unwrap</span>().<span class="ident">copy_data_to</span>(
+        <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">position</span>.<span class="ident">get_mut</span>().<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">any_data_copied</span> <span class="op">=</span> <span class="ident">node</span>.<span class="ident">copy_data_to</span>(
+            <span class="ident">include_nodes</span>,
             <span class="ident">file</span>,
             <span class="ident">copied_chunks</span>,
             <span class="ident">writer</span>,
             <span class="ident">vault</span>,
+            <span class="ident">scratch</span>,
             <span class="ident">index_callback</span>,
-        )
+        )<span class="question-mark">?</span>;
+
+        <span class="comment">// Serialize if we are supposed to</span>
+        <span class="kw">let</span> <span class="ident">position</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">include_nodes</span>.<span class="ident">should_include</span>() {
+            <span class="ident">any_data_copied</span> <span class="op">=</span> <span class="bool-val">true</span>;
+            <span class="ident">scratch</span>.<span class="ident">clear</span>();
+            <span class="ident">node</span>.<span class="ident">serialize_to</span>(<span class="ident">scratch</span>, <span class="ident">writer</span>)<span class="question-mark">?</span>;
+            <span class="prelude-val">Some</span>(<span class="ident">writer</span>.<span class="ident">write_chunk</span>(<span class="ident">scratch</span>, <span class="bool-val">false</span>)<span class="question-mark">?</span>)
+        } <span class="kw">else</span> {
+            <span class="self">self</span>.<span class="ident">position</span>.<span class="ident">position</span>()
+        };
+
+        <span class="comment">// Remove the node from memory to save RAM during the compaction process.</span>
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">position</span>) <span class="op">=</span> <span class="ident">position</span> {
+            <span class="self">self</span>.<span class="ident">position</span> <span class="op">=</span> <span class="ident">Pointer::OnDisk</span>(<span class="ident">position</span>);
+        }
+
+        <span class="prelude-val">Ok</span>(<span class="ident">any_data_copied</span>)
     }
 }
 

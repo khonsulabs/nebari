@@ -99,7 +99,7 @@
 };
 
 <span class="kw">use</span> <span class="kw">super</span><span class="ident">::btree_entry::KeyOperation</span>;
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">Buffer</span>, <span class="ident">Error</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">Buffer</span>, <span class="ident">ErrorKind</span>};
 
 <span class="doccomment">/// A tree modification.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
@@ -121,7 +121,7 @@
             }
             <span class="prelude-val">Ok</span>(())
         } <span class="kw">else</span> {
-            <span class="prelude-val">Err</span>(<span class="ident">Error::KeysNotOrdered</span>)
+            <span class="prelude-val">Err</span>(<span class="ident">Error::from</span>(<span class="ident">ErrorKind::KeysNotOrdered</span>))
         }
     }
 }

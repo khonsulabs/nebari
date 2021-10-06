@@ -295,6 +295,8 @@
 <span id="295">295</span>
 <span id="296">296</span>
 <span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">ops</span>::{<span class="ident">Deref</span>, <span class="ident">DerefMut</span>, <span class="ident">RangeBounds</span>},
@@ -309,10 +311,10 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">log::EntryFetcher</span>, <span class="ident">LogEntry</span>, <span class="ident">State</span>, <span class="ident">TransactionLog</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">error::InternalError</span>,
+    <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="ident">InternalError</span>},
     <span class="ident">io</span>::{<span class="ident">FileManager</span>, <span class="ident">ManagedFile</span>, <span class="ident">OpenableFile</span>},
     <span class="ident">transaction::log::ScanResult</span>,
-    <span class="ident">Context</span>, <span class="ident">Error</span>,
+    <span class="ident">Context</span>, <span class="ident">ErrorKind</span>,
 };
 
 <span class="doccomment">/// A shared [`TransactionLog`] manager. Allows multiple threads to interact with a single transaction log.</span>
@@ -342,7 +344,7 @@
                     <span class="ident">thread_context</span>,
                 );
             })
-            .<span class="ident">map_err</span>(<span class="ident">Error::message</span>)<span class="question-mark">?</span>;
+            .<span class="ident">map_err</span>(<span class="ident">ErrorKind::message</span>)<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">state_receiver</span>.<span class="ident">recv</span>().<span class="ident">expect</span>(<span class="string">&quot;failed to initialize&quot;</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
@@ -358,10 +360,12 @@
         <span class="kw">let</span> (<span class="ident">completion_sender</span>, <span class="ident">completion_receiver</span>) <span class="op">=</span> <span class="ident">flume::bounded</span>(<span class="number">1</span>);
         <span class="self">self</span>.<span class="ident">transaction_sender</span>
             .<span class="ident">send</span>((<span class="ident">transaction</span>, <span class="ident">completion_sender</span>))
-            .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error::Internal</span>(<span class="ident">InternalError::TransactionManagerStopped</span>))<span class="question-mark">?</span>;
-        <span class="ident">completion_receiver</span>
-            .<span class="ident">recv</span>()
-            .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error::Internal</span>(<span class="ident">InternalError::TransactionManagerStopped</span>))
+            .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">ErrorKind::Internal</span>(<span class="ident">InternalError::TransactionManagerStopped</span>))<span class="question-mark">?</span>;
+        <span class="ident">completion_receiver</span>.<span class="ident">recv</span>().<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> {
+            <span class="ident">Error::from</span>(<span class="ident">ErrorKind::Internal</span>(
+                <span class="ident">InternalError::TransactionManagerStopped</span>,
+            ))
+        })
     }
 
     <span class="doccomment">/// Scans the transaction log for entries with ids within `range`. Invokes</span>

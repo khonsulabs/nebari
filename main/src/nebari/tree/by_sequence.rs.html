@@ -94,7 +94,7 @@
 <span class="kw">use</span> <span class="ident">byteorder</span>::{<span class="ident">BigEndian</span>, <span class="ident">ReadBytesExt</span>, <span class="ident">WriteBytesExt</span>};
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">btree_entry::Reducer</span>, <span class="ident">BinarySerialization</span>, <span class="ident">PagedWriter</span>};
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">io::ManagedFile</span>, <span class="ident">Buffer</span>, <span class="ident">Error</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">io::ManagedFile</span>, <span class="ident">Buffer</span>, <span class="ident">ErrorKind</span>};
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">BySequenceIndex</span> {
@@ -116,7 +116,7 @@
         <span class="ident">bytes_written</span> <span class="op">+</span><span class="op">=</span> <span class="number">8</span>;
 
         <span class="kw">let</span> <span class="ident">document_id_length</span> <span class="op">=</span>
-            <span class="ident">u16::try_from</span>(<span class="self">self</span>.<span class="ident">document_id</span>.<span class="ident">len</span>()).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error::IdTooLarge</span>)<span class="question-mark">?</span>;
+            <span class="ident">u16::try_from</span>(<span class="self">self</span>.<span class="ident">document_id</span>.<span class="ident">len</span>()).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">ErrorKind::IdTooLarge</span>)<span class="question-mark">?</span>;
         <span class="ident">writer</span>.<span class="ident">write_u16</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="ident">document_id_length</span>)<span class="question-mark">?</span>;
         <span class="ident">bytes_written</span> <span class="op">+</span><span class="op">=</span> <span class="number">2</span>;
         <span class="ident">writer</span>.<span class="ident">extend_from_slice</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">document_id</span>);

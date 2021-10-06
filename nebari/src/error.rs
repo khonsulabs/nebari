@@ -3,10 +3,13 @@ use std::fmt::Display;
 use backtrace::Backtrace;
 use thiserror::Error;
 
+/// An error from Nebari as well as an associated backtrace.
 #[derive(Debug)]
 pub struct Error {
+    /// The error that occurred.
     pub kind: ErrorKind,
 
+    /// Where the error occurred.
     pub backtrace: Backtrace,
 }
 
@@ -95,7 +98,7 @@ impl From<String> for Error {
     }
 }
 
-/// An error from [`Roots`](crate::Roots).
+/// An error from Nebari.
 #[derive(Debug, Error)]
 #[error(transparent)]
 pub enum ErrorKind {

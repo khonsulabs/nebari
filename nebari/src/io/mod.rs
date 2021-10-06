@@ -90,6 +90,7 @@ pub trait FileManager: Send + Sync + Clone + Default + std::fmt::Debug + 'static
 
 /// A file that can have operations performed on it.
 pub trait OpenableFile<F: ManagedFile>: Sized + Send + Sync {
+    /// Returns the id of the file assigned from the file manager.
     fn id(&self) -> Option<u64>;
 
     /// Executes an operation.
@@ -143,15 +144,16 @@ impl PathIds {
         file_ids.remove(path)
     }
 
-    fn recreate_file_id_for_path(
-        &self,
-        path: &Path,
-    ) -> Option<(u64, u64, RwLockWriteGuard<'_, HashMap<PathBuf, u64>>)> {
+    fn recreate_file_id_for_path(&self, path: &Path) -> Option<RecreatedFile<'_>> {
         let mut file_ids = self.file_ids.write();
         let new_id = self.file_id_counter.fetch_add(1, Ordering::SeqCst);
         file_ids
             .insert(path.to_path_buf(), new_id)
-            .map(|old_id| (old_id, new_id, file_ids))
+            .map(|old_id| RecreatedFile {
+                previous_id: old_id,
+                new_id,
+                _guard: file_ids,
+            })
     }
 
     fn remove_file_ids_for_path_prefix(&self, path: &Path) -> Vec<u64> {
@@ -171,4 +173,15 @@ impl PathIds {
 
         ids_to_remove
     }
+}
+
+/// A file that has had its contents replaced. While this value exists, all
+/// other threads will be blocked from interacting with the [`PathIds`]
+/// structure. Only hold onto this value for short periods of time.
+pub struct RecreatedFile<'a> {
+    /// The file's previous id.
+    pub previous_id: u64,
+    /// The file's new id.
+    pub new_id: u64,
+    _guard: RwLockWriteGuard<'a, HashMap<PathBuf, u64>>,
 }

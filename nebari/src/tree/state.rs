@@ -19,13 +19,19 @@ where
 {
     /// Returns an initialized state. This should only be used if you're
     /// creating a file from scratch.
-    pub fn initialized() -> Self {
-        let state = Self::default();
-        {
-            let mut state = state.lock();
-            state.header.initialize_default();
+    pub fn initialized(file_id: Option<u64>) -> Self {
+        let mut header = Root::default();
+        header.initialize_default();
+        let state = ActiveState {
+            file_id,
+            current_position: 0,
+            header,
+        };
+
+        Self {
+            reader: Arc::new(RwLock::new(state.clone())),
+            writer: Arc::new(Mutex::new(state)),
         }
-        state
     }
 
     /// Locks the state.

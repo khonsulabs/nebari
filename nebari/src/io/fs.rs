@@ -219,14 +219,12 @@ impl FileManager for StdFileManager {
     }
 
     fn close_handles<F: FnOnce(u64)>(&self, path: impl AsRef<Path>, publish_callback: F) {
-        if let Some((old_id, new_id, _guard)) =
-            self.file_ids.recreate_file_id_for_path(path.as_ref())
-        {
+        if let Some(result) = self.file_ids.recreate_file_id_for_path(path.as_ref()) {
             let mut open_files = self.open_files.lock();
             let mut reader_files = self.reader_files.lock();
-            open_files.remove(&old_id);
-            reader_files.remove(&old_id);
-            publish_callback(new_id);
+            open_files.remove(&result.previous_id);
+            reader_files.remove(&result.previous_id);
+            publish_callback(result.new_id);
         }
     }
 }

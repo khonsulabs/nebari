@@ -569,8 +569,6 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
         let (compacted_path, finisher) = self.file.execute(TreeCompactor {
             state: &self.state,
             vault: self.vault.as_deref(),
-            cache: self.cache.as_ref(),
-            file_manager,
             transactions,
             scratch: &mut self.scratch,
         })?;
@@ -578,22 +576,22 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
             .file
             .replace_with(&compacted_path, file_manager, |file_id| {
                 finisher.finish(file_id);
-                println!("Published compaction.");
             })?;
         Ok(self)
     }
 }
 
+/// A compaction process that runs in concert with a transaction manager.
 pub struct TransactableCompaction<'a, Manager: FileManager> {
+    /// The name of the tree being compacted.
     pub name: &'a str,
+    /// The transaction manager.
     pub manager: &'a TransactionManager<Manager>,
 }
 
 struct TreeCompactor<'a, Root: root::Root, M: FileManager> {
     state: &'a State<Root>,
     vault: Option<&'a dyn Vault>,
-    cache: Option<&'a ChunkCache>,
-    file_manager: &'a M,
     transactions: Option<TransactableCompaction<'a, M>>,
     scratch: &'a mut Vec<u8>,
 }
@@ -647,18 +645,18 @@ impl<'a, Root: root::Root, F: ManagedFile> FileOp<F> for TreeCompactor<'a, Root,
         Ok((
             compacted_path,
             TreeCompactionFinisher {
-                transaction,
                 write_state,
                 state: self.state,
+                _transaction: transaction,
             },
         ))
     }
 }
 
 struct TreeCompactionFinisher<'a, Root: root::Root> {
-    transaction: Option<TransactionHandle>,
     state: &'a State<Root>,
     write_state: MutexGuard<'a, ActiveState<Root>>,
+    _transaction: Option<TransactionHandle>,
 }
 
 impl<'a, Root: root::Root> TreeCompactionFinisher<'a, Root> {
@@ -1344,14 +1342,15 @@ mod tests {
         };
         let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
         {
+            let file = context.file_manager.append(file_path).unwrap();
             let state = if ids.len() > 1 {
                 let state = State::default();
-                TreeFile::<R, F>::initialize_state(&state, file_path, None, context, None).unwrap();
+                TreeFile::<R, F>::initialize_state(&state, file_path, file.id(), context, None)
+                    .unwrap();
                 state
             } else {
-                State::initialized()
+                State::initialized(file.id())
             };
-            let file = context.file_manager.append(file_path).unwrap();
             let mut tree =
                 TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
                     .unwrap();
@@ -1366,9 +1365,10 @@ mod tests {
         // Try loading the file up and retrieving the data.
         {
             let state = State::default();
-            TreeFile::<R, F>::initialize_state(&state, file_path, None, context, None).unwrap();
-
             let file = context.file_manager.append(file_path).unwrap();
+            TreeFile::<R, F>::initialize_state(&state, file_path, file.id(), context, None)
+                .unwrap();
+
             let mut tree =
                 TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
                     .unwrap();
@@ -1522,14 +1522,7 @@ mod tests {
         std::fs::create_dir(&temp_dir).unwrap();
         let file_path = temp_dir.join("tree");
         let state = State::default();
-        let file = context.file_manager.append(file_path).unwrap();
-        let mut tree = TreeFile::<VersionedTreeRoot, F>::new(
-            file,
-            state,
-            context.vault.clone(),
-            context.cache.clone(),
-        )
-        .unwrap();
+        let mut tree = TreeFile::<R, F>::write(file_path, state, &context, None).unwrap();
         for (_index, id) in ids.enumerate() {
             let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
             tree.push(0, id_buffer.clone(), Buffer::from(b"hello world"))
@@ -1538,11 +1531,16 @@ mod tests {
     }
 
     #[test]
-    fn bulk_insert_tokio() {
-        bulk_insert::<StdFile>("std");
+    fn bulk_insert_versioned() {
+        bulk_insert::<VersionedTreeRoot, StdFile>("std-versioned");
     }
 
-    fn bulk_insert<F: ManagedFile>(name: &str) {
+    #[test]
+    fn bulk_insert_unversioned() {
+        bulk_insert::<UnversionedTreeRoot, StdFile>("std-unversioned");
+    }
+
+    fn bulk_insert<R: Root, F: ManagedFile>(name: &str) {
         const RECORDS_PER_BATCH: usize = 10;
         const BATCHES: usize = 1000;
         let mut rng = Pcg64::new_seed(1);
@@ -1555,14 +1553,7 @@ mod tests {
         std::fs::create_dir(&temp_dir).unwrap();
         let file_path = temp_dir.join("tree");
         let state = State::default();
-        let file = context.file_manager.append(file_path).unwrap();
-        let mut tree = TreeFile::<VersionedTreeRoot, F>::new(
-            file,
-            state,
-            context.vault.clone(),
-            context.cache.clone(),
-        )
-        .unwrap();
+        let mut tree = TreeFile::<R, F>::write(file_path, state, &context, None).unwrap();
         for _ in 0..BATCHES {
             let mut ids = (0..RECORDS_PER_BATCH)
                 .map(|_| rng.generate::<u64>())
@@ -1596,14 +1587,10 @@ mod tests {
             cache: None,
         };
         let state = State::default();
-        let file = context.file_manager.append("test").unwrap();
-        let mut tree = TreeFile::<VersionedTreeRoot, MemoryFile>::new(
-            file,
-            state,
-            context.vault.clone(),
-            context.cache.clone(),
-        )
-        .unwrap();
+        // let file = context.file_manager.append("test").unwrap();
+        let mut tree =
+            TreeFile::<VersionedTreeRoot, MemoryFile>::write("test", state, &context, None)
+                .unwrap();
         // Create enough records to go 4 levels deep.
         let mut ids = Vec::new();
         for id in 0..3_u32.pow(4) {

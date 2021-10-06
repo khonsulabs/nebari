@@ -285,7 +285,9 @@ where
                     match operation {
                         KeyOperation::Set(index) => {
                             // New node.
-                            if children.capacity() < children.len() + 1 {
+                            if children.capacity() < children.len() + 1
+                                && context.current_order > children.len()
+                            {
                                 children.reserve(context.current_order - children.len());
                             }
                             children.insert(
@@ -646,8 +648,8 @@ where
             }
             BTreeNode::Uninitialized => unreachable!(),
         }
-        // Regardless of if data was copied, data locations have been updated, so the
-        // node is considered dirty.
+        // Regardless of if data was copied, data locations have been updated,
+        // so the node is considered dirty.
         self.dirty |= true;
         Ok(any_changes)
     }

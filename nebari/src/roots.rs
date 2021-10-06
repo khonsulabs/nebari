@@ -21,7 +21,7 @@ use parking_lot::Mutex;
 use crate::{
     context::Context,
     error::Error,
-    io::{FileManager, ManagedFile, OpenableFile},
+    io::{FileManager, ManagedFile},
     transaction::{LogEntry, TransactionHandle, TransactionManager},
     tree::{
         self, state::AnyTreeState, KeyEvaluation, Modification, Operation, State,
@@ -542,6 +542,8 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
         self.roots.tree_path(self.name())
     }
 
+    /// Returns the number of keys stored in the tree. Does not include deleted keys.
+    #[must_use]
     pub fn count(&self) -> u64 {
         let state = self.state.lock();
         state.header.count()
@@ -975,8 +977,8 @@ mod tests {
     }
 
     fn compact_test<R: Root>() {
-        const OPERATION_COUNT: usize = 1024;
-        const WORKER_COUNT: usize = 1;
+        const OPERATION_COUNT: usize = 256;
+        const WORKER_COUNT: usize = 4;
         let tempdir = tempdir().unwrap();
 
         let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
@@ -1000,6 +1002,11 @@ mod tests {
                     assert_eq!(BigEndian::read_u64(&value), absolute_id);
                     tree.set(absolute_id.to_be_bytes(), absolute_id.to_be_bytes())
                         .unwrap();
+                    let newer_value = tree
+                        .get(&absolute_id.to_be_bytes())
+                        .unwrap()
+                        .expect("couldn't find found");
+                    assert_eq!(value, newer_value);
                 }
             }));
         }

@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use nebari::{
-    io::{fs::StdFile, FileManager, ManagedFile},
+    io::{fs::StdFile, FileManager, ManagedFile, OpenableFile},
     tree::{
         Modification, Operation, Root, State, TreeFile, UnversionedTreeRoot, VersionedTreeRoot,
     },
@@ -61,9 +61,10 @@ impl<B: NebariBenchmark> SimpleBench for InsertLogs<B> {
         let tempfile = TempDir::new()?;
         let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
         let file = manager.append(tempfile.path().join("tree"))?;
+        let state = State::initialized(file.id());
         let tree = TreeFile::<B::Root, StdFile>::new(
             file,
-            State::initialized(),
+            state,
             None,
             Some(ChunkCache::new(100, 160_384)),
         )?;
@@ -118,9 +119,10 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
         let tempfile = TempDir::new().unwrap();
         let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
         let file = manager.append(tempfile.path().join("tree")).unwrap();
+        let state = State::initialized(file.id());
         let mut tree = TreeFile::<B::Root, StdFile>::new(
             file,
-            State::initialized(),
+            state,
             None,
             Some(ChunkCache::new(2000, 160_384)),
         )
@@ -159,7 +161,14 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
         let file_path = group_state.path().join("tree");
         let file = context.file_manager.append(&file_path).unwrap();
         let state = State::default();
-        TreeFile::<B::Root, StdFile>::initialize_state(&state, &file_path, &context, None).unwrap();
+        TreeFile::<B::Root, StdFile>::initialize_state(
+            &state,
+            &file_path,
+            file.id(),
+            &context,
+            None,
+        )
+        .unwrap();
         let tree = TreeFile::<B::Root, StdFile>::new(
             file,
             state,
@@ -210,9 +219,10 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
         let tempfile = TempDir::new().unwrap();
         let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
         let file = manager.append(tempfile.path().join("tree")).unwrap();
+        let state = State::initialized(file.id());
         let mut tree = TreeFile::<B::Root, StdFile>::new(
             file,
-            State::initialized(),
+            state,
             None,
             Some(ChunkCache::new(2000, 160_384)),
         )
@@ -251,7 +261,14 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
         let file_path = group_state.path().join("tree");
         let file = context.file_manager.append(&file_path).unwrap();
         let state = State::default();
-        TreeFile::<B::Root, StdFile>::initialize_state(&state, &file_path, &context, None).unwrap();
+        TreeFile::<B::Root, StdFile>::initialize_state(
+            &state,
+            &file_path,
+            file.id(),
+            &context,
+            None,
+        )
+        .unwrap();
         let tree = TreeFile::<B::Root, StdFile>::new(
             file,
             state,

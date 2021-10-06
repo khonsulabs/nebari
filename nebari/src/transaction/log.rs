@@ -14,8 +14,9 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{State, TransactionHandle};
 use crate::{
+    error::Error,
     io::{FileManager, FileOp, ManagedFile, OpenableFile},
-    Buffer, Context, Error, Vault,
+    Buffer, Context, ErrorKind, Vault,
 };
 
 const PAGE_SIZE: usize = 1024;
@@ -424,9 +425,9 @@ impl<F: ManagedFile> FileOp<F> for LogWriter<F> {
                 let header_len = if offset == 0 {
                     // The first page has the length of the payload as the next 3 bytes.
                     let length = u32::try_from(bytes.len())
-                        .map_err(|_| Error::message("transaction too large"))?;
+                        .map_err(|_| Error::from("transaction too large"))?;
                     if length & 0xFF00_0000 != 0 {
-                        return Err(Error::message("transaction too large"));
+                        return Err(Error::from("transaction too large"));
                     }
                     scratch[0] = 1;
                     #[allow(clippy::cast_possible_truncation)]
@@ -498,7 +499,7 @@ impl<'a> LogEntry<'a> {
             self.data = Some(data);
             Ok(())
         } else {
-            Err(Error::ValueTooLarge)
+            Err(Error::from(ErrorKind::ValueTooLarge))
         }
     }
 
@@ -551,7 +552,10 @@ fn serialization_tests() {
     let mut big_data = Buffer::from(big_data);
     assert!(matches!(
         transaction.set_data(big_data.clone()),
-        Err(Error::ValueTooLarge)
+        Err(Error {
+            kind: ErrorKind::ValueTooLarge,
+            ..
+        })
     ));
 
     // Remove 8 bytes (the transaction id length) and try again.

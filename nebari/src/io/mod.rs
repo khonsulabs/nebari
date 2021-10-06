@@ -14,7 +14,7 @@ use std::{
     },
 };
 
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use parking_lot::{RwLock, RwLockUpgradableReadGuard, RwLockWriteGuard};
 
 use crate::error::Error;
 
@@ -79,7 +79,7 @@ pub trait FileManager: Send + Sync + Clone + Default + std::fmt::Debug + 'static
 
     /// Closes all open handles for `path`, and calls `publish_callback` before
     /// unlocking any locks aquired during the operation.
-    fn close_handles<F: FnOnce()>(&self, path: impl AsRef<Path>, publish_callback: F);
+    fn close_handles<F: FnOnce(u64)>(&self, path: impl AsRef<Path>, publish_callback: F);
 
     /// Check if the file exists.
     fn delete(&self, path: impl AsRef<Path>) -> Result<bool, Error>;
@@ -90,11 +90,19 @@ pub trait FileManager: Send + Sync + Clone + Default + std::fmt::Debug + 'static
 
 /// A file that can have operations performed on it.
 pub trait OpenableFile<F: ManagedFile>: Sized + Send + Sync {
+    /// Returns the id of the file assigned from the file manager.
+    fn id(&self) -> Option<u64>;
+
     /// Executes an operation.
     fn execute<W: FileOp<F>>(&mut self, operator: W) -> W::Output;
 
     /// Replaces the current file with the file located at `path` atomically.
-    fn replace_with(self, path: &Path, manager: &F::Manager) -> Result<Self, Error>;
+    fn replace_with<C: FnOnce(u64)>(
+        self,
+        path: &Path,
+        manager: &F::Manager,
+        publish_callback: C,
+    ) -> Result<Self, Error>;
 
     /// Closes the file. This may not actually close the underlying file,
     /// depending on what other tasks have access to the underlying file as
@@ -136,6 +144,18 @@ impl PathIds {
         file_ids.remove(path)
     }
 
+    fn recreate_file_id_for_path(&self, path: &Path) -> Option<RecreatedFile<'_>> {
+        let mut file_ids = self.file_ids.write();
+        let new_id = self.file_id_counter.fetch_add(1, Ordering::SeqCst);
+        file_ids
+            .insert(path.to_path_buf(), new_id)
+            .map(|old_id| RecreatedFile {
+                previous_id: old_id,
+                new_id,
+                _guard: file_ids,
+            })
+    }
+
     fn remove_file_ids_for_path_prefix(&self, path: &Path) -> Vec<u64> {
         let mut file_ids = self.file_ids.write();
         let mut ids_to_remove = Vec::new();
@@ -153,4 +173,15 @@ impl PathIds {
 
         ids_to_remove
     }
+}
+
+/// A file that has had its contents replaced. While this value exists, all
+/// other threads will be blocked from interacting with the [`PathIds`]
+/// structure. Only hold onto this value for short periods of time.
+pub struct RecreatedFile<'a> {
+    /// The file's previous id.
+    pub previous_id: u64,
+    /// The file's new id.
+    pub new_id: u64,
+    _guard: RwLockWriteGuard<'a, HashMap<PathBuf, u64>>,
 }

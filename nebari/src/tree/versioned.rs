@@ -19,7 +19,7 @@ use super::{
 };
 use crate::{
     chunk_cache::CacheEntry,
-    error::InternalError,
+    error::{Error, InternalError},
     io::ManagedFile,
     roots::AbortError,
     tree::{
@@ -28,7 +28,7 @@ use crate::{
         modify::Operation,
         PageHeader, Root,
     },
-    Buffer, ChunkCache, Error, Vault,
+    Buffer, ChunkCache, ErrorKind, Vault,
 };
 
 const UNINITIALIZED_SEQUENCE: u64 = 0;
@@ -60,8 +60,7 @@ pub enum ChangeResult<I: BinarySerialization, R: BinarySerialization> {
 impl VersionedTreeRoot {
     fn modify_sequence_root<'a, 'w, F: ManagedFile>(
         &'a mut self,
-        mut modification: Modification<'_, Buffer<'static>>,
-        changes: &mut EntryChanges,
+        mut modification: Modification<'_, BySequenceIndex>,
         writer: &'a mut PagedWriter<'w, F>,
     ) -> Result<(), Error> {
         // Reverse so that pop is efficient.
@@ -76,9 +75,49 @@ impl VersionedTreeRoot {
                 &mut modification,
                 &ModificationContext {
                     current_order: by_sequence_order,
+                    indexer: |_key: &Buffer<'_>,
+                              value: Option<&BySequenceIndex>,
+                              _existing_index: Option<&BySequenceIndex>,
+                              _changes: &mut EntryChanges,
+                              _writer: &mut PagedWriter<'_, F>| {
+                        Ok(KeyOperation::Set(value.unwrap().clone()))
+                    },
+                    loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_, F>| Ok(None),
+                    _phantom: PhantomData,
+                },
+                None,
+                &mut EntryChanges::default(),
+                writer,
+            )? {
+                ChangeResult::Remove | ChangeResult::Unchanged | ChangeResult::Changed => {}
+                ChangeResult::Split(upper) => {
+                    self.by_sequence_root.split_root(upper);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn modify_id_root<'a, 'w, F: ManagedFile>(
+        &'a mut self,
+        mut modification: Modification<'_, Buffer<'static>>,
+        changes: &mut EntryChanges,
+        writer: &'a mut PagedWriter<'w, F>,
+    ) -> Result<(), Error> {
+        modification.reverse()?;
+
+        let by_id_order = dynamic_order::<MAX_ORDER>(
+            self.by_id_root.stats().total_documents() + modification.keys.len() as u64,
+        );
+
+        while !modification.keys.is_empty() {
+            match self.by_id_root.modify(
+                &mut modification,
+                &ModificationContext {
+                    current_order: by_id_order,
                     indexer: |key: &Buffer<'_>,
                               value: Option<&Buffer<'static>>,
-                              _existing_index: Option<&BySequenceIndex>,
+                              _existing_index: Option<&VersionedByIdIndex>,
                               changes: &mut EntryChanges,
                               writer: &mut PagedWriter<'_, F>| {
                         let (document_position, document_size) = if let Some(value) = value {
@@ -101,13 +140,13 @@ impl VersionedTreeRoot {
                             document_position,
                             document_size,
                         });
-                        Ok(KeyOperation::Set(BySequenceIndex {
-                            document_id: key,
+                        Ok(KeyOperation::Set(VersionedByIdIndex {
+                            sequence_id: changes.current_sequence,
                             position: document_position,
                             document_size,
                         }))
                     },
-                    loader: |index: &BySequenceIndex, writer: &mut PagedWriter<'_, F>| {
+                    loader: |index, writer| {
                         if index.position > 0 {
                             match writer.read_chunk(index.position) {
                                 Ok(CacheEntry::Buffer(buffer)) => Ok(Some(buffer)),
@@ -124,54 +163,14 @@ impl VersionedTreeRoot {
                 changes,
                 writer,
             )? {
-                ChangeResult::Remove | ChangeResult::Unchanged | ChangeResult::Changed => {}
-                ChangeResult::Split(upper) => {
-                    self.by_sequence_root.split_root(upper);
-                }
-            }
-        }
-        self.sequence = changes.current_sequence;
-        Ok(())
-    }
-
-    fn modify_id_root<'a, 'w, F: ManagedFile>(
-        &'a mut self,
-        mut modification: Modification<'_, VersionedByIdIndex>,
-        writer: &'a mut PagedWriter<'w, F>,
-    ) -> Result<(), Error> {
-        modification.reverse()?;
-
-        let by_id_order = dynamic_order::<MAX_ORDER>(
-            self.by_id_root.stats().total_documents() + modification.keys.len() as u64,
-        );
-
-        while !modification.keys.is_empty() {
-            match self.by_id_root.modify(
-                &mut modification,
-                &ModificationContext {
-                    current_order: by_id_order,
-                    indexer: |_key: &Buffer<'_>,
-                              value: Option<&VersionedByIdIndex>,
-                              _existing_index,
-                              _changes,
-                              _writer: &mut PagedWriter<'_, F>| {
-                        Ok(value.map_or(KeyOperation::Remove, |value| {
-                            KeyOperation::Set(value.clone())
-                        }))
-                    },
-                    loader: |_index, _writer| Ok(None),
-                    _phantom: PhantomData,
-                },
-                None,
-                &mut EntryChanges::default(),
-                writer,
-            )? {
                 ChangeResult::Remove | ChangeResult::Changed | ChangeResult::Unchanged => {}
                 ChangeResult::Split(upper) => {
                     self.by_id_root.split_root(upper);
                 }
             }
         }
+
+        self.sequence = changes.current_sequence;
 
         Ok(())
     }
@@ -190,6 +189,10 @@ impl Root for VersionedTreeRoot {
 
     fn initialize_default(&mut self) {
         self.sequence = 1;
+    }
+
+    fn count(&self) -> u64 {
+        self.by_id_root.stats().alive_documents
     }
 
     fn deserialize(mut bytes: Buffer<'_>) -> Result<Self, Error> {
@@ -239,11 +242,11 @@ impl Root for VersionedTreeRoot {
 
         let by_sequence_size = u32::try_from(by_sequence_size)
             .ok()
-            .ok_or(Error::Internal(InternalError::HeaderTooLarge))?;
+            .ok_or(ErrorKind::Internal(InternalError::HeaderTooLarge))?;
         BigEndian::write_u32(&mut output[16..20], by_sequence_size);
         let by_id_size = u32::try_from(by_id_size)
             .ok()
-            .ok_or(Error::Internal(InternalError::HeaderTooLarge))?;
+            .ok_or(ErrorKind::Internal(InternalError::HeaderTooLarge))?;
         BigEndian::write_u32(&mut output[20..24], by_id_size);
 
         Ok(())
@@ -252,6 +255,7 @@ impl Root for VersionedTreeRoot {
     fn transaction_id(&self) -> u64 {
         self.transaction_id
     }
+
     fn modify<'a, 'w, F: ManagedFile>(
         &'a mut self,
         modification: Modification<'_, Buffer<'static>>,
@@ -264,7 +268,7 @@ impl Root for VersionedTreeRoot {
             current_sequence: self.sequence,
             changes: Vec::with_capacity(modification.keys.len()),
         };
-        self.modify_sequence_root(modification, &mut changes, writer)?;
+        self.modify_id_root(modification, &mut changes, writer)?;
 
         // Convert the changes into a modification request for the id root.
         let mut values = Vec::with_capacity(changes.changes.len());
@@ -272,20 +276,21 @@ impl Root for VersionedTreeRoot {
             .changes
             .into_iter()
             .map(|change| {
-                values.push(VersionedByIdIndex {
-                    sequence_id: change.sequence,
+                values.push(BySequenceIndex {
+                    document_id: change.key,
                     document_size: change.document_size,
                     position: change.document_position,
                 });
-                change.key
+                Buffer::from(change.sequence.to_be_bytes())
             })
             .collect();
-        let id_modifications = Modification {
+        let sequence_modifications = Modification {
             transaction_id,
             keys,
             operation: Operation::SetEach(values),
         };
-        self.modify_id_root(id_modifications, writer)?;
+
+        self.modify_sequence_root(sequence_modifications, writer)?;
 
         if transaction_id != 0 {
             self.transaction_id = transaction_id;
@@ -413,38 +418,41 @@ impl Root for VersionedTreeRoot {
                 let new_position =
                     copy_chunk(index.position, from_file, copied_chunks, to_file, vault)?;
 
-                sequence_indexes.push(BySequenceIndex {
-                    document_id: key.clone(),
-                    document_size: index.document_size,
-                    position: new_position,
-                });
+                sequence_indexes.push((
+                    key.clone(),
+                    BySequenceIndex {
+                        document_id: key.clone(),
+                        document_size: index.document_size,
+                        position: new_position,
+                    },
+                ));
 
-                if new_position == index.position {
-                    // Data is already in the new file
-                    Ok(false)
-                } else {
-                    index.position = new_position;
-                    Ok(true)
-                }
+                index.position = new_position;
+                Ok(true)
             },
         )?;
 
         // Replace our by_sequence index with a new truncated one.
         self.by_sequence_root = BTreeEntry::default();
 
-        sequence_indexes.sort_by(|a, b| a.document_id.cmp(&b.document_id));
+        sequence_indexes.sort_by(|a, b| a.0.cmp(&b.0));
         let by_sequence_order = dynamic_order::<MAX_ORDER>(sequence_indexes.len() as u64);
+        let mut keys = Vec::with_capacity(sequence_indexes.len());
+        let mut indexes = Vec::with_capacity(sequence_indexes.len());
+        for (id, index) in sequence_indexes {
+            keys.push(id);
+            indexes.push(index);
+        }
+
+        let mut modification = Modification {
+            transaction_id: self.transaction_id,
+            keys,
+            operation: Operation::SetEach(indexes),
+        };
 
         // This modification copies the `sequence_indexes` into the sequence root.
         self.by_sequence_root.modify(
-            &mut Modification {
-                transaction_id: self.transaction_id,
-                keys: sequence_indexes
-                    .iter()
-                    .map(|index| index.document_id.clone())
-                    .collect(),
-                operation: Operation::SetEach(sequence_indexes),
-            },
+            &mut modification,
             &ModificationContext {
                 current_order: by_sequence_order,
                 indexer: |_key: &Buffer<'_>,

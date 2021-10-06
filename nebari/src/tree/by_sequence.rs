@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};
-use crate::{io::ManagedFile, Buffer, Error};
+use crate::{error::Error, io::ManagedFile, Buffer, ErrorKind};
 
 #[derive(Clone, Debug)]
 pub struct BySequenceIndex {
@@ -25,7 +25,7 @@ impl BinarySerialization for BySequenceIndex {
         bytes_written += 8;
 
         let document_id_length =
-            u16::try_from(self.document_id.len()).map_err(|_| Error::IdTooLarge)?;
+            u16::try_from(self.document_id.len()).map_err(|_| ErrorKind::IdTooLarge)?;
         writer.write_u16::<BigEndian>(document_id_length)?;
         bytes_written += 2;
         writer.extend_from_slice(&self.document_id);

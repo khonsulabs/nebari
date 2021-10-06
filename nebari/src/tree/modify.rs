@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::btree_entry::KeyOperation;
-use crate::{Buffer, Error};
+use crate::{error::Error, Buffer, ErrorKind};
 
 /// A tree modification.
 #[derive(Debug)]
@@ -26,7 +26,7 @@ impl<'a, T> Modification<'a, T> {
             }
             Ok(())
         } else {
-            Err(Error::KeysNotOrdered)
+            Err(Error::from(ErrorKind::KeysNotOrdered))
         }
     }
 }

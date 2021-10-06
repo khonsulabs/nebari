@@ -35,7 +35,7 @@ pub use self::{
     buffer::Buffer,
     chunk_cache::ChunkCache,
     context::Context,
-    error::Error,
+    error::{Error, ErrorKind},
     roots::{
         AbortError, CompareAndSwapError, Config, ExecutingTransaction, Roots, ThreadPool,
         TransactionTree, Tree,

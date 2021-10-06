@@ -11,7 +11,7 @@ use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 
 use super::{FileManager, FileOp, ManagedFile, OpenableFile};
-use crate::{io::PathIds, Error};
+use crate::{error::Error, io::PathIds, ErrorKind};
 
 /// A fake "file" represented by an in-memory buffer. This should only be used
 /// in testing, as this database format is not optimized for memory efficiency.
@@ -127,7 +127,7 @@ impl std::io::Read for MemoryFile {
         if read_end > file_buffer.len() {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
-                Error::message("read requested more bytes than available"),
+                ErrorKind::message("read requested more bytes than available"),
             ));
         }
 
@@ -199,9 +199,9 @@ impl FileManager for MemoryFileManager {
 
     fn file_length(&self, path: impl AsRef<Path>) -> Result<u64, Error> {
         let file = self.lookup_file(path, false, 0)?.ok_or_else(|| {
-            Error::Io(io::Error::new(
+            ErrorKind::Io(io::Error::new(
                 io::ErrorKind::NotFound,
-                Error::message("not found"),
+                ErrorKind::message("not found"),
             ))
         })?;
         let file = file.lock();
@@ -234,9 +234,11 @@ impl FileManager for MemoryFileManager {
         Ok(())
     }
 
-    fn close_handles<F: FnOnce()>(&self, path: impl AsRef<Path>, publish_callback: F) {
+    fn close_handles<F: FnOnce(u64)>(&self, path: impl AsRef<Path>, publish_callback: F) {
+        let path = path.as_ref();
         drop(self.delete(path));
-        publish_callback();
+        let new_id = self.file_ids.file_id_for_path(path);
+        publish_callback(new_id);
     }
 }
 
@@ -244,12 +246,22 @@ impl FileManager for MemoryFileManager {
 pub struct OpenMemoryFile(Arc<Mutex<MemoryFile>>);
 
 impl OpenableFile<MemoryFile> for OpenMemoryFile {
+    fn id(&self) -> Option<u64> {
+        let f = self.0.lock();
+        f.id()
+    }
+
     fn execute<W: FileOp<MemoryFile>>(&mut self, mut writer: W) -> W::Output {
         let mut file = self.0.lock();
         writer.execute(&mut file)
     }
 
-    fn replace_with(self, path: &Path, manager: &MemoryFileManager) -> Result<Self, Error> {
+    fn replace_with<C: FnOnce(u64)>(
+        self,
+        path: &Path,
+        manager: &MemoryFileManager,
+        publish_callback: C,
+    ) -> Result<Self, Error> {
         let path_buffer = lookup_buffer(path, false).expect("replacement buffer not found");
         let my_path = {
             let mut file = self.0.lock();
@@ -263,6 +275,7 @@ impl OpenableFile<MemoryFile> for OpenMemoryFile {
         }
         let new_id = manager.file_ids.file_id_for_path(&my_path);
         files.insert(new_id, self.0.clone());
+        publish_callback(new_id);
 
         Ok(self)
     }

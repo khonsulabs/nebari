@@ -3,7 +3,7 @@ use std::{collections::HashMap, convert::TryFrom};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{serialization::BinarySerialization, PagedWriter};
-use crate::{io::ManagedFile, Buffer, Error, Vault};
+use crate::{error::Error, io::ManagedFile, Buffer, ErrorKind, Vault};
 
 #[derive(Debug, Clone)]
 pub struct KeyEntry<I> {
@@ -50,7 +50,7 @@ impl<I: BinarySerialization> BinarySerialization for KeyEntry<I> {
     ) -> Result<usize, Error> {
         let mut bytes_written = 0;
         // Write the key
-        let key_len = u16::try_from(self.key.len()).map_err(|_| Error::KeyTooLarge)?;
+        let key_len = u16::try_from(self.key.len()).map_err(|_| ErrorKind::KeyTooLarge)?;
         writer.write_u16::<BigEndian>(key_len)?;
         writer.extend_from_slice(&self.key);
         bytes_written += 2 + key_len as usize;

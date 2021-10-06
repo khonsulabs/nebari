@@ -16,7 +16,10 @@ use super::{
     versioned::ChangeResult,
     KeyRange, PagedWriter,
 };
-use crate::{io::ManagedFile, tree::KeyEvaluation, AbortError, Buffer, ChunkCache, Error, Vault};
+use crate::{
+    error::Error, io::ManagedFile, tree::KeyEvaluation, AbortError, Buffer, ChunkCache, ErrorKind,
+    Vault,
+};
 
 /// A B-Tree entry that stores a list of key-`I` pairs.
 #[derive(Clone, Debug)]
@@ -195,7 +198,7 @@ where
                         Operation::SetEach(values) => (context.indexer)(
                             &key,
                             Some(&values.pop().ok_or_else(|| {
-                                Error::message("need the same number of keys as values")
+                                ErrorKind::message("need the same number of keys as values")
                             })?),
                             Some(&children[last_index].index),
                             changes,
@@ -259,7 +262,7 @@ where
                         Operation::SetEach(new_values) => (context.indexer)(
                             &key,
                             Some(&new_values.pop().ok_or_else(|| {
-                                Error::message("need the same number of keys as values")
+                                ErrorKind::message("need the same number of keys as values")
                             })?),
                             None,
                             changes,
@@ -282,7 +285,9 @@ where
                     match operation {
                         KeyOperation::Set(index) => {
                             // New node.
-                            if children.capacity() < children.len() + 1 {
+                            if children.capacity() < children.len() + 1
+                                && context.current_order > children.len()
+                            {
                                 children.reserve(context.current_order - children.len());
                             }
                             children.insert(
@@ -578,7 +583,7 @@ where
                             .map_loaded_entry(file, vault, cache, children.len(), |entry, file| {
                                 entry
                                     .get(keys, key_evaluator, key_reader, file, vault, cache)
-                                    .map_err(AbortError::Roots)
+                                    .map_err(AbortError::Nebari)
                             })
                             .map_err(AbortError::infallible)?;
                         if !keep_scanning {
@@ -643,7 +648,9 @@ where
             }
             BTreeNode::Uninitialized => unreachable!(),
         }
-        self.dirty |= any_changes;
+        // Regardless of if data was copied, data locations have been updated,
+        // so the node is considered dirty.
+        self.dirty |= true;
         Ok(any_changes)
     }
 }

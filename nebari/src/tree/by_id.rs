@@ -1,7 +1,7 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};
-use crate::{io::ManagedFile, Buffer, Error};
+use crate::{error::Error, io::ManagedFile, Buffer};
 
 #[derive(Clone, Debug)]
 pub struct VersionedByIdIndex {

@@ -9,6 +9,7 @@ use std::{
 };
 
 use crate::{
+    error::Error,
     io::ManagedFile,
     roots::AnyTransactionTree,
     transaction::TransactionManager,
@@ -16,13 +17,17 @@ use crate::{
         btree_entry::ScanArgs, state::AnyTreeState, KeyEvaluation, KeyRange, Modification,
         PageHeader, PagedWriter, State, TreeFile,
     },
-    AbortError, Buffer, ChunkCache, Context, Error, TransactionTree, Vault,
+    AbortError, Buffer, ChunkCache, Context, TransactionTree, Vault,
 };
 
 /// A B-Tree root implementation.
 pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     /// The unique header byte for this root.
     const HEADER: PageHeader;
+
+    /// Returns the number of values contained in this tree, not including
+    /// deleted records.
+    fn count(&self) -> u64;
 
     /// Returns a reference to a named tree that contains this type of root.
     fn tree<F: ManagedFile>(name: impl Into<Cow<'static, str>>) -> TreeRoot<F> {

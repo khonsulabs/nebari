@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use nebari::{
-    io::{fs::StdFile, FileManager, ManagedFile},
+    io::{fs::StdFile, FileManager, ManagedFile, OpenableFile},
     tree::{
         Modification, Operation, Root, State, TreeFile, UnversionedTreeRoot, VersionedTreeRoot,
     },
@@ -159,7 +159,14 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
         let file_path = group_state.path().join("tree");
         let file = context.file_manager.append(&file_path).unwrap();
         let state = State::default();
-        TreeFile::<B::Root, StdFile>::initialize_state(&state, &file_path, &context, None).unwrap();
+        TreeFile::<B::Root, StdFile>::initialize_state(
+            &state,
+            &file_path,
+            file.id(),
+            &context,
+            None,
+        )
+        .unwrap();
         let tree = TreeFile::<B::Root, StdFile>::new(
             file,
             state,
@@ -251,7 +258,14 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
         let file_path = group_state.path().join("tree");
         let file = context.file_manager.append(&file_path).unwrap();
         let state = State::default();
-        TreeFile::<B::Root, StdFile>::initialize_state(&state, &file_path, &context, None).unwrap();
+        TreeFile::<B::Root, StdFile>::initialize_state(
+            &state,
+            &file_path,
+            file.id(),
+            &context,
+            None,
+        )
+        .unwrap();
         let tree = TreeFile::<B::Root, StdFile>::new(
             file,
             state,

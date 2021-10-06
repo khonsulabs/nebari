@@ -18,7 +18,7 @@ use super::{
 };
 use crate::{
     chunk_cache::CacheEntry,
-    error::InternalError,
+    error::{Error, InternalError},
     io::ManagedFile,
     roots::AbortError,
     tree::{
@@ -27,7 +27,7 @@ use crate::{
         versioned::ChangeResult,
         PageHeader, Root,
     },
-    Buffer, ChunkCache, Error, Vault,
+    Buffer, ChunkCache, ErrorKind, Vault,
 };
 
 const MAX_ORDER: usize = 1000;
@@ -54,6 +54,7 @@ impl UnversionedTreeRoot {
 
         let by_id_order = dynamic_order::<MAX_ORDER>(
             self.by_id_root.stats().total_documents() + modification.keys.len() as u64,
+            true,
         );
 
         while !modification.keys.is_empty() {
@@ -103,6 +104,10 @@ impl UnversionedTreeRoot {
 impl Root for UnversionedTreeRoot {
     const HEADER: PageHeader = PageHeader::UnversionedHeader;
 
+    fn count(&self) -> u64 {
+        self.by_id_root.stats().alive_documents
+    }
+
     fn initialized(&self) -> bool {
         self.transaction_id.is_some()
     }
@@ -151,7 +156,7 @@ impl Root for UnversionedTreeRoot {
         let by_id_size = self.by_id_root.serialize_to(&mut output, paged_writer)?;
         let by_id_size = u32::try_from(by_id_size)
             .ok()
-            .ok_or(Error::Internal(InternalError::HeaderTooLarge))?;
+            .ok_or(ErrorKind::Internal(InternalError::HeaderTooLarge))?;
         BigEndian::write_u32(&mut output[8..12], by_id_size);
 
         Ok(())
@@ -320,14 +325,16 @@ impl Root for UnversionedTreeRoot {
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss
 )]
-fn dynamic_order<const MAX_ORDER: usize>(number_of_records: u64) -> usize {
+fn dynamic_order<const MAX_ORDER: usize>(number_of_records: u64, for_modification: bool) -> usize {
     // Current approximation is the 4th root
     if number_of_records > MAX_ORDER.pow(4) as u64 {
         MAX_ORDER
     } else {
-        let estimated_order = 2.max((number_of_records as f64).sqrt().sqrt().ceil() as usize);
+        let mut estimated_order = 2.max((number_of_records as f64).sqrt().sqrt().ceil() as usize);
         // Add some padding so that we don't have a 100% fill rate.
-        let estimated_order = estimated_order + (estimated_order / 3).max(1);
+        if for_modification {
+            estimated_order += (estimated_order / 3).max(1);
+        }
         MAX_ORDER.min(estimated_order)
     }
 }

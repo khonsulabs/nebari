@@ -57,6 +57,7 @@ impl<Root: super::Root> AnyTreeState for State<Root> {
 
 #[derive(Clone, Debug, Default)]
 pub struct ActiveState<Root: super::Root> {
+    pub file_id: Option<u64>,
     pub current_position: u64,
     pub header: Root,
 }

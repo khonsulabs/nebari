@@ -19,7 +19,7 @@ use super::{
 };
 use crate::{
     chunk_cache::CacheEntry,
-    error::InternalError,
+    error::{Error, InternalError},
     io::ManagedFile,
     roots::AbortError,
     tree::{
@@ -28,7 +28,7 @@ use crate::{
         modify::Operation,
         PageHeader, Root,
     },
-    Buffer, ChunkCache, Error, Vault,
+    Buffer, ChunkCache, ErrorKind, Vault,
 };
 
 const UNINITIALIZED_SEQUENCE: u64 = 0;
@@ -192,6 +192,10 @@ impl Root for VersionedTreeRoot {
         self.sequence = 1;
     }
 
+    fn count(&self) -> u64 {
+        self.by_id_root.stats().alive_documents
+    }
+
     fn deserialize(mut bytes: Buffer<'_>) -> Result<Self, Error> {
         let transaction_id = bytes.read_u64::<BigEndian>()?;
         let sequence = bytes.read_u64::<BigEndian>()?;
@@ -239,11 +243,11 @@ impl Root for VersionedTreeRoot {
 
         let by_sequence_size = u32::try_from(by_sequence_size)
             .ok()
-            .ok_or(Error::Internal(InternalError::HeaderTooLarge))?;
+            .ok_or(ErrorKind::Internal(InternalError::HeaderTooLarge))?;
         BigEndian::write_u32(&mut output[16..20], by_sequence_size);
         let by_id_size = u32::try_from(by_id_size)
             .ok()
-            .ok_or(Error::Internal(InternalError::HeaderTooLarge))?;
+            .ok_or(ErrorKind::Internal(InternalError::HeaderTooLarge))?;
         BigEndian::write_u32(&mut output[20..24], by_id_size);
 
         Ok(())
@@ -252,6 +256,7 @@ impl Root for VersionedTreeRoot {
     fn transaction_id(&self) -> u64 {
         self.transaction_id
     }
+
     fn modify<'a, 'w, F: ManagedFile>(
         &'a mut self,
         modification: Modification<'_, Buffer<'static>>,
@@ -413,38 +418,42 @@ impl Root for VersionedTreeRoot {
                 let new_position =
                     copy_chunk(index.position, from_file, copied_chunks, to_file, vault)?;
 
-                sequence_indexes.push(BySequenceIndex {
-                    document_id: key.clone(),
-                    document_size: index.document_size,
-                    position: new_position,
-                });
+                sequence_indexes.push((
+                    key.clone(),
+                    BySequenceIndex {
+                        document_id: key.clone(),
+                        document_size: index.document_size,
+                        position: new_position,
+                    },
+                ));
 
-                if new_position == index.position {
-                    // Data is already in the new file
-                    Ok(false)
-                } else {
-                    index.position = new_position;
-                    Ok(true)
-                }
+                index.position = new_position;
+                Ok(true)
             },
         )?;
 
         // Replace our by_sequence index with a new truncated one.
         self.by_sequence_root = BTreeEntry::default();
 
-        sequence_indexes.sort_by(|a, b| a.document_id.cmp(&b.document_id));
+        sequence_indexes.sort_by(|a, b| a.0.cmp(&b.0));
         let by_sequence_order = dynamic_order::<MAX_ORDER>(sequence_indexes.len() as u64);
+        let mut keys = Vec::with_capacity(sequence_indexes.len());
+        let mut indexes = Vec::with_capacity(sequence_indexes.len());
+        for (id, index) in sequence_indexes {
+            keys.push(id);
+            indexes.push(index);
+        }
+
+        let mut modification = Modification {
+            transaction_id: self.transaction_id,
+            keys,
+            operation: Operation::SetEach(indexes),
+        };
+        println!("Sequence modification: {:?}", modification);
 
         // This modification copies the `sequence_indexes` into the sequence root.
         self.by_sequence_root.modify(
-            &mut Modification {
-                transaction_id: self.transaction_id,
-                keys: sequence_indexes
-                    .iter()
-                    .map(|index| index.document_id.clone())
-                    .collect(),
-                operation: Operation::SetEach(sequence_indexes),
-            },
+            &mut modification,
             &ModificationContext {
                 current_order: by_sequence_order,
                 indexer: |_key: &Buffer<'_>,

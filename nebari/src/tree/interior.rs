@@ -11,8 +11,8 @@ use super::{
     read_chunk, BinarySerialization, PagedWriter,
 };
 use crate::{
-    chunk_cache::CacheEntry, io::ManagedFile, tree::btree_entry::NodeInclusion, AbortError, Buffer,
-    ChunkCache, Error, Vault,
+    chunk_cache::CacheEntry, error::Error, io::ManagedFile, tree::btree_entry::NodeInclusion,
+    AbortError, Buffer, ChunkCache, ErrorKind, Vault,
 };
 
 #[derive(Clone, Debug)]
@@ -241,7 +241,7 @@ impl<
         self.position = Pointer::OnDisk(location_on_disk);
         let mut bytes_written = 0;
         // Write the key
-        let key_len = u16::try_from(self.key.len()).map_err(|_| Error::KeyTooLarge)?;
+        let key_len = u16::try_from(self.key.len()).map_err(|_| ErrorKind::KeyTooLarge)?;
         writer.write_u16::<BigEndian>(key_len)?;
         writer.extend_from_slice(&self.key);
         bytes_written += 2 + key_len as usize;

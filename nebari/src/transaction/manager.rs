@@ -11,10 +11,10 @@ use parking_lot::Mutex;
 
 use super::{log::EntryFetcher, LogEntry, State, TransactionLog};
 use crate::{
-    error::InternalError,
+    error::{Error, InternalError},
     io::{FileManager, ManagedFile, OpenableFile},
     transaction::log::ScanResult,
-    Context, Error,
+    Context, ErrorKind,
 };
 
 /// A shared [`TransactionLog`] manager. Allows multiple threads to interact with a single transaction log.
@@ -44,7 +44,7 @@ impl<M: FileManager> TransactionManager<M> {
                     thread_context,
                 );
             })
-            .map_err(Error::message)?;
+            .map_err(ErrorKind::message)?;
 
         let state = state_receiver.recv().expect("failed to initialize")?;
         Ok(Self {
@@ -60,10 +60,12 @@ impl<M: FileManager> TransactionManager<M> {
         let (completion_sender, completion_receiver) = flume::bounded(1);
         self.transaction_sender
             .send((transaction, completion_sender))
-            .map_err(|_| Error::Internal(InternalError::TransactionManagerStopped))?;
-        completion_receiver
-            .recv()
-            .map_err(|_| Error::Internal(InternalError::TransactionManagerStopped))
+            .map_err(|_| ErrorKind::Internal(InternalError::TransactionManagerStopped))?;
+        completion_receiver.recv().map_err(|_| {
+            Error::from(ErrorKind::Internal(
+                InternalError::TransactionManagerStopped,
+            ))
+        })
     }
 
     /// Scans the transaction log for entries with ids within `range`. Invokes

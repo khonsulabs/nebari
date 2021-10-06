@@ -20,13 +20,14 @@ use parking_lot::Mutex;
 
 use crate::{
     context::Context,
-    io::{FileManager, ManagedFile},
+    error::Error,
+    io::{FileManager, ManagedFile, OpenableFile},
     transaction::{LogEntry, TransactionHandle, TransactionManager},
     tree::{
-        self, state::AnyTreeState, KeyEvaluation, Modification, Operation, State, TreeFile,
-        TreeRoot, VersionedTreeRoot,
+        self, state::AnyTreeState, KeyEvaluation, Modification, Operation, State,
+        TransactableCompaction, TreeFile, TreeRoot, VersionedTreeRoot,
     },
-    Buffer, ChunkCache, Error, Vault,
+    Buffer, ChunkCache, Vault,
 };
 
 /// A multi-tree transactional B-Tree database.
@@ -54,7 +55,7 @@ impl<F: ManagedFile> Roots<F> {
         if !path.exists() {
             fs::create_dir_all(&path)?;
         } else if !path.is_dir() {
-            return Err(Error::message(format!(
+            return Err(Error::from(format!(
                 "'{:?}' already exists, but is not a directory.",
                 path
             )));
@@ -518,6 +519,16 @@ pub struct Tree<Root: tree::Root, F: ManagedFile> {
     name: Cow<'static, str>,
 }
 
+impl<Root: tree::Root, F: ManagedFile> Clone for Tree<Root, F> {
+    fn clone(&self) -> Self {
+        Self {
+            roots: self.roots.clone(),
+            state: self.state.clone(),
+            name: self.name.clone(),
+        }
+    }
+}
+
 impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
     /// Returns the name of the tree.
     #[must_use]
@@ -529,6 +540,11 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
     #[must_use]
     pub fn path(&self) -> PathBuf {
         self.roots.tree_path(self.name())
+    }
+
+    pub fn count(&self) -> u64 {
+        let state = self.state.lock();
+        state.header.count()
     }
 
     /// Sets `key` to `value`. This is executed within its own transaction.
@@ -673,6 +689,29 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
 
         tree.last(false)
     }
+
+    /// Rewrites the database to remove data that is no longer current. Because
+    /// Nebari uses an append-only format, this is helpful in reducing disk
+    /// usage.
+    ///
+    /// See [`TreeFile::compact()`](crate::tree::TreeFile::compact) for more
+    /// information.
+    pub fn compact(&self) -> Result<(), Error> {
+        let tree = TreeFile::<Root, F>::read(
+            self.path(),
+            self.state.clone(),
+            self.roots.context(),
+            Some(self.roots.transactions()),
+        )?;
+        tree.compact(
+            &self.roots.context().file_manager,
+            Some(TransactableCompaction {
+                name: self.name.as_ref(),
+                manager: self.roots.transactions(),
+            }),
+        )?;
+        Ok(())
+    }
 }
 
 /// An error that could come from user code or Roots.
@@ -683,7 +722,7 @@ pub enum AbortError<U: Display + Debug> {
     Other(U),
     /// An error from Roots occurred.
     #[error("database error: {0}")]
-    Roots(#[from] Error),
+    Nebari(#[from] Error),
 }
 
 impl AbortError<Infallible> {
@@ -692,7 +731,7 @@ impl AbortError<Infallible> {
     pub fn infallible(self) -> Error {
         match self {
             AbortError::Other(_) => unreachable!(),
-            AbortError::Roots(error) => error,
+            AbortError::Nebari(error) => error,
         }
     }
 }
@@ -813,12 +852,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    use byteorder::{BigEndian, ByteOrder};
     use tempfile::tempdir;
 
     use super::*;
     use crate::{
         io::{fs::StdFile, memory::MemoryFile, ManagedFile},
-        tree::Root,
+        tree::{Root, UnversionedTreeRoot},
     };
 
     fn basic_get_set<F: ManagedFile>() {
@@ -922,5 +962,58 @@ mod tests {
             .unwrap()
             .expect("key not found");
         assert_eq!(result.as_slice(), b"value");
+    }
+
+    #[test]
+    fn compact_test_versioned() {
+        compact_test::<VersionedTreeRoot>();
+    }
+
+    #[test]
+    fn compact_test_unversioned() {
+        compact_test::<UnversionedTreeRoot>();
+    }
+
+    fn compact_test<R: Root>() {
+        const OPERATION_COUNT: usize = 1024;
+        const WORKER_COUNT: usize = 1;
+        let tempdir = tempdir().unwrap();
+
+        let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
+        let tree = roots.tree::<R, _>("test").unwrap();
+        tree.set("foo", b"bar").unwrap();
+
+        // Spawn a pool of threads that will perform a series of operations
+        let mut threads = Vec::new();
+        for worker in 0..WORKER_COUNT {
+            let tree = tree.clone();
+            threads.push(std::thread::spawn(move || {
+                for relative_id in 0..OPERATION_COUNT {
+                    let absolute_id = (worker * OPERATION_COUNT + relative_id) as u64;
+                    tree.set(absolute_id.to_be_bytes(), absolute_id.to_be_bytes())
+                        .unwrap();
+                    let value = tree
+                        .remove(&absolute_id.to_be_bytes())
+                        .unwrap()
+                        .ok_or_else(|| panic!("value not found: {:?}", absolute_id))
+                        .unwrap();
+                    assert_eq!(BigEndian::read_u64(&value), absolute_id);
+                    tree.set(absolute_id.to_be_bytes(), absolute_id.to_be_bytes())
+                        .unwrap();
+                }
+            }));
+        }
+
+        threads.push(std::thread::spawn(move || {
+            // While those workers are running, this thread is going to continually
+            // execute compaction.
+            while dbg!(tree.count()) < (OPERATION_COUNT * WORKER_COUNT) as u64 {
+                tree.compact().unwrap();
+            }
+        }));
+
+        for thread in threads {
+            thread.join().unwrap();
+        }
     }
 }

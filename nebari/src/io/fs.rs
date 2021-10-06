@@ -9,7 +9,7 @@ use std::{
 use parking_lot::Mutex;
 
 use super::{FileManager, FileOp, ManagedFile, OpenableFile};
-use crate::{io::PathIds, Error};
+use crate::{error::Error, io::PathIds};
 
 /// An open file that uses [`std::fs`].
 #[derive(Debug)]
@@ -99,8 +99,15 @@ impl Read for StdFile {
 #[derive(Debug, Default, Clone)]
 pub struct StdFileManager {
     file_ids: PathIds,
-    open_files: Arc<Mutex<HashMap<u64, Option<StdFile>>>>,
+    open_files: Arc<Mutex<HashMap<u64, FileSlot>>>,
     reader_files: Arc<Mutex<HashMap<u64, VecDeque<StdFile>>>>,
+}
+
+#[derive(Debug)]
+enum FileSlot {
+    Available(StdFile),
+    Taken,
+    Waiting(flume::Sender<StdFile>),
 }
 
 impl FileManager for StdFileManager {
@@ -111,14 +118,36 @@ impl FileManager for StdFileManager {
         let file_id = self.file_ids.file_id_for_path(path);
         let mut open_files = self.open_files.lock();
         if let Some(open_file) = open_files.get_mut(&file_id) {
+            let mut file = FileSlot::Taken;
+            std::mem::swap(&mut file, open_file);
+            let file = match file {
+                FileSlot::Available(file) => file,
+                other => {
+                    let (file_sender, file_receiver) = flume::bounded(1);
+                    *open_file = FileSlot::Waiting(file_sender);
+                    drop(open_files);
+
+                    let file = file_receiver.recv()?;
+
+                    // If we stole the slot from another waiter (shouldn't
+                    // happen in real usage), we need to reinstall it.
+                    if let FileSlot::Waiting(other_sender) = other {
+                        let mut open_files = self.open_files.lock();
+                        if let Some(open_file) = open_files.get_mut(&file_id) {
+                            *open_file = FileSlot::Waiting(other_sender);
+                        }
+                    }
+                    file
+                }
+            };
             Ok(OpenStdFile {
-                file: Some(open_file.take().expect("file already owned")),
+                file: Some(file),
                 reader: false,
                 manager: Some(self.clone()),
             })
         } else {
             let file = StdFile::open_for_append(path, Some(file_id))?;
-            open_files.insert(file_id, None);
+            open_files.insert(file_id, FileSlot::Taken);
             Ok(OpenStdFile {
                 file: Some(file),
                 reader: false,
@@ -189,13 +218,15 @@ impl FileManager for StdFileManager {
         Ok(())
     }
 
-    fn close_handles<F: FnOnce()>(&self, path: impl AsRef<Path>, publish_callback: F) {
-        if let Some(file_id) = self.file_ids.remove_file_id_for_path(path.as_ref()) {
+    fn close_handles<F: FnOnce(u64)>(&self, path: impl AsRef<Path>, publish_callback: F) {
+        if let Some((old_id, new_id, _guard)) =
+            self.file_ids.recreate_file_id_for_path(path.as_ref())
+        {
             let mut open_files = self.open_files.lock();
             let mut reader_files = self.reader_files.lock();
-            open_files.remove(&file_id);
-            reader_files.remove(&file_id);
-            publish_callback();
+            open_files.remove(&old_id);
+            reader_files.remove(&old_id);
+            publish_callback(new_id);
         }
     }
 }
@@ -208,16 +239,25 @@ pub struct OpenStdFile {
 }
 
 impl OpenableFile<StdFile> for OpenStdFile {
+    fn id(&self) -> Option<u64> {
+        self.file.as_ref().and_then(StdFile::id)
+    }
+
     fn execute<W: FileOp<StdFile>>(&mut self, mut writer: W) -> W::Output {
         writer.execute(self.file.as_mut().unwrap())
     }
 
-    fn replace_with(self, path: &Path, manager: &StdFileManager) -> Result<Self, Error> {
+    fn replace_with<C: FnOnce(u64)>(
+        self,
+        path: &Path,
+        manager: &StdFileManager,
+        publish_callback: C,
+    ) -> Result<Self, Error> {
         let current_path = self.file.as_ref().unwrap().path.clone();
         self.close()?;
 
         std::fs::rename(path, &current_path)?;
-
+        manager.close_handles(&current_path, publish_callback);
         manager.append(current_path)
     }
 
@@ -240,7 +280,17 @@ impl Drop for OpenStdFile {
                 } else {
                     let mut writer_files = manager.open_files.lock();
                     if let Some(writer_file) = writer_files.get_mut(&file_id) {
-                        *writer_file = Some(file);
+                        match writer_file {
+                            FileSlot::Available(_) => unreachable!(),
+                            FileSlot::Taken => {
+                                *writer_file = FileSlot::Available(file);
+                            }
+                            FileSlot::Waiting(sender) => {
+                                if let Err(flume::SendError(file)) = sender.send(file) {
+                                    *writer_file = FileSlot::Available(file);
+                                }
+                            }
+                        }
                     }
                 }
             }

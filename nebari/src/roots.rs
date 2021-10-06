@@ -27,7 +27,7 @@ use crate::{
         self, state::AnyTreeState, KeyEvaluation, Modification, Operation, State,
         TransactableCompaction, TreeFile, TreeRoot, VersionedTreeRoot,
     },
-    Buffer, ChunkCache, Vault,
+    Buffer, ChunkCache, ErrorKind, Vault,
 };
 
 /// A multi-tree transactional B-Tree database.
@@ -410,8 +410,8 @@ impl<Root: tree::Root, F: ManagedFile> TransactionTree<Root, F> {
         &mut self,
         range: B,
         forwards: bool,
-        key_evaluator: KeyEvaluator,
-        callback: DataCallback,
+        mut key_evaluator: KeyEvaluator,
+        mut callback: DataCallback,
     ) -> Result<(), AbortError<E>>
     where
         B: RangeBounds<Buffer<'b>> + Debug + 'static,
@@ -420,7 +420,7 @@ impl<Root: tree::Root, F: ManagedFile> TransactionTree<Root, F> {
         E: Display + Debug,
     {
         self.tree
-            .scan(range, forwards, true, key_evaluator, callback)
+            .scan(range, forwards, true, &mut key_evaluator, &mut callback)
     }
 
     /// Returns the last  of the tree.
@@ -564,14 +564,16 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
     /// Retrieves the current value of `key`, if present. Does not reflect any
     /// changes in pending transactions.
     pub fn get(&self, key: &[u8]) -> Result<Option<Buffer<'static>>, Error> {
-        let mut tree = TreeFile::<Root, F>::read(
-            self.path(),
-            self.state.clone(),
-            self.roots.context(),
-            Some(self.roots.transactions()),
-        )?;
+        catch_compaction_and_retry(|| {
+            let mut tree = TreeFile::<Root, F>::read(
+                self.path(),
+                self.state.clone(),
+                self.roots.context(),
+                Some(self.roots.transactions()),
+            )?;
 
-        tree.get(key, false)
+            tree.get(key, false)
+        })
     }
 
     /// Removes `key` and returns the existing value, if present. This is executed within its own transaction.
@@ -608,29 +610,33 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
         &self,
         keys: &[&[u8]],
     ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
-        let mut tree = TreeFile::<Root, F>::read(
-            self.path(),
-            self.state.clone(),
-            self.roots.context(),
-            Some(self.roots.transactions()),
-        )?;
+        catch_compaction_and_retry(|| {
+            let mut tree = TreeFile::<Root, F>::read(
+                self.path(),
+                self.state.clone(),
+                self.roots.context(),
+                Some(self.roots.transactions()),
+            )?;
 
-        tree.get_multiple(keys, false)
+            tree.get_multiple(keys, false)
+        })
     }
 
     /// Retrieves all of the values of keys within `range`.
-    pub fn get_range<'b, B: RangeBounds<Buffer<'b>> + Debug + 'static>(
+    pub fn get_range<'b, B: RangeBounds<Buffer<'b>> + Clone + Debug + 'static>(
         &self,
         range: B,
     ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
-        let mut tree = TreeFile::<Root, F>::read(
-            self.path(),
-            self.state.clone(),
-            self.roots.context(),
-            Some(self.roots.transactions()),
-        )?;
+        catch_compaction_and_retry(|| {
+            let mut tree = TreeFile::<Root, F>::read(
+                self.path(),
+                self.state.clone(),
+                self.roots.context(),
+                Some(self.roots.transactions()),
+            )?;
 
-        tree.get_range(range, false)
+            tree.get_range(range.clone(), false)
+        })
     }
 
     /// Scans the tree. Each key that is contained `range` will be passed to
@@ -647,49 +653,61 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
         &self,
         range: B,
         forwards: bool,
-        key_evaluator: KeyEvaluator,
-        callback: DataCallback,
+        mut key_evaluator: KeyEvaluator,
+        mut callback: DataCallback,
     ) -> Result<(), AbortError<E>>
     where
-        B: RangeBounds<Buffer<'b>> + Debug + 'static,
+        B: RangeBounds<Buffer<'b>> + Clone + Debug + 'static,
         KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
         DataCallback: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<E>>,
         E: Display + Debug,
     {
-        let mut tree = TreeFile::<Root, F>::read(
-            self.path(),
-            self.state.clone(),
-            self.roots.context(),
-            Some(self.roots.transactions()),
-        )?;
+        catch_compaction_and_retry_abortable(move || {
+            let mut tree = TreeFile::<Root, F>::read(
+                self.path(),
+                self.state.clone(),
+                self.roots.context(),
+                Some(self.roots.transactions()),
+            )?;
 
-        tree.scan(range, forwards, false, key_evaluator, callback)
+            tree.scan(
+                range.clone(),
+                forwards,
+                false,
+                &mut key_evaluator,
+                &mut callback,
+            )
+        })
     }
 
     /// Returns the last key of the tree.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn last_key(&self) -> Result<Option<Buffer<'static>>, Error> {
-        let mut tree = TreeFile::<Root, F>::read(
-            self.path(),
-            self.state.clone(),
-            self.roots.context(),
-            Some(self.roots.transactions()),
-        )?;
+        catch_compaction_and_retry(|| {
+            let mut tree = TreeFile::<Root, F>::read(
+                self.path(),
+                self.state.clone(),
+                self.roots.context(),
+                Some(self.roots.transactions()),
+            )?;
 
-        tree.last_key(false)
+            tree.last_key(false)
+        })
     }
 
     /// Returns the last key and value of the tree.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn last(&self) -> Result<Option<(Buffer<'static>, Buffer<'static>)>, Error> {
-        let mut tree = TreeFile::<Root, F>::read(
-            self.path(),
-            self.state.clone(),
-            self.roots.context(),
-            Some(self.roots.transactions()),
-        )?;
+        catch_compaction_and_retry(|| {
+            let mut tree = TreeFile::<Root, F>::read(
+                self.path(),
+                self.state.clone(),
+                self.roots.context(),
+                Some(self.roots.transactions()),
+            )?;
 
-        tree.last(false)
+            tree.last(false)
+        })
     }
 
     /// Rewrites the database to remove data that is no longer current. Because
@@ -850,6 +868,43 @@ where
 {
     tree: Box<dyn AnyTransactionTree<F>>,
     completion_sender: Sender<Result<Box<dyn AnyTransactionTree<F>>, Error>>,
+}
+
+fn catch_compaction_and_retry<R, F: Fn() -> Result<R, Error>>(func: F) -> Result<R, Error> {
+    loop {
+        match func() {
+            Ok(result) => return Ok(result),
+            Err(error) => {
+                if matches!(error.kind, ErrorKind::DatabaseCompacted) {
+                    continue;
+                }
+
+                return Err(error);
+            }
+        }
+    }
+}
+
+fn catch_compaction_and_retry_abortable<
+    R,
+    E: Display + Debug,
+    F: FnMut() -> Result<R, AbortError<E>>,
+>(
+    mut func: F,
+) -> Result<R, AbortError<E>> {
+    loop {
+        match func() {
+            Ok(result) => return Ok(result),
+            Err(AbortError::Nebari(error)) => {
+                if matches!(error.kind, ErrorKind::DatabaseCompacted) {
+                    continue;
+                }
+
+                return Err(AbortError::Nebari(error));
+            }
+            Err(other) => return Err(other),
+        }
+    }
 }
 
 #[cfg(test)]

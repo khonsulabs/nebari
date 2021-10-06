@@ -210,6 +210,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
         let mut file_length = context.file_manager.file_length(file_path)?;
         if file_length == 0 {
             active_state.header.initialize_default();
+            active_state.publish(state);
             return Ok(());
         }
 
@@ -451,8 +452,8 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
             range,
             true,
             in_transaction,
-            |_| KeyEvaluation::ReadData,
-            |key, value| {
+            &mut |_| KeyEvaluation::ReadData,
+            &mut |key, value| {
                 results.push((key, value));
                 Ok(())
             },
@@ -473,8 +474,8 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
         range: B,
         forwards: bool,
         in_transaction: bool,
-        key_evaluator: KeyEvaluator,
-        callback: DataCallback,
+        key_evaluator: &mut KeyEvaluator,
+        callback: &mut DataCallback,
     ) -> Result<(), AbortError<E>>
     where
         B: RangeBounds<Buffer<'b>> + Debug + 'static,
@@ -503,11 +504,11 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
             ..,
             false,
             in_transaction,
-            |key| {
+            &mut |key| {
                 result = Some(key.clone());
                 KeyEvaluation::Stop
             },
-            |_key, _value| Ok(()),
+            &mut |_key, _value| Ok(()),
         )
         .map_err(AbortError::infallible)?;
 
@@ -525,7 +526,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
             ..,
             false,
             in_transaction,
-            |_| {
+            &mut |_| {
                 if key_requested {
                     KeyEvaluation::Stop
                 } else {
@@ -533,7 +534,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
                     KeyEvaluation::ReadData
                 }
             },
-            |key, value| {
+            &mut |key, value| {
                 result = Some((key, value));
                 Ok(())
             },

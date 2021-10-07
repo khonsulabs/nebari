@@ -473,19 +473,20 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         feature = "tracing",
         tracing::instrument(skip(self, key_evaluator, callback))
     )]
-    pub fn scan<'b, E, B, KeyEvaluator, DataCallback>(
+    pub fn scan<'range, CallerError, Range, KeyEvaluator, DataCallback>(
         &mut self,
-        range: B,
+        range: Range,
         forwards: bool,
         in_transaction: bool,
         key_evaluator: &mut KeyEvaluator,
         callback: &mut DataCallback,
-    ) -> Result<(), AbortError<E>>
+    ) -> Result<(), AbortError<CallerError>>
     where
-        B: RangeBounds<Buffer<'b>> + Debug + 'static,
+        Range: RangeBounds<Buffer<'range>> + Debug + 'static,
         KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        DataCallback: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<E>>,
-        E: Display + Debug,
+        DataCallback:
+            FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        CallerError: Display + Debug,
     {
         self.file.execute(TreeScanner {
             forwards,

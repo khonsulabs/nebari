@@ -392,9 +392,9 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     }
 
     /// Retrieves all of the values of keys within `range`.
-    pub fn get_range<'b, B: RangeBounds<Buffer<'b>> + Debug + 'static>(
+    pub fn get_range<'bounds, Range: RangeBounds<Buffer<'bounds>> + Debug + 'static>(
         &mut self,
-        range: B,
+        range: Range,
     ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
         self.tree.get_range(range, true)
     }
@@ -627,9 +627,9 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     }
 
     /// Retrieves all of the values of keys within `range`.
-    pub fn get_range<'b, B: RangeBounds<Buffer<'b>> + Clone + Debug + 'static>(
+    pub fn get_range<'range, Range: RangeBounds<Buffer<'range>> + Clone + Debug + 'static>(
         &self,
-        range: B,
+        range: Range,
     ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
         catch_compaction_and_retry(|| {
             let mut tree = TreeFile::<Root, File>::read(

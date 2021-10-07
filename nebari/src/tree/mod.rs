@@ -1264,6 +1264,26 @@ pub(crate) fn copy_chunk<F: ManagedFile, S: BuildHasher>(
     }
 }
 
+/// Returns a value for the "order" (maximum children per node) value for the
+/// database. This function is meant to keep the tree shallow while still
+/// keeping the nodes smaller along the way. This is an approximation that
+/// always returns an order larger than what is needed, but will never return a
+/// value larger than `MAX_ORDER`.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+fn dynamic_order<const MAX_ORDER: usize>(number_of_records: u64) -> usize {
+    // Current approximation is the 3rd root.
+    if number_of_records > MAX_ORDER.pow(3) as u64 {
+        MAX_ORDER
+    } else {
+        let estimated_order = 4.max((number_of_records as f64).cbrt() as usize);
+        MAX_ORDER.min(estimated_order)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;

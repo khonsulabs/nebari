@@ -23,7 +23,7 @@ use crate::{
     roots::AbortError,
     tree::{
         btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
-        copy_chunk,
+        copy_chunk, dynamic_order,
         versioned::ChangeResult,
         PageHeader, Root,
     },
@@ -54,7 +54,7 @@ impl UnversionedTreeRoot {
 
         let total_documents =
             self.by_id_root.stats().total_documents() + modification.keys.len() as u64;
-        let by_id_order = dynamic_order::<MAX_ORDER>(total_documents, true);
+        let by_id_order = dynamic_order::<MAX_ORDER>(total_documents);
         let minimum_children = by_id_order / 2 - 1;
         let minimum_children =
             minimum_children.min(usize::try_from(total_documents).unwrap_or(usize::MAX));
@@ -316,29 +316,5 @@ impl Root for UnversionedTreeRoot {
         )?;
 
         Ok(())
-    }
-}
-
-/// Returns a value for the "order" (maximum children per node) value for the
-/// database. This function is meant to keep the tree shallow while still
-/// keeping the nodes smaller along the way. This is an approximation that
-/// always returns an order larger than what is needed, but will never return a
-/// value larger than `MAX_ORDER`.
-#[allow(
-    clippy::cast_precision_loss,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
-)]
-fn dynamic_order<const MAX_ORDER: usize>(number_of_records: u64, for_modification: bool) -> usize {
-    // Current approximation is the 4th root
-    if number_of_records > MAX_ORDER.pow(4) as u64 {
-        MAX_ORDER
-    } else {
-        let mut estimated_order = 2.max((number_of_records as f64).sqrt().sqrt().ceil() as usize);
-        // Add some padding so that we don't have a 100% fill rate.
-        if for_modification {
-            estimated_order += (estimated_order / 3).max(1);
-        }
-        MAX_ORDER.min(estimated_order)
     }
 }

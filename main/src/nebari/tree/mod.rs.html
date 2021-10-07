@@ -1712,6 +1712,7 @@
 <span id="1712">1712</span>
 <span id="1713">1713</span>
 <span id="1714">1714</span>
+<span id="1715">1715</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Append-only B-Tree implementation</span>
 <span class="doccomment">//!</span>
@@ -2188,19 +2189,20 @@
         <span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>,
         <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>, <span class="ident">key_evaluator</span>, <span class="ident">callback</span>))
     )]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">scan</span><span class="op">&lt;</span><span class="lifetime">&#39;b</span>, <span class="ident">E</span>, <span class="ident">B</span>, <span class="ident">KeyEvaluator</span>, <span class="ident">DataCallback</span><span class="op">&gt;</span>(
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">scan</span><span class="op">&lt;</span><span class="lifetime">&#39;range</span>, <span class="ident">CallerError</span>, <span class="ident">Range</span>, <span class="ident">KeyEvaluator</span>, <span class="ident">DataCallback</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">range</span>: <span class="ident">B</span>,
+        <span class="ident">range</span>: <span class="ident">Range</span>,
         <span class="ident">forwards</span>: <span class="ident">bool</span>,
         <span class="ident">in_transaction</span>: <span class="ident">bool</span>,
         <span class="ident">key_evaluator</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">KeyEvaluator</span>,
         <span class="ident">callback</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">DataCallback</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">E</span><span class="op">&gt;</span><span class="op">&gt;</span>
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
     <span class="kw">where</span>
-        <span class="ident">B</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;b</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
+        <span class="ident">Range</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;range</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
         <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KeyEvaluation</span>,
-        <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">E</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-        <span class="ident">E</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
+        <span class="ident">DataCallback</span>:
+            <span class="ident">FnMut</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
     {
         <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">execute</span>(<span class="ident">TreeScanner</span> {
             <span class="ident">forwards</span>,

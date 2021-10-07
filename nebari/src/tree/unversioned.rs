@@ -52,16 +52,19 @@ impl UnversionedTreeRoot {
     ) -> Result<(), Error> {
         modification.reverse()?;
 
-        let by_id_order = dynamic_order::<MAX_ORDER>(
-            self.by_id_root.stats().total_documents() + modification.keys.len() as u64,
-            true,
-        );
+        let total_documents =
+            self.by_id_root.stats().total_documents() + modification.keys.len() as u64;
+        let by_id_order = dynamic_order::<MAX_ORDER>(total_documents, true);
+        let minimum_children = by_id_order / 2 - 1;
+        let minimum_children =
+            minimum_children.min(usize::try_from(total_documents).unwrap_or(usize::MAX));
 
         while !modification.keys.is_empty() {
             match self.by_id_root.modify(
                 &mut modification,
                 &ModificationContext {
                     current_order: by_id_order,
+                    minimum_children,
                     indexer: |_key: &Buffer<'_>,
                               value: Option<&Buffer<'static>>,
                               _existing_index,
@@ -90,6 +93,7 @@ impl UnversionedTreeRoot {
                 &mut (),
                 writer,
             )? {
+                ChangeResult::Absorb(_) => unreachable!(),
                 ChangeResult::Changed | ChangeResult::Unchanged | ChangeResult::Remove => {}
                 ChangeResult::Split(upper) => {
                     self.by_id_root.split_root(upper);

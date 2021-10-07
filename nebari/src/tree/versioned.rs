@@ -25,6 +25,7 @@ use crate::{
     tree::{
         btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
         copy_chunk,
+        key_entry::KeyEntry,
         modify::Operation,
         PageHeader, Root,
     },
@@ -53,6 +54,7 @@ pub struct VersionedTreeRoot {
 pub enum ChangeResult<I: BinarySerialization, R: BinarySerialization> {
     Unchanged,
     Remove,
+    Absorb(Vec<KeyEntry<I>>),
     Changed,
     Split(BTreeEntry<I, R>),
 }
@@ -66,15 +68,20 @@ impl VersionedTreeRoot {
         // Reverse so that pop is efficient.
         modification.reverse()?;
 
-        // Insert into both trees
-        let by_sequence_order = dynamic_order::<MAX_ORDER>(
-            self.by_sequence_root.stats().number_of_records + modification.keys.len() as u64,
-        );
+        let total_sequence_records =
+            self.by_sequence_root.stats().number_of_records + modification.keys.len() as u64;
+        let by_sequence_order = dynamic_order::<MAX_ORDER>(total_sequence_records);
+
+        let by_sequence_minimum_children = by_sequence_order / 2 - 1;
+        let by_sequence_minimum_children = by_sequence_minimum_children
+            .min(usize::try_from(total_sequence_records).unwrap_or(usize::MAX));
+
         while !modification.keys.is_empty() {
             match self.by_sequence_root.modify(
                 &mut modification,
                 &ModificationContext {
                     current_order: by_sequence_order,
+                    minimum_children: by_sequence_minimum_children,
                     indexer: |_key: &Buffer<'_>,
                               value: Option<&BySequenceIndex>,
                               _existing_index: Option<&BySequenceIndex>,
@@ -89,6 +96,7 @@ impl VersionedTreeRoot {
                 &mut EntryChanges::default(),
                 writer,
             )? {
+                ChangeResult::Absorb(_) => unreachable!(),
                 ChangeResult::Remove | ChangeResult::Unchanged | ChangeResult::Changed => {}
                 ChangeResult::Split(upper) => {
                     self.by_sequence_root.split_root(upper);
@@ -106,15 +114,20 @@ impl VersionedTreeRoot {
     ) -> Result<(), Error> {
         modification.reverse()?;
 
-        let by_id_order = dynamic_order::<MAX_ORDER>(
-            self.by_id_root.stats().total_documents() + modification.keys.len() as u64,
-        );
+        let total_id_records =
+            self.by_id_root.stats().total_documents() + modification.keys.len() as u64;
+        let by_id_order = dynamic_order::<MAX_ORDER>(total_id_records);
+
+        let by_id_minimum_children = by_id_order / 2 - 1;
+        let by_id_minimum_children =
+            by_id_minimum_children.min(usize::try_from(total_id_records).unwrap_or(usize::MAX));
 
         while !modification.keys.is_empty() {
             match self.by_id_root.modify(
                 &mut modification,
                 &ModificationContext {
                     current_order: by_id_order,
+                    minimum_children: by_id_minimum_children,
                     indexer: |key: &Buffer<'_>,
                               value: Option<&Buffer<'static>>,
                               _existing_index: Option<&VersionedByIdIndex>,
@@ -167,6 +180,7 @@ impl VersionedTreeRoot {
                 ChangeResult::Split(upper) => {
                     self.by_id_root.split_root(upper);
                 }
+                ChangeResult::Absorb(_) => unreachable!(),
             }
         }
 
@@ -450,11 +464,15 @@ impl Root for VersionedTreeRoot {
             operation: Operation::SetEach(indexes),
         };
 
+        let minimum_children = by_sequence_order / 2 - 1;
+        let minimum_children = minimum_children.min(modification.keys.len());
+
         // This modification copies the `sequence_indexes` into the sequence root.
         self.by_sequence_root.modify(
             &mut modification,
             &ModificationContext {
                 current_order: by_sequence_order,
+                minimum_children,
                 indexer: |_key: &Buffer<'_>,
                           value: Option<&BySequenceIndex>,
                           _existing_index: Option<&BySequenceIndex>,

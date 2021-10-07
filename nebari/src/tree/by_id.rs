@@ -99,6 +99,10 @@ impl BinarySerialization for ByIdStats {
 }
 
 impl Reducer<VersionedByIdIndex> for ByIdStats {
+    fn node_count(&self) -> u64 {
+        self.alive_documents + self.deleted_documents
+    }
+
     fn reduce(values: &[&VersionedByIdIndex]) -> Self {
         reduce(values)
     }
@@ -109,6 +113,10 @@ impl Reducer<VersionedByIdIndex> for ByIdStats {
 }
 
 impl Reducer<UnversionedByIdIndex> for ByIdStats {
+    fn node_count(&self) -> u64 {
+        self.alive_documents
+    }
+
     fn reduce(values: &[&UnversionedByIdIndex]) -> Self {
         reduce(values)
     }

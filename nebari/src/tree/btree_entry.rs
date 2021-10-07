@@ -51,12 +51,18 @@ impl<I, R> Default for BTreeEntry<I, R> {
 }
 
 pub trait Reducer<I> {
+    fn node_count(&self) -> u64;
+
     fn reduce(indexes: &[&I]) -> Self;
 
     fn rereduce(reductions: &[&Self]) -> Self;
 }
 
 impl<I> Reducer<I> for () {
+    fn node_count(&self) -> u64 {
+        0
+    }
+
     fn reduce(_indexes: &[&I]) -> Self {}
 
     fn rereduce(_reductions: &[&Self]) -> Self {}
@@ -74,6 +80,7 @@ where
     Loader: Fn(&I, &mut PagedWriter<'_, F>) -> Result<Option<T>, Error>,
 {
     pub current_order: usize,
+    pub minimum_children: usize,
     pub indexer: Indexer,
     pub loader: Loader,
     pub _phantom: PhantomData<(T, F, I, C)>,
@@ -107,53 +114,81 @@ where
             BTreeNode::Leaf(children) => {
                 if Self::modify_leaf(children, modification, context, max_key, changes, writer)? {
                     self.dirty = true;
-
-                    if children.len() >= context.current_order {
-                        // We need to split this leaf into two leafs, moving a new interior node using the middle element.
-                        let midpoint = children.len() / 2;
-                        let (_, upper_half) = children.split_at(midpoint);
-                        let upper_half = BTreeNode::Leaf(upper_half.to_vec());
-                        children.truncate(midpoint);
-
-                        Ok(ChangeResult::Split(Self::from(upper_half)))
-                    } else if children.is_empty() {
-                        Ok(ChangeResult::Remove)
-                    } else {
-                        Ok(ChangeResult::Changed)
-                    }
+                    Ok(Self::clean_up_leaf(
+                        children,
+                        context.current_order,
+                        context.minimum_children,
+                    ))
                 } else {
                     Ok(ChangeResult::Unchanged)
                 }
             }
             BTreeNode::Interior(children) => {
-                if Self::modify_interior(children, modification, context, max_key, changes, writer)?
-                {
-                    self.dirty = true;
-
-                    if children.len() >= context.current_order {
-                        let midpoint = children.len() / 2;
-                        let (_, upper_half) = children.split_at(midpoint);
-
-                        // TODO this re-clones the upper-half children, but splitting a vec
-                        // without causing multiple copies of data seems
-                        // impossible without unsafe.
-                        let upper_half = upper_half.to_vec();
-                        debug_assert_eq!(midpoint + upper_half.len(), children.len());
-                        children.truncate(midpoint);
-
-                        Ok(ChangeResult::Split(Self::from(BTreeNode::Interior(
-                            upper_half,
-                        ))))
-                    } else if children.is_empty() {
-                        Ok(ChangeResult::Remove)
-                    } else {
-                        Ok(ChangeResult::Changed)
+                match Self::modify_interior(
+                    children,
+                    modification,
+                    context,
+                    max_key,
+                    changes,
+                    writer,
+                )? {
+                    ChangeResult::Changed => {
+                        self.dirty = true;
+                        Ok(Self::clean_up_interior(children, context.current_order))
                     }
-                } else {
-                    Ok(ChangeResult::Unchanged)
+                    other => Ok(other),
                 }
             }
             BTreeNode::Uninitialized => unreachable!(),
+        }
+    }
+
+    fn clean_up_leaf(
+        children: &mut Vec<KeyEntry<I>>,
+        current_order: usize,
+        minimum_children: usize,
+    ) -> ChangeResult<I, R> {
+        let child_count = children.len();
+
+        if child_count >= current_order {
+            // We need to split this leaf into two leafs, moving a new interior node using the middle element.
+            let midpoint = children.len() / 2;
+            let (_, upper_half) = children.split_at(midpoint);
+            let upper_half = BTreeNode::Leaf(upper_half.to_vec());
+            children.truncate(midpoint);
+
+            ChangeResult::Split(Self::from(upper_half))
+        } else if child_count == 0 {
+            ChangeResult::Remove
+        } else if child_count < minimum_children {
+            ChangeResult::Absorb(std::mem::take(children))
+        } else {
+            ChangeResult::Changed
+        }
+    }
+
+    fn clean_up_interior(
+        children: &mut Vec<Interior<I, R>>,
+        current_order: usize,
+    ) -> ChangeResult<I, R> {
+        let child_count = children.len();
+
+        if child_count >= current_order {
+            let midpoint = children.len() / 2;
+            let (_, upper_half) = children.split_at(midpoint);
+
+            // TODO this re-clones the upper-half children, but splitting a vec
+            // without causing multiple copies of data seems
+            // impossible without unsafe.
+            let upper_half = upper_half.to_vec();
+            debug_assert_eq!(midpoint + upper_half.len(), children.len());
+            children.truncate(midpoint);
+
+            ChangeResult::Split(Self::from(BTreeNode::Interior(upper_half)))
+        } else if child_count == 0 {
+            ChangeResult::Remove
+        } else {
+            ChangeResult::Changed
         }
     }
 
@@ -315,7 +350,7 @@ where
         max_key: Option<&Buffer<'_>>,
         changes: &mut C,
         writer: &mut PagedWriter<'_, F>,
-    ) -> Result<bool, Error>
+    ) -> Result<ChangeResult<I, R>, Error>
     where
         F: ManagedFile,
         Indexer: Fn(
@@ -359,39 +394,175 @@ where
                 context.current_order,
             )?;
             let child_entry = child.position.get_mut().unwrap();
-            match child_entry.modify(
-                modification,
+            match Self::process_interior_change_result(
+                child_entry.modify(
+                    modification,
+                    context,
+                    Some(&key.max(child.key.clone())),
+                    changes,
+                    writer,
+                )?,
+                last_index,
+                children,
                 context,
-                Some(&key.max(child.key.clone())),
-                changes,
                 writer,
             )? {
                 ChangeResult::Unchanged => {}
-                ChangeResult::Changed => {
-                    child.key = child_entry.max_key().clone();
-                    child.stats = child_entry.stats();
-                    any_changes |= true;
-                }
-                ChangeResult::Split(upper) => {
-                    child.key = child_entry.max_key().clone();
-                    child.stats = child_entry.stats();
-
-                    if children.capacity() < children.len() + 1
-                        && context.current_order > children.len()
-                    {
-                        children.reserve(context.current_order - children.len());
-                    }
-                    children.insert(last_index + 1, Interior::from(upper));
-                    any_changes |= true;
+                ChangeResult::Split(_) => unreachable!(),
+                ChangeResult::Absorb(leaves) => {
+                    return Ok(ChangeResult::Absorb(leaves));
                 }
                 ChangeResult::Remove => {
-                    children.remove(last_index);
-                    any_changes |= true;
+                    any_changes = true;
+                    last_index = last_index.saturating_sub(1);
                 }
-            };
+                ChangeResult::Changed => any_changes = true,
+            }
             debug_assert!(children.windows(2).all(|w| w[0].key < w[1].key));
         }
-        Ok(any_changes)
+        Ok(if any_changes {
+            ChangeResult::Changed
+        } else {
+            ChangeResult::Unchanged
+        })
+    }
+
+    fn process_interior_change_result<F, T, C, Indexer, Loader>(
+        result: ChangeResult<I, R>,
+        child_index: usize,
+        children: &mut Vec<Interior<I, R>>,
+        context: &ModificationContext<T, F, I, C, Indexer, Loader>,
+        writer: &mut PagedWriter<'_, F>,
+    ) -> Result<ChangeResult<I, R>, Error>
+    where
+        F: ManagedFile,
+        Indexer: Fn(
+            &Buffer<'_>,
+            Option<&T>,
+            Option<&I>,
+            &mut C,
+            &mut PagedWriter<'_, F>,
+        ) -> Result<KeyOperation<I>, Error>,
+        Loader: Fn(&I, &mut PagedWriter<'_, F>) -> Result<Option<T>, Error>,
+    {
+        match result {
+            ChangeResult::Unchanged => Ok(ChangeResult::Unchanged),
+            ChangeResult::Changed => {
+                let child = &mut children[child_index];
+                let child_entry = child.position.get_mut().unwrap();
+                child.key = child_entry.max_key().clone();
+                child.stats = child_entry.stats();
+                Ok(ChangeResult::Changed)
+            }
+            ChangeResult::Split(upper) => {
+                let child = &mut children[child_index];
+                let child_entry = child.position.get_mut().unwrap();
+                child.key = child_entry.max_key().clone();
+                child.stats = child_entry.stats();
+
+                if children.capacity() < children.len() + 1
+                    && context.current_order > children.len()
+                {
+                    children.reserve(context.current_order - children.len());
+                }
+                children.insert(child_index + 1, Interior::from(upper));
+                Ok(ChangeResult::Changed)
+            }
+            ChangeResult::Absorb(leaves) => {
+                children.remove(child_index);
+                let (insert_on_top, sponge_index) = if child_index > 0 {
+                    (true, child_index - 1)
+                } else {
+                    (false, child_index)
+                };
+
+                if let Some(sponge) = children.get_mut(sponge_index) {
+                    sponge.position.load(
+                        writer.file,
+                        false,
+                        writer.vault,
+                        writer.cache,
+                        context.current_order,
+                    )?;
+                    let sponge_entry = sponge.position.get_mut().unwrap();
+                    match Self::process_interior_change_result(
+                        sponge_entry.absorb(
+                            leaves,
+                            insert_on_top,
+                            context.current_order,
+                            context.minimum_children,
+                            writer,
+                        )?,
+                        sponge_index,
+                        children,
+                        context,
+                        writer,
+                    )? {
+                        ChangeResult::Absorb(_)
+                        | ChangeResult::Split(_)
+                        | ChangeResult::Unchanged => unreachable!(),
+                        ChangeResult::Remove | ChangeResult::Changed => Ok(ChangeResult::Remove),
+                    }
+                } else {
+                    Ok(ChangeResult::Absorb(leaves))
+                }
+            }
+            ChangeResult::Remove => {
+                children.remove(child_index);
+
+                Ok(ChangeResult::Changed)
+            }
+        }
+    }
+
+    pub fn absorb<F: ManagedFile>(
+        &mut self,
+        leaves: Vec<KeyEntry<I>>,
+        insert_at_top: bool,
+        current_order: usize,
+        minimum_children: usize,
+        writer: &mut PagedWriter<'_, F>,
+    ) -> Result<ChangeResult<I, R>, Error> {
+        self.dirty = true;
+        match &mut self.node {
+            BTreeNode::Leaf(existing_children) => {
+                if insert_at_top {
+                    existing_children.extend(leaves);
+                } else {
+                    existing_children.splice(0..0, leaves);
+                }
+
+                Ok(Self::clean_up_leaf(
+                    existing_children,
+                    current_order,
+                    minimum_children,
+                ))
+            }
+            BTreeNode::Interior(existing_children) => {
+                // Pass the leaves along to the first or last child.
+                let sponge = if insert_at_top {
+                    existing_children.last_mut().unwrap()
+                } else {
+                    existing_children.first_mut().unwrap()
+                };
+                sponge.position.load(
+                    writer.file,
+                    false,
+                    writer.vault,
+                    writer.cache,
+                    current_order,
+                )?;
+                let sponge = sponge.position.get_mut().unwrap();
+                sponge.absorb(
+                    leaves,
+                    insert_at_top,
+                    current_order,
+                    minimum_children,
+                    writer,
+                )
+            }
+            BTreeNode::Uninitialized => unreachable!(),
+        }
     }
 
     pub fn split_root(&mut self, upper: Self) {

@@ -5,29 +5,32 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use super::{serialization::BinarySerialization, PagedWriter};
 use crate::{error::Error, io::ManagedFile, Buffer, ErrorKind, Vault};
 
+/// An entry for a key. Stores a single index value for a single key.
 #[derive(Debug, Clone)]
-pub struct KeyEntry<I> {
+pub struct KeyEntry<Index> {
+    /// The key of this entry.
     pub key: Buffer<'static>,
-    pub index: I,
+    /// The index value of this entry.
+    pub index: Index,
 }
 
-impl<I: BinarySerialization> KeyEntry<I> {
-    pub fn copy_data_to<F, Callback>(
+impl<Index: BinarySerialization> KeyEntry<Index> {
+    pub(crate) fn copy_data_to<File, Callback>(
         &mut self,
-        file: &mut F,
+        file: &mut File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_, F>,
+        writer: &mut PagedWriter<'_, File>,
         vault: Option<&dyn Vault>,
         index_callback: &mut Callback,
     ) -> Result<bool, Error>
     where
-        F: ManagedFile,
+        File: ManagedFile,
         Callback: FnMut(
             &Buffer<'static>,
-            &mut I,
-            &mut F,
+            &mut Index,
+            &mut File,
             &mut HashMap<u64, u64>,
-            &mut PagedWriter<'_, F>,
+            &mut PagedWriter<'_, File>,
             Option<&dyn Vault>,
         ) -> Result<bool, Error>,
     {
@@ -42,11 +45,11 @@ impl<I: BinarySerialization> KeyEntry<I> {
     }
 }
 
-impl<I: BinarySerialization> BinarySerialization for KeyEntry<I> {
-    fn serialize_to<F: ManagedFile>(
+impl<Index: BinarySerialization> BinarySerialization for KeyEntry<Index> {
+    fn serialize_to<File: ManagedFile>(
         &mut self,
         writer: &mut Vec<u8>,
-        paged_writer: &mut PagedWriter<'_, F>,
+        paged_writer: &mut PagedWriter<'_, File>,
     ) -> Result<usize, Error> {
         let mut bytes_written = 0;
         // Write the key
@@ -71,7 +74,7 @@ impl<I: BinarySerialization> BinarySerialization for KeyEntry<I> {
         }
         let key = reader.read_bytes(key_len)?.to_owned();
 
-        let value = I::deserialize_from(reader, current_order)?;
+        let value = Index::deserialize_from(reader, current_order)?;
 
         Ok(Self { key, index: value })
     }

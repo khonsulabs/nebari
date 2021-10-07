@@ -122,17 +122,14 @@ pub enum ErrorKind {
     /// A multi-key operation did not have its keys ordered.
     #[error("multi-key operation did not have its keys ordered")]
     KeysNotOrdered,
-    /// A document ID was too many bytes.
-    #[error("document id too large")]
-    IdTooLarge,
     /// An internal error occurred. These errors are not intended to be
     /// recoverable and represent some internal error condition.
     #[error("an internal error occurred: {0}")]
     Internal(InternalError),
-    /// The underlying database file has been compacted, and the request cannot
+    /// The underlying tree file has been compacted, and the request cannot
     /// be completed. Reopen the file and try again.
     #[error("the file has been compacted. reopen the file and try again")]
-    DatabaseCompacted,
+    TreeCompacted,
 }
 
 impl ErrorKind {

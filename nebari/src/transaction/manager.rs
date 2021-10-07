@@ -19,16 +19,16 @@ use crate::{
 
 /// A shared [`TransactionLog`] manager. Allows multiple threads to interact with a single transaction log.
 #[derive(Debug, Clone)]
-pub struct TransactionManager<M: FileManager> {
+pub struct TransactionManager<Manager: FileManager> {
     state: State,
     transaction_sender: flume::Sender<(TransactionHandle, flume::Sender<TreeLocks>)>,
-    context: Context<M>,
+    context: Context<Manager>,
 }
 
-impl<M: FileManager> TransactionManager<M> {
+impl<Manager: FileManager> TransactionManager<Manager> {
     /// Spawns a new transaction manager. The transaction manager runs its own
     /// thread that writes to the transaction log.
-    pub fn spawn(directory: &Path, context: Context<M>) -> Result<Self, Error> {
+    pub fn spawn(directory: &Path, context: Context<Manager>) -> Result<Self, Error> {
         let (transaction_sender, receiver) = flume::bounded(32);
         let log_path = Self::log_path(directory);
 
@@ -37,7 +37,7 @@ impl<M: FileManager> TransactionManager<M> {
         std::thread::Builder::new()
             .name(String::from("nebari-txlog"))
             .spawn(move || {
-                transaction_writer_thread::<M::File>(
+                transaction_writer_thread::<Manager::File>(
                     state_sender,
                     log_path,
                     receiver,
@@ -76,7 +76,7 @@ impl<M: FileManager> TransactionManager<M> {
         range: impl RangeBounds<u64>,
         callback: Callback,
     ) -> Result<(), Error> {
-        let mut log = TransactionLog::<M::File>::read(
+        let mut log = TransactionLog::<Manager::File>::read(
             self.state.path(),
             self.state.clone(),
             self.context.clone(),
@@ -128,7 +128,7 @@ impl<M: FileManager> TransactionManager<M> {
     }
 }
 
-impl<M: FileManager> Deref for TransactionManager<M> {
+impl<Manager: FileManager> Deref for TransactionManager<Manager> {
     type Target = State;
 
     fn deref(&self) -> &Self::Target {
@@ -138,23 +138,23 @@ impl<M: FileManager> Deref for TransactionManager<M> {
 
 // TODO: when an error happens, we should try to recover.
 #[allow(clippy::needless_pass_by_value)]
-fn transaction_writer_thread<F: ManagedFile>(
+fn transaction_writer_thread<File: ManagedFile>(
     state_sender: flume::Sender<Result<State, Error>>,
     log_path: PathBuf,
     transactions: flume::Receiver<(TransactionHandle, flume::Sender<TreeLocks>)>,
-    context: Context<F::Manager>,
+    context: Context<File::Manager>,
 ) {
     const BATCH: usize = 16;
 
     let state = State::from_path(&log_path);
-    if let Err(err) = TransactionLog::<F>::initialize_state(&state, &context) {
+    if let Err(err) = TransactionLog::<File>::initialize_state(&state, &context) {
         drop(state_sender.send(Err(err)));
         return;
     }
 
     drop(state_sender.send(Ok(state.clone())));
 
-    let mut log = TransactionLog::<F>::open(&log_path, state, context).unwrap();
+    let mut log = TransactionLog::<File>::open(&log_path, state, context).unwrap();
 
     while let Ok(transaction) = transactions.recv() {
         let mut transaction_batch = Vec::with_capacity(BATCH);

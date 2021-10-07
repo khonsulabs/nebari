@@ -21,94 +21,111 @@ use crate::{
     Vault,
 };
 
-/// A B-Tree entry that stores a list of key-`I` pairs.
+/// A B-Tree entry that stores a list of key-`Index` pairs.
 #[derive(Clone, Debug)]
-pub struct BTreeEntry<I, R> {
+pub struct BTreeEntry<Index, ReducedIndex> {
+    /// Whether the node contains unsaved changes.
     pub dirty: bool,
-    node: BTreeNode<I, R>,
+    /// The B-Tree node.
+    pub node: BTreeNode<Index, ReducedIndex>,
 }
 
-/// A B-Tree entry that stores a list of key-`I` pairs.
+/// A B-Tree entry that stores a list of key-`Index` pairs.
 #[derive(Clone, Debug)]
-enum BTreeNode<I, R> {
+pub enum BTreeNode<Index, ReducedIndex> {
+    /// An uninitialized node. Only used temporarily during modification.
     Uninitialized,
     /// An inline value. Overall, the B-Tree entry is a key-value pair.
-    Leaf(Vec<KeyEntry<I>>),
+    Leaf(Vec<KeyEntry<Index>>),
     /// An interior node that contains pointers to other nodes.
-    Interior(Vec<Interior<I, R>>),
+    Interior(Vec<Interior<Index, ReducedIndex>>),
 }
 
-impl<I, R> From<BTreeNode<I, R>> for BTreeEntry<I, R> {
-    fn from(node: BTreeNode<I, R>) -> Self {
+impl<Index, ReducedIndex> From<BTreeNode<Index, ReducedIndex>> for BTreeEntry<Index, ReducedIndex> {
+    fn from(node: BTreeNode<Index, ReducedIndex>) -> Self {
         Self { node, dirty: true }
     }
 }
 
-impl<I, R> Default for BTreeEntry<I, R> {
+impl<Index, ReducedIndex> Default for BTreeEntry<Index, ReducedIndex> {
     fn default() -> Self {
         Self::from(BTreeNode::Leaf(Vec::new()))
     }
 }
 
-pub trait Reducer<I> {
-    fn node_count(&self) -> u64;
+/// Reduces one or more `Index`es or instances of `Self` into a single `Self`
+/// value.
+///
+/// This trait is used to collect statistics within the B-Tree. The `Index`
+/// value is stored at the [`KeyEntry`] level, and each [`Interior`] entry
+/// contains `Self`, which is calculated by calling [`Reducer::reduce()`] on all
+/// stored `Index`es.
+///
+/// When an `Interior` node points to other interior nodes, it calculates the
+/// stored value by calling [`Reducer::rereduce()`] with all the stored `Self`
+/// values.
+pub trait Reducer<Index> {
+    /// Returns the number of keys that this index and its children contain.
+    fn key_count(&self) -> u64;
 
-    fn reduce(indexes: &[&I]) -> Self;
+    /// Reduces one or more indexes into a single reduced index.
+    fn reduce(indexes: &[&Index]) -> Self;
 
+    /// Reduces one or more previously-reduced indexes into a single reduced index.
     fn rereduce(reductions: &[&Self]) -> Self;
 }
 
-impl<I> Reducer<I> for () {
-    fn node_count(&self) -> u64 {
+impl<Index> Reducer<Index> for () {
+    fn key_count(&self) -> u64 {
         0
     }
 
-    fn reduce(_indexes: &[&I]) -> Self {}
+    fn reduce(_indexes: &[&Index]) -> Self {}
 
     fn rereduce(_reductions: &[&Self]) -> Self {}
 }
 
-pub struct ModificationContext<T, F, I, C, Indexer, Loader>
+pub struct ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>
 where
     Indexer: Fn(
         &Buffer<'_>,
-        Option<&T>,
-        Option<&I>,
-        &mut C,
-        &mut PagedWriter<'_, F>,
-    ) -> Result<KeyOperation<I>, Error>,
-    Loader: Fn(&I, &mut PagedWriter<'_, F>) -> Result<Option<T>, Error>,
+        Option<&IndexedType>,
+        Option<&Index>,
+        &mut Context,
+        &mut PagedWriter<'_, File>,
+    ) -> Result<KeyOperation<Index>, Error>,
+    Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
 {
     pub current_order: usize,
     pub minimum_children: usize,
     pub indexer: Indexer,
     pub loader: Loader,
-    pub _phantom: PhantomData<(T, F, I, C)>,
+    pub _phantom: PhantomData<(IndexedType, File, Index, Context)>,
 }
 
-impl<I, R> BTreeEntry<I, R>
+impl<Index, ReducedIndex> BTreeEntry<Index, ReducedIndex>
 where
-    I: Clone + BinarySerialization + Debug + 'static,
-    R: Clone + Reducer<I> + BinarySerialization + Debug + 'static,
+    Index: Clone + BinarySerialization + Debug + 'static,
+    ReducedIndex: Clone + Reducer<Index> + BinarySerialization + Debug + 'static,
 {
-    pub fn modify<F, T, C, Indexer, Loader>(
+    pub(crate) fn modify<File, IndexedType, Context, Indexer, Loader>(
         &mut self,
-        modification: &mut Modification<'_, T>,
-        context: &ModificationContext<T, F, I, C, Indexer, Loader>,
+        modification: &mut Modification<'_, IndexedType>,
+        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
         max_key: Option<&Buffer<'_>>,
-        changes: &mut C,
-        writer: &mut PagedWriter<'_, F>,
-    ) -> Result<ChangeResult<I, R>, Error>
+        changes: &mut Context,
+        writer: &mut PagedWriter<'_, File>,
+    ) -> Result<ChangeResult<Index, ReducedIndex>, Error>
     where
-        F: ManagedFile,
+        File: ManagedFile,
         Indexer: Fn(
             &Buffer<'_>,
-            Option<&T>,
-            Option<&I>,
-            &mut C,
-            &mut PagedWriter<'_, F>,
-        ) -> Result<KeyOperation<I>, Error>,
-        Loader: Fn(&I, &mut PagedWriter<'_, F>) -> Result<Option<T>, Error>,
+            Option<&IndexedType>,
+            Option<&Index>,
+            &mut Context,
+            &mut PagedWriter<'_, File>,
+        ) -> Result<KeyOperation<Index>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
     {
         match &mut self.node {
             BTreeNode::Leaf(children) => {
@@ -144,10 +161,10 @@ where
     }
 
     fn clean_up_leaf(
-        children: &mut Vec<KeyEntry<I>>,
+        children: &mut Vec<KeyEntry<Index>>,
         current_order: usize,
         minimum_children: usize,
-    ) -> ChangeResult<I, R> {
+    ) -> ChangeResult<Index, ReducedIndex> {
         let child_count = children.len();
 
         if child_count >= current_order {
@@ -168,9 +185,9 @@ where
     }
 
     fn clean_up_interior(
-        children: &mut Vec<Interior<I, R>>,
+        children: &mut Vec<Interior<Index, ReducedIndex>>,
         current_order: usize,
-    ) -> ChangeResult<I, R> {
+    ) -> ChangeResult<Index, ReducedIndex> {
         let child_count = children.len();
 
         if child_count >= current_order {
@@ -193,24 +210,24 @@ where
     }
 
     #[allow(clippy::too_many_lines)] // TODO refactor, too many lines
-    fn modify_leaf<F, T, C, Indexer, Loader>(
-        children: &mut Vec<KeyEntry<I>>,
-        modification: &mut Modification<'_, T>,
-        context: &ModificationContext<T, F, I, C, Indexer, Loader>,
+    fn modify_leaf<File, IndexedType, Context, Indexer, Loader>(
+        children: &mut Vec<KeyEntry<Index>>,
+        modification: &mut Modification<'_, IndexedType>,
+        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
         max_key: Option<&Buffer<'_>>,
-        changes: &mut C,
-        writer: &mut PagedWriter<'_, F>,
+        changes: &mut Context,
+        writer: &mut PagedWriter<'_, File>,
     ) -> Result<bool, Error>
     where
-        F: ManagedFile,
+        File: ManagedFile,
         Indexer: Fn(
             &Buffer<'_>,
-            Option<&T>,
-            Option<&I>,
-            &mut C,
-            &mut PagedWriter<'_, F>,
-        ) -> Result<KeyOperation<I>, Error>,
-        Loader: Fn(&I, &mut PagedWriter<'_, F>) -> Result<Option<T>, Error>,
+            Option<&IndexedType>,
+            Option<&Index>,
+            &mut Context,
+            &mut PagedWriter<'_, File>,
+        ) -> Result<KeyOperation<Index>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
     {
         let mut last_index = 0;
         let mut any_changes = false;
@@ -343,24 +360,24 @@ where
         Ok(any_changes)
     }
 
-    pub fn modify_interior<F, T, C, Indexer, Loader>(
-        children: &mut Vec<Interior<I, R>>,
-        modification: &mut Modification<'_, T>,
-        context: &ModificationContext<T, F, I, C, Indexer, Loader>,
+    fn modify_interior<File, IndexedType, Context, Indexer, Loader>(
+        children: &mut Vec<Interior<Index, ReducedIndex>>,
+        modification: &mut Modification<'_, IndexedType>,
+        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
         max_key: Option<&Buffer<'_>>,
-        changes: &mut C,
-        writer: &mut PagedWriter<'_, F>,
-    ) -> Result<ChangeResult<I, R>, Error>
+        changes: &mut Context,
+        writer: &mut PagedWriter<'_, File>,
+    ) -> Result<ChangeResult<Index, ReducedIndex>, Error>
     where
-        F: ManagedFile,
+        File: ManagedFile,
         Indexer: Fn(
             &Buffer<'_>,
-            Option<&T>,
-            Option<&I>,
-            &mut C,
-            &mut PagedWriter<'_, F>,
-        ) -> Result<KeyOperation<I>, Error>,
-        Loader: Fn(&I, &mut PagedWriter<'_, F>) -> Result<Option<T>, Error>,
+            Option<&IndexedType>,
+            Option<&Index>,
+            &mut Context,
+            &mut PagedWriter<'_, File>,
+        ) -> Result<KeyOperation<Index>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
     {
         let mut last_index = 0;
         let mut any_changes = false;
@@ -426,23 +443,23 @@ where
         })
     }
 
-    fn process_interior_change_result<F, T, C, Indexer, Loader>(
-        result: ChangeResult<I, R>,
+    fn process_interior_change_result<File, IndexedType, Context, Indexer, Loader>(
+        result: ChangeResult<Index, ReducedIndex>,
         child_index: usize,
-        children: &mut Vec<Interior<I, R>>,
-        context: &ModificationContext<T, F, I, C, Indexer, Loader>,
-        writer: &mut PagedWriter<'_, F>,
-    ) -> Result<ChangeResult<I, R>, Error>
+        children: &mut Vec<Interior<Index, ReducedIndex>>,
+        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
+        writer: &mut PagedWriter<'_, File>,
+    ) -> Result<ChangeResult<Index, ReducedIndex>, Error>
     where
-        F: ManagedFile,
+        File: ManagedFile,
         Indexer: Fn(
             &Buffer<'_>,
-            Option<&T>,
-            Option<&I>,
-            &mut C,
-            &mut PagedWriter<'_, F>,
-        ) -> Result<KeyOperation<I>, Error>,
-        Loader: Fn(&I, &mut PagedWriter<'_, F>) -> Result<Option<T>, Error>,
+            Option<&IndexedType>,
+            Option<&Index>,
+            &mut Context,
+            &mut PagedWriter<'_, File>,
+        ) -> Result<KeyOperation<Index>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
     {
         match result {
             ChangeResult::Unchanged => Ok(ChangeResult::Unchanged),
@@ -514,14 +531,14 @@ where
         }
     }
 
-    pub fn absorb<F: ManagedFile>(
+    fn absorb<File: ManagedFile>(
         &mut self,
-        leaves: Vec<KeyEntry<I>>,
+        leaves: Vec<KeyEntry<Index>>,
         insert_at_top: bool,
         current_order: usize,
         minimum_children: usize,
-        writer: &mut PagedWriter<'_, F>,
-    ) -> Result<ChangeResult<I, R>, Error> {
+        writer: &mut PagedWriter<'_, File>,
+    ) -> Result<ChangeResult<Index, ReducedIndex>, Error> {
         self.dirty = true;
         match &mut self.node {
             BTreeNode::Leaf(existing_children) => {
@@ -564,24 +581,29 @@ where
         }
     }
 
-    pub fn split_root(&mut self, upper: Self) {
+    pub(crate) fn split_root(&mut self, upper: Self) {
         let mut lower = Self::from(BTreeNode::Uninitialized);
         std::mem::swap(self, &mut lower);
         self.node = BTreeNode::Interior(vec![Interior::from(lower), Interior::from(upper)]);
     }
 
-    pub fn stats(&self) -> R {
+    /// Returns the collected statistics for this node.
+    #[must_use]
+    pub fn stats(&self) -> ReducedIndex {
         match &self.node {
             BTreeNode::Leaf(children) => {
-                R::reduce(&children.iter().map(|c| &c.index).collect::<Vec<_>>())
+                ReducedIndex::reduce(&children.iter().map(|c| &c.index).collect::<Vec<_>>())
             }
             BTreeNode::Interior(children) => {
-                R::rereduce(&children.iter().map(|c| &c.stats).collect::<Vec<_>>())
+                ReducedIndex::rereduce(&children.iter().map(|c| &c.stats).collect::<Vec<_>>())
             }
             BTreeNode::Uninitialized => unreachable!(),
         }
     }
 
+    /// Returns the highest-ordered key contained in this node.
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn max_key(&self) -> &Buffer<'static> {
         match &self.node {
             BTreeNode::Leaf(children) => &children.last().unwrap().key,
@@ -594,17 +616,24 @@ where
         feature = "tracing",
         tracing::instrument(skip(self, args, file, vault, cache))
     )]
-    pub fn scan<'k, E: Display + Debug, F: ManagedFile, KeyRangeBounds, KeyEvaluator, KeyReader>(
+    pub(crate) fn scan<
+        'k,
+        CallerError: Display + Debug,
+        File: ManagedFile,
+        KeyRangeBounds,
+        KeyEvaluator,
+        KeyReader,
+    >(
         &self,
         range: &KeyRangeBounds,
-        args: &mut ScanArgs<&I, E, KeyEvaluator, KeyReader>,
-        file: &mut F,
+        args: &mut ScanArgs<&Index, CallerError, KeyEvaluator, KeyReader>,
+        file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
-    ) -> Result<bool, AbortError<E>>
+    ) -> Result<bool, AbortError<CallerError>>
     where
         KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, &I) -> Result<(), AbortError<E>>,
+        KeyReader: FnMut(Buffer<'static>, &Index) -> Result<(), AbortError<CallerError>>,
         KeyRangeBounds: RangeBounds<Buffer<'k>> + Debug,
     {
         match &self.node {
@@ -689,18 +718,18 @@ where
         feature = "tracing",
         tracing::instrument(skip(self, key_evaluator, key_reader, file, vault, cache))
     )]
-    pub fn get<F: ManagedFile, KeyEvaluator, KeyReader>(
+    pub(crate) fn get<File: ManagedFile, KeyEvaluator, KeyReader>(
         &self,
         keys: &mut KeyRange<'_>,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut F,
+        file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, Error>
     where
         KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, &I) -> Result<(), AbortError<Infallible>>,
+        KeyReader: FnMut(Buffer<'static>, &Index) -> Result<(), AbortError<Infallible>>,
     {
         match &self.node {
             BTreeNode::Leaf(children) => {
@@ -773,24 +802,24 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn copy_data_to<F, Callback>(
+    pub(crate) fn copy_data_to<File, Callback>(
         &mut self,
         include_nodes: NodeInclusion,
-        file: &mut F,
+        file: &mut File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_, F>,
+        writer: &mut PagedWriter<'_, File>,
         vault: Option<&dyn Vault>,
         scratch: &mut Vec<u8>,
         index_callback: &mut Callback,
     ) -> Result<bool, Error>
     where
-        F: ManagedFile,
+        File: ManagedFile,
         Callback: FnMut(
             &Buffer<'static>,
-            &mut I,
-            &mut F,
+            &mut Index,
+            &mut File,
             &mut HashMap<u64, u64>,
-            &mut PagedWriter<'_, F>,
+            &mut PagedWriter<'_, File>,
             Option<&dyn Vault>,
         ) -> Result<bool, Error>,
     {
@@ -846,14 +875,14 @@ impl NodeInclusion {
 }
 
 impl<
-        I: Clone + BinarySerialization + Debug + 'static,
-        R: Reducer<I> + Clone + BinarySerialization + Debug + 'static,
-    > BinarySerialization for BTreeEntry<I, R>
+        Index: Clone + BinarySerialization + Debug + 'static,
+        ReducedIndex: Reducer<Index> + Clone + BinarySerialization + Debug + 'static,
+    > BinarySerialization for BTreeEntry<Index, ReducedIndex>
 {
-    fn serialize_to<F: ManagedFile>(
+    fn serialize_to<File: ManagedFile>(
         &mut self,
         writer: &mut Vec<u8>,
-        paged_writer: &mut PagedWriter<'_, F>,
+        paged_writer: &mut PagedWriter<'_, File>,
     ) -> Result<usize, Error> {
         let mut bytes_written = 0;
         // The next byte determines the node type.
@@ -956,21 +985,22 @@ impl<'a, I> Iterator for DirectionalSliceIterator<'a, I> {
     }
 }
 
-pub struct ScanArgs<I, E: Display + Debug, KeyEvaluator, KeyReader>
+pub struct ScanArgs<Index, CallerError: Display + Debug, KeyEvaluator, KeyReader>
 where
     KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-    KeyReader: FnMut(Buffer<'static>, I) -> Result<(), AbortError<E>>,
+    KeyReader: FnMut(Buffer<'static>, Index) -> Result<(), AbortError<CallerError>>,
 {
     pub forwards: bool,
     pub key_evaluator: KeyEvaluator,
     pub key_reader: KeyReader,
-    _phantom: PhantomData<(I, E)>,
+    _phantom: PhantomData<(Index, CallerError)>,
 }
 
-impl<I, E: Display + Debug, KeyEvaluator, KeyReader> ScanArgs<I, E, KeyEvaluator, KeyReader>
+impl<Index, CallerError: Display + Debug, KeyEvaluator, KeyReader>
+    ScanArgs<Index, CallerError, KeyEvaluator, KeyReader>
 where
     KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-    KeyReader: FnMut(Buffer<'static>, I) -> Result<(), AbortError<E>>,
+    KeyReader: FnMut(Buffer<'static>, Index) -> Result<(), AbortError<CallerError>>,
 {
     pub fn new(forwards: bool, key_evaluator: KeyEvaluator, key_reader: KeyReader) -> Self {
         Self {

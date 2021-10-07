@@ -3,104 +3,117 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};
 use crate::{error::Error, io::ManagedFile, Buffer};
 
+/// The index stored within [`VersionedTreeRoot::by_id_root`](crate::tree::VersionedTreeRoot::by_id_root).
 #[derive(Clone, Debug)]
 pub struct VersionedByIdIndex {
+    /// The unique sequence id generated when writing the value to the file.
     pub sequence_id: u64,
-    pub document_size: u32,
+    /// The size of the value stored on disk.
+    pub value_length: u32,
+    /// The position of the value on disk.
     pub position: u64,
 }
 
 impl BinarySerialization for VersionedByIdIndex {
-    fn serialize_to<F: ManagedFile>(
+    fn serialize_to<File: ManagedFile>(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_, F>,
+        _paged_writer: &mut PagedWriter<'_, File>,
     ) -> Result<usize, Error> {
         writer.write_u64::<BigEndian>(self.sequence_id)?;
-        writer.write_u32::<BigEndian>(self.document_size)?;
+        writer.write_u32::<BigEndian>(self.value_length)?;
         writer.write_u64::<BigEndian>(self.position)?;
         Ok(20)
     }
 
     fn deserialize_from(reader: &mut Buffer<'_>, _current_order: usize) -> Result<Self, Error> {
         let sequence_id = reader.read_u64::<BigEndian>()?;
-        let document_size = reader.read_u32::<BigEndian>()?;
+        let value_length = reader.read_u32::<BigEndian>()?;
         let position = reader.read_u64::<BigEndian>()?;
         Ok(Self {
             sequence_id,
-            document_size,
+            value_length,
             position,
         })
     }
 }
 
+/// The index stored within [`UnversionedTreeRoot::by_id_root`](crate::tree::UnversionedTreeRoot::by_id_root).
 #[derive(Clone, Debug)]
 pub struct UnversionedByIdIndex {
-    pub document_size: u32,
+    /// The size of the value stored on disk.
+    pub value_length: u32,
+    /// The position of the value on disk.
     pub position: u64,
 }
 
 impl BinarySerialization for UnversionedByIdIndex {
-    fn serialize_to<F: ManagedFile>(
+    fn serialize_to<File: ManagedFile>(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_, F>,
+        _paged_writer: &mut PagedWriter<'_, File>,
     ) -> Result<usize, Error> {
-        writer.write_u32::<BigEndian>(self.document_size)?;
+        writer.write_u32::<BigEndian>(self.value_length)?;
         writer.write_u64::<BigEndian>(self.position)?;
         Ok(12)
     }
 
     fn deserialize_from(reader: &mut Buffer<'_>, _current_order: usize) -> Result<Self, Error> {
-        let document_size = reader.read_u32::<BigEndian>()?;
+        let value_length = reader.read_u32::<BigEndian>()?;
         let position = reader.read_u64::<BigEndian>()?;
         Ok(Self {
-            document_size,
+            value_length,
             position,
         })
     }
 }
 
+/// The reduced index of both [`VersionedByIdIndex`] and [`UnversionedByIdIndex`]
 #[derive(Clone, Debug)]
 pub struct ByIdStats {
-    pub alive_documents: u64,
-    pub deleted_documents: u64,
-    pub total_size: u64,
+    /// The number of keys that have values stored within them.
+    pub alive_keys: u64,
+    /// The number of keys that no longer have values stored within them.
+    pub deleted_keys: u64,
+    /// The total number of bytes stored on disk associated with currently-alive values.
+    pub total_indexed_bytes: u64,
 }
 
 impl ByIdStats {
-    pub const fn total_documents(&self) -> u64 {
-        self.alive_documents + self.deleted_documents
+    /// Returns the total number of keys regardless of whether data is stored within them.
+    #[must_use]
+    pub const fn total_keys(&self) -> u64 {
+        self.alive_keys + self.deleted_keys
     }
 }
 
 impl BinarySerialization for ByIdStats {
-    fn serialize_to<F: ManagedFile>(
+    fn serialize_to<File: ManagedFile>(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_, F>,
+        _paged_writer: &mut PagedWriter<'_, File>,
     ) -> Result<usize, Error> {
-        writer.write_u64::<BigEndian>(self.alive_documents)?;
-        writer.write_u64::<BigEndian>(self.deleted_documents)?;
-        writer.write_u64::<BigEndian>(self.total_size)?;
+        writer.write_u64::<BigEndian>(self.alive_keys)?;
+        writer.write_u64::<BigEndian>(self.deleted_keys)?;
+        writer.write_u64::<BigEndian>(self.total_indexed_bytes)?;
         Ok(24)
     }
 
     fn deserialize_from(reader: &mut Buffer<'_>, _current_order: usize) -> Result<Self, Error> {
-        let alive_documents = reader.read_u64::<BigEndian>()?;
-        let deleted_documents = reader.read_u64::<BigEndian>()?;
-        let total_size = reader.read_u64::<BigEndian>()?;
+        let alive_keys = reader.read_u64::<BigEndian>()?;
+        let deleted_keys = reader.read_u64::<BigEndian>()?;
+        let total_indexed_bytes = reader.read_u64::<BigEndian>()?;
         Ok(Self {
-            alive_documents,
-            deleted_documents,
-            total_size,
+            alive_keys,
+            deleted_keys,
+            total_indexed_bytes,
         })
     }
 }
 
 impl Reducer<VersionedByIdIndex> for ByIdStats {
-    fn node_count(&self) -> u64 {
-        self.alive_documents + self.deleted_documents
+    fn key_count(&self) -> u64 {
+        self.alive_keys + self.deleted_keys
     }
 
     fn reduce(values: &[&VersionedByIdIndex]) -> Self {
@@ -113,8 +126,8 @@ impl Reducer<VersionedByIdIndex> for ByIdStats {
 }
 
 impl Reducer<UnversionedByIdIndex> for ByIdStats {
-    fn node_count(&self) -> u64 {
-        self.alive_documents
+    fn key_count(&self) -> u64 {
+        self.alive_keys
     }
 
     fn reduce(values: &[&UnversionedByIdIndex]) -> Self {
@@ -127,12 +140,12 @@ impl Reducer<UnversionedByIdIndex> for ByIdStats {
 }
 
 fn reduce(values: &[&impl IdIndex]) -> ByIdStats {
-    let (alive_documents, deleted_documents, total_size) = values
+    let (alive_keys, deleted_keys, total_indexed_bytes) = values
         .iter()
         .map(|index| {
             if index.position() > 0 {
-                // Alive document
-                (1, 0, u64::from(index.document_size()))
+                // Alive key
+                (1, 0, u64::from(index.value_size()))
             } else {
                 // Deleted
                 (0, 1, 0)
@@ -149,20 +162,20 @@ fn reduce(values: &[&impl IdIndex]) -> ByIdStats {
         )
         .unwrap_or_default();
     ByIdStats {
-        alive_documents,
-        deleted_documents,
-        total_size,
+        alive_keys,
+        deleted_keys,
+        total_indexed_bytes,
     }
 }
 
 trait IdIndex {
-    fn document_size(&self) -> u32;
+    fn value_size(&self) -> u32;
     fn position(&self) -> u64;
 }
 
 impl IdIndex for UnversionedByIdIndex {
-    fn document_size(&self) -> u32 {
-        self.document_size
+    fn value_size(&self) -> u32 {
+        self.value_length
     }
 
     fn position(&self) -> u64 {
@@ -171,8 +184,8 @@ impl IdIndex for UnversionedByIdIndex {
 }
 
 impl IdIndex for VersionedByIdIndex {
-    fn document_size(&self) -> u32 {
-        self.document_size
+    fn value_size(&self) -> u32 {
+        self.value_length
     }
 
     fn position(&self) -> u64 {
@@ -182,8 +195,8 @@ impl IdIndex for VersionedByIdIndex {
 
 fn rereduce(values: &[&ByIdStats]) -> ByIdStats {
     ByIdStats {
-        alive_documents: values.iter().map(|v| v.alive_documents).sum(),
-        deleted_documents: values.iter().map(|v| v.deleted_documents).sum(),
-        total_size: values.iter().map(|v| v.total_size).sum(),
+        alive_keys: values.iter().map(|v| v.alive_keys).sum(),
+        deleted_keys: values.iter().map(|v| v.deleted_keys).sum(),
+        total_indexed_bytes: values.iter().map(|v| v.total_indexed_bytes).sum(),
     }
 }

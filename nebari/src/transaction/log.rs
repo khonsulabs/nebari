@@ -22,18 +22,18 @@ use crate::{
 const PAGE_SIZE: usize = 1024;
 
 /// A transaction log that records changes for one or more trees.
-pub struct TransactionLog<F: ManagedFile> {
+pub struct TransactionLog<File: ManagedFile> {
     vault: Option<Arc<dyn Vault>>,
     state: State,
-    log: <F::Manager as FileManager>::FileHandle,
+    log: <File::Manager as FileManager>::FileHandle,
 }
 
-impl<F: ManagedFile> TransactionLog<F> {
+impl<File: ManagedFile> TransactionLog<File> {
     /// Opens a transaction log for reading.
     pub fn read(
         log_path: &Path,
         state: State,
-        context: Context<F::Manager>,
+        context: Context<File::Manager>,
     ) -> Result<Self, Error> {
         let log = context.file_manager.read(log_path)?;
         Ok(Self {
@@ -47,7 +47,7 @@ impl<F: ManagedFile> TransactionLog<F> {
     pub fn open(
         log_path: &Path,
         state: State,
-        context: Context<F::Manager>,
+        context: Context<File::Manager>,
     ) -> Result<Self, Error> {
         let log = context.file_manager.append(log_path)?;
         Ok(Self {
@@ -65,7 +65,7 @@ impl<F: ManagedFile> TransactionLog<F> {
 
     /// Initializes `state` to contain the information about the transaction log
     /// located at `log_path`.
-    pub fn initialize_state(state: &State, context: &Context<F::Manager>) -> Result<(), Error> {
+    pub fn initialize_state(state: &State, context: &Context<File::Manager>) -> Result<(), Error> {
         let mut log_length = if context.file_manager.exists(state.path())? {
             context.file_manager.file_length(state.path())?
         } else {
@@ -203,8 +203,8 @@ pub enum ScanResult {
     },
 }
 
-fn scan_for_transaction<F: ManagedFile>(
-    log: &mut F,
+fn scan_for_transaction<File: ManagedFile>(
+    log: &mut File,
     scratch_buffer: &mut Vec<u8>,
     mut block_start: u64,
     scan_forward: bool,
@@ -273,16 +273,16 @@ pub(crate) struct EntryFetcher<'a> {
     pub vault: Option<&'a dyn Vault>,
 }
 
-impl<'a, F: ManagedFile> FileOp<F> for EntryFetcher<'a> {
+impl<'a, File: ManagedFile> FileOp<File> for EntryFetcher<'a> {
     type Output = Result<ScanResult, Error>;
-    fn execute(&mut self, log: &mut F) -> Result<ScanResult, Error> {
+    fn execute(&mut self, log: &mut File) -> Result<ScanResult, Error> {
         let mut scratch = Vec::with_capacity(PAGE_SIZE);
         fetch_entry(log, &mut scratch, self.state, self.id, self.vault)
     }
 }
 
-fn fetch_entry<F: ManagedFile>(
-    log: &mut F,
+fn fetch_entry<File: ManagedFile>(
+    log: &mut File,
     scratch_buffer: &mut Vec<u8>,
     state: &State,
     id: u64,
@@ -342,18 +342,22 @@ fn fetch_entry<F: ManagedFile>(
     }
 }
 
-pub struct EntryScanner<'a, R: RangeBounds<u64>, Callback: FnMut(LogEntry<'static>) -> bool> {
+pub struct EntryScanner<'a, Range: RangeBounds<u64>, Callback: FnMut(LogEntry<'static>) -> bool> {
     pub state: &'a State,
-    pub ids: R,
+    pub ids: Range,
     pub vault: Option<&'a dyn Vault>,
     pub callback: Callback,
 }
 
-impl<'a, R: RangeBounds<u64>, F: ManagedFile, Callback: FnMut(LogEntry<'static>) -> bool> FileOp<F>
-    for EntryScanner<'a, R, Callback>
+impl<
+        'a,
+        Range: RangeBounds<u64>,
+        File: ManagedFile,
+        Callback: FnMut(LogEntry<'static>) -> bool,
+    > FileOp<File> for EntryScanner<'a, Range, Callback>
 {
     type Output = Result<(), Error>;
-    fn execute(&mut self, log: &mut F) -> Self::Output {
+    fn execute(&mut self, log: &mut File) -> Self::Output {
         let mut scratch = Vec::with_capacity(PAGE_SIZE);
         let (start_location, start_transaction, start_length) = match self.ids.start_bound() {
             Bound::Included(start_key) | Bound::Excluded(start_key) => {
@@ -398,16 +402,16 @@ const fn next_page_start(position: u64) -> u64 {
     (position + page_size - 1) / page_size * page_size
 }
 
-struct LogWriter<F> {
+struct LogWriter<File> {
     state: State,
     transactions: Vec<LogEntry<'static>>,
     vault: Option<Arc<dyn Vault>>,
-    _file: PhantomData<F>,
+    _file: PhantomData<File>,
 }
 
-impl<F: ManagedFile> FileOp<F> for LogWriter<F> {
+impl<File: ManagedFile> FileOp<File> for LogWriter<File> {
     type Output = Result<(), Error>;
-    fn execute(&mut self, log: &mut F) -> Result<(), Error> {
+    fn execute(&mut self, log: &mut File) -> Result<(), Error> {
         let mut log_position = self.state.lock_for_write();
         let mut scratch = [0_u8; PAGE_SIZE];
         let mut completed_transactions = Vec::with_capacity(self.transactions.len());
@@ -633,13 +637,13 @@ mod tests {
         log_file_tests::<MemoryFile>("memory_log_file", None, None);
     }
 
-    fn log_file_tests<F: ManagedFile>(
+    fn log_file_tests<File: ManagedFile>(
         file_name: &str,
         vault: Option<Arc<dyn Vault>>,
         cache: Option<ChunkCache>,
     ) {
         let temp_dir = crate::test_util::TestDirectory::new(file_name);
-        let file_manager = <F::Manager as Default>::default();
+        let file_manager = <File::Manager as Default>::default();
         let context = Context {
             file_manager,
             vault,
@@ -653,9 +657,9 @@ mod tests {
 
         for id in 1..=1_000 {
             let state = State::from_path(&log_path);
-            TransactionLog::<F>::initialize_state(&state, &context).unwrap();
+            TransactionLog::<File>::initialize_state(&state, &context).unwrap();
             let mut transactions =
-                TransactionLog::<F>::open(&log_path, state, context.clone()).unwrap();
+                TransactionLog::<File>::open(&log_path, state, context.clone()).unwrap();
             assert_eq!(transactions.current_transaction_id(), id);
             let mut tx = transactions.new_transaction(&[b"hello"]);
 
@@ -668,8 +672,8 @@ mod tests {
         if context.vault.is_some() {
             // Test that we can't open it without encryption
             let state = State::from_path(&temp_dir);
-            assert!(TransactionLog::<F>::initialize_state(&state, &context).is_err());
-            let mut transactions = TransactionLog::<F>::open(&log_path, state, context).unwrap();
+            assert!(TransactionLog::<File>::initialize_state(&state, &context).is_err());
+            let mut transactions = TransactionLog::<File>::open(&log_path, state, context).unwrap();
 
             for id in 0..1_000 {
                 let transaction = transactions.get(id).unwrap();
@@ -760,14 +764,14 @@ mod tests {
         );
     }
 
-    fn log_manager_tests<F: ManagedFile>(
+    fn log_manager_tests<File: ManagedFile>(
         file_name: &str,
         vault: Option<Arc<dyn Vault>>,
         cache: Option<ChunkCache>,
     ) {
         let temp_dir = crate::test_util::TestDirectory::new(file_name);
         std::fs::create_dir(&temp_dir).unwrap();
-        let file_manager = <F::Manager as Default>::default();
+        let file_manager = <File::Manager as Default>::default();
         let context = Context {
             file_manager,
             vault,

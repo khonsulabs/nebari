@@ -15,22 +15,24 @@ use crate::{
     AbortError, Buffer, ChunkCache, ErrorKind, Vault,
 };
 
+/// An interior B-Tree node. Does not contain values directly, and instead
+/// points to a node located on-disk elsewhere.
 #[derive(Clone, Debug)]
-pub struct Interior<I, R> {
-    // The key with the highest sort value within.
+pub struct Interior<Index, ReducedIndex> {
+    /// The key with the highest sort value within.
     pub key: Buffer<'static>,
     /// The location of the node.
-    pub position: Pointer<I, R>,
+    pub position: Pointer<Index, ReducedIndex>,
     /// The reduced statistics.
-    pub stats: R,
+    pub stats: ReducedIndex,
 }
 
-impl<I, R> From<BTreeEntry<I, R>> for Interior<I, R>
+impl<Index, ReducedIndex> From<BTreeEntry<Index, ReducedIndex>> for Interior<Index, ReducedIndex>
 where
-    I: Clone + Debug + BinarySerialization + 'static,
-    R: Reducer<I> + Clone + Debug + BinarySerialization + 'static,
+    Index: Clone + Debug + BinarySerialization + 'static,
+    ReducedIndex: Reducer<Index> + Clone + Debug + BinarySerialization + 'static,
 {
-    fn from(entry: BTreeEntry<I, R>) -> Self {
+    fn from(entry: BTreeEntry<Index, ReducedIndex>) -> Self {
         let key = entry.max_key().clone();
         let stats = entry.stats();
 
@@ -45,23 +47,32 @@ where
     }
 }
 
+/// A pointer to a location on-disk. May also contain the node already loaded.
 #[derive(Clone, Debug)]
-pub enum Pointer<I, R> {
+pub enum Pointer<Index, ReducedIndex> {
+    /// The position on-disk of the node.
     OnDisk(u64),
+    /// An in-memory node that may have previously been saved on-disk.
     Loaded {
+        /// The position on-disk of the node, if it was previously saved.
         previous_location: Option<u64>,
-        entry: Box<BTreeEntry<I, R>>,
+        /// The loaded B-Tree entry.
+        entry: Box<BTreeEntry<Index, ReducedIndex>>,
     },
 }
 
 impl<
-        I: BinarySerialization + Debug + Clone + 'static,
-        R: Reducer<I> + BinarySerialization + Debug + Clone + 'static,
-    > Pointer<I, R>
+        Index: BinarySerialization + Debug + Clone + 'static,
+        ReducedIndex: Reducer<Index> + BinarySerialization + Debug + Clone + 'static,
+    > Pointer<Index, ReducedIndex>
 {
-    pub fn load<F: ManagedFile>(
+    /// Attempts to load the node from disk. If the node is already loaded, this
+    /// function does nothing.
+    // TODO this isn't a well-designed public function signature. current_order should be optional at a minimum.
+    #[allow(clippy::missing_panics_doc)] // Currently the only panic is if the types don't match, which shouldn't happen due to these nodes always being accessed through a root.
+    pub fn load<File: ManagedFile>(
         &mut self,
-        file: &mut F,
+        file: &mut File,
         validate_crc: bool,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
@@ -78,7 +89,7 @@ impl<
                     CacheEntry::Decoded(node) => node
                         .as_ref()
                         .as_any()
-                        .downcast_ref::<Box<BTreeEntry<I, R>>>()
+                        .downcast_ref::<Box<BTreeEntry<Index, ReducedIndex>>>()
                         .unwrap()
                         .clone(),
                 };
@@ -92,13 +103,25 @@ impl<
         Ok(())
     }
 
-    pub fn get_mut(&mut self) -> Option<&mut BTreeEntry<I, R>> {
+    /// Returns the previously-[`load()`ed](Self::load) entry.
+    pub fn get(&mut self) -> Option<&BTreeEntry<Index, ReducedIndex>> {
+        match self {
+            Pointer::OnDisk(_) => None,
+            Pointer::Loaded { entry, .. } => Some(entry),
+        }
+    }
+
+    /// Returns the previously-[`load()`ed](Self::load) entry as a mutable reference.
+    pub fn get_mut(&mut self) -> Option<&mut BTreeEntry<Index, ReducedIndex>> {
         match self {
             Pointer::OnDisk(_) => None,
             Pointer::Loaded { entry, .. } => Some(entry.as_mut()),
         }
     }
 
+    /// Returns the position on-disk of the node being pointed at, if the node
+    /// has been saved before.
+    #[must_use]
     pub fn position(&self) -> Option<u64> {
         match self {
             Pointer::OnDisk(location) => Some(*location),
@@ -108,19 +131,22 @@ impl<
         }
     }
 
-    pub fn map_loaded_entry<
+    pub(crate) fn map_loaded_entry<
         Output,
-        E: Display + Debug,
-        F: ManagedFile,
-        Cb: FnOnce(&BTreeEntry<I, R>, &mut F) -> Result<Output, AbortError<E>>,
+        CallerError: Display + Debug,
+        File: ManagedFile,
+        Cb: FnOnce(
+            &BTreeEntry<Index, ReducedIndex>,
+            &mut File,
+        ) -> Result<Output, AbortError<CallerError>>,
     >(
         &self,
-        file: &mut F,
+        file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
         current_order: usize,
         callback: Cb,
-    ) -> Result<Output, AbortError<E>> {
+    ) -> Result<Output, AbortError<CallerError>> {
         match self {
             Pointer::OnDisk(position) => match read_chunk(*position, false, file, vault, cache)? {
                 CacheEntry::Buffer(mut buffer) => {
@@ -136,7 +162,7 @@ impl<
                     let entry = value
                         .as_ref()
                         .as_any()
-                        .downcast_ref::<Box<BTreeEntry<I, R>>>()
+                        .downcast_ref::<Box<BTreeEntry<Index, ReducedIndex>>>()
                         .unwrap();
                     callback(entry, file)
                 }
@@ -147,29 +173,29 @@ impl<
 }
 
 impl<
-        I: Clone + BinarySerialization + Debug + 'static,
-        R: Reducer<I> + Clone + BinarySerialization + Debug + 'static,
-    > Interior<I, R>
+        Index: Clone + BinarySerialization + Debug + 'static,
+        ReducedIndex: Reducer<Index> + Clone + BinarySerialization + Debug + 'static,
+    > Interior<Index, ReducedIndex>
 {
     #[allow(clippy::too_many_arguments)]
-    pub fn copy_data_to<F, Callback>(
+    pub(crate) fn copy_data_to<File, Callback>(
         &mut self,
         include_nodes: NodeInclusion,
-        file: &mut F,
+        file: &mut File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_, F>,
+        writer: &mut PagedWriter<'_, File>,
         vault: Option<&dyn Vault>,
         scratch: &mut Vec<u8>,
         index_callback: &mut Callback,
     ) -> Result<bool, Error>
     where
-        F: ManagedFile,
+        File: ManagedFile,
         Callback: FnMut(
             &Buffer<'static>,
-            &mut I,
-            &mut F,
+            &mut Index,
+            &mut File,
             &mut HashMap<u64, u64>,
-            &mut PagedWriter<'_, F>,
+            &mut PagedWriter<'_, File>,
             Option<&dyn Vault>,
         ) -> Result<bool, Error>,
     {
@@ -205,14 +231,14 @@ impl<
 }
 
 impl<
-        I: Clone + BinarySerialization + Debug + 'static,
-        R: Reducer<I> + Clone + BinarySerialization + Debug + 'static,
-    > BinarySerialization for Interior<I, R>
+        Index: Clone + BinarySerialization + Debug + 'static,
+        ReducedIndex: Reducer<Index> + Clone + BinarySerialization + Debug + 'static,
+    > BinarySerialization for Interior<Index, ReducedIndex>
 {
-    fn serialize_to<F: ManagedFile>(
+    fn serialize_to<File: ManagedFile>(
         &mut self,
         writer: &mut Vec<u8>,
-        paged_writer: &mut PagedWriter<'_, F>,
+        paged_writer: &mut PagedWriter<'_, File>,
     ) -> Result<usize, Error> {
         let mut pointer = Pointer::OnDisk(0);
         std::mem::swap(&mut pointer, &mut self.position);
@@ -266,7 +292,7 @@ impl<
         let key = reader.read_bytes(key_len)?.to_owned();
 
         let position = reader.read_u64::<BigEndian>()?;
-        let stats = R::deserialize_from(reader, current_order)?;
+        let stats = ReducedIndex::deserialize_from(reader, current_order)?;
 
         Ok(Self {
             key,

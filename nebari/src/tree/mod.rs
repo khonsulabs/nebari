@@ -24,7 +24,7 @@
 //!
 //! ## Chunks
 //!
-//! Each time a document, B-Tree node, or header is written, it is written as a
+//! Each time a value, B-Tree node, or header is written, it is written as a
 //! chunk. If a [`Vault`] is in-use, each chunk will be pre-processed by the
 //! vault before a `CRC-32-BZIP2` checksum is calculated. A chunk is limited to
 //! 4 gigabytes of data (2^32).
@@ -61,7 +61,7 @@ use crate::{
     io::{FileManager, FileOp, ManagedFile, OpenableFile},
     roots::AbortError,
     transaction::{TransactionHandle, TransactionManager},
-    tree::{btree_entry::ScanArgs, state::ActiveState},
+    tree::btree_entry::ScanArgs,
     Buffer, ChunkCache, CompareAndSwapError, Context, ErrorKind, Vault,
 };
 
@@ -79,10 +79,14 @@ mod versioned;
 
 use self::serialization::BinarySerialization;
 pub use self::{
-    btree_entry::KeyOperation,
+    btree_entry::{BTreeEntry, BTreeNode, KeyOperation, Reducer},
+    by_id::{ByIdStats, UnversionedByIdIndex, VersionedByIdIndex},
+    by_sequence::{BySequenceIndex, BySequenceStats},
+    interior::{Interior, Pointer},
+    key_entry::KeyEntry,
     modify::{CompareSwap, CompareSwapFn, Modification, Operation},
     root::{Root, TreeRoot},
-    state::State,
+    state::{ActiveState, State},
     unversioned::UnversionedTreeRoot,
     versioned::VersionedTreeRoot,
 };
@@ -129,13 +133,13 @@ impl TryFrom<u8> for PageHeader {
 /// An append-only tree file.
 ///
 /// ## Generics
-/// - `F`: An [`ManagedFile`] implementor.
+/// - `File`: An [`ManagedFile`] implementor.
 /// - `MAX_ORDER`: The maximum number of children a node in the tree can
 ///   contain. This implementation attempts to grow naturally towards this upper
 ///   limit. Changing this parameter does not automatically rebalance the tree,
 ///   but over time the tree will be updated.
-pub struct TreeFile<Root: root::Root, F: ManagedFile> {
-    pub(crate) file: <F::Manager as FileManager>::FileHandle,
+pub struct TreeFile<Root: root::Root, File: ManagedFile> {
+    pub(crate) file: <File::Manager as FileManager>::FileHandle,
     /// The state of the file.
     pub state: State<Root>,
     vault: Option<Arc<dyn Vault>>,
@@ -143,12 +147,12 @@ pub struct TreeFile<Root: root::Root, F: ManagedFile> {
     scratch: Vec<u8>,
 }
 
-impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
+impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     /// Returns a tree as contained in `file`.
     ///
     /// `state` should already be initialized using [`Self::initialize_state`] if the file exists.
     pub fn new(
-        file: <F::Manager as FileManager>::FileHandle,
+        file: <File::Manager as FileManager>::FileHandle,
         state: State<Root>,
         vault: Option<Arc<dyn Vault>>,
         cache: Option<ChunkCache>,
@@ -166,8 +170,8 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
     pub fn read(
         path: impl AsRef<Path>,
         state: State<Root>,
-        context: &Context<F::Manager>,
-        transactions: Option<&TransactionManager<F::Manager>>,
+        context: &Context<File::Manager>,
+        transactions: Option<&TransactionManager<File::Manager>>,
     ) -> Result<Self, Error> {
         let file = context.file_manager.read(path.as_ref())?;
         Self::initialize_state(&state, path.as_ref(), file.id(), context, transactions)?;
@@ -178,8 +182,8 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
     pub fn write(
         path: impl AsRef<Path>,
         state: State<Root>,
-        context: &Context<F::Manager>,
-        transactions: Option<&TransactionManager<F::Manager>>,
+        context: &Context<File::Manager>,
+        transactions: Option<&TransactionManager<File::Manager>>,
     ) -> Result<Self, Error> {
         let file = context.file_manager.append(path.as_ref())?;
         Self::initialize_state(&state, path.as_ref(), file.id(), context, transactions)?;
@@ -191,8 +195,8 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
         state: &State<Root>,
         file_path: &Path,
         file_id: Option<u64>,
-        context: &Context<F::Manager>,
-        transaction_manager: Option<&TransactionManager<F::Manager>>,
+        context: &Context<File::Manager>,
+        transaction_manager: Option<&TransactionManager<File::Manager>>,
     ) -> Result<(), Error> {
         {
             let read_state = state.read();
@@ -209,7 +213,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
         active_state.file_id = file_id;
         let mut file_length = context.file_manager.file_length(file_path)?;
         if file_length == 0 {
-            active_state.header.initialize_default();
+            active_state.root.initialize_default();
             active_state.publish(state);
             return Ok(());
         }
@@ -230,12 +234,12 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
             file.sync_all()?;
         }
 
-        let mut tree = F::open_for_read(file_path, None)?;
+        let mut tree = File::open_for_read(file_path, None)?;
 
         // Scan back block by block until we find a header page.
         let mut block_start = file_length - PAGE_SIZE as u64;
         let mut scratch_buffer = vec![0_u8];
-        active_state.header = loop {
+        active_state.root = loop {
             // Read the page header
             tree.seek(SeekFrom::Start(block_start))?;
             tree.read_exact(&mut scratch_buffer[0..1])?;
@@ -277,7 +281,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
                             // we cannot trust the data present.
                             if block_start == 0 {
                                 // No data was ever fully written.
-                                active_state.header.initialize_default();
+                                active_state.root.initialize_default();
                                 return Ok(());
                             }
                             block_start -= PAGE_SIZE as u64;
@@ -299,16 +303,16 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
         &mut self,
         transaction_id: u64,
         key: Buffer<'static>,
-        document: Buffer<'static>,
+        value: Buffer<'static>,
     ) -> Result<(), Error> {
-        self.file.execute(DocumentWriter {
+        self.file.execute(TreeModifier {
             state: &self.state,
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
             modification: Some(Modification {
                 transaction_id,
                 keys: vec![key],
-                operation: Operation::Set(document),
+                operation: Operation::Set(value),
             }),
             scratch: &mut self.scratch,
         })
@@ -316,7 +320,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
 
     /// Executes a modification.
     pub fn modify(&mut self, modification: Modification<'_, Buffer<'static>>) -> Result<(), Error> {
-        self.file.execute(DocumentWriter {
+        self.file.execute(TreeModifier {
             state: &self.state,
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
@@ -402,7 +406,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
         in_transaction: bool,
     ) -> Result<Option<Buffer<'static>>, Error> {
         let mut buffer = None;
-        self.file.execute(DocumentGetter {
+        self.file.execute(TreeGetter {
             from_transaction: in_transaction,
             state: &self.state,
             vault: self.vault.as_deref(),
@@ -425,7 +429,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
         in_transaction: bool,
     ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
         let mut buffers = Vec::with_capacity(keys.len());
-        self.file.execute(DocumentGetter {
+        self.file.execute(TreeGetter {
             from_transaction: in_transaction,
             state: &self.state,
             vault: self.vault.as_deref(),
@@ -483,7 +487,7 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
         DataCallback: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<E>>,
         E: Display + Debug,
     {
-        self.file.execute(DocumentScanner {
+        self.file.execute(TreeScanner {
             forwards,
             from_transaction: in_transaction,
             state: &self.state,
@@ -564,8 +568,8 @@ impl<Root: root::Root, F: ManagedFile> TreeFile<Root, F> {
     /// contents are swapped using atomic file operations.
     pub fn compact(
         mut self,
-        file_manager: &F::Manager,
-        transactions: Option<TransactableCompaction<'_, F::Manager>>,
+        file_manager: &File::Manager,
+        transactions: Option<TransactableCompaction<'_, File::Manager>>,
     ) -> Result<Self, Error> {
         let (compacted_path, finisher) = self.file.execute(TreeCompactor {
             state: &self.state,
@@ -590,16 +594,18 @@ pub struct TransactableCompaction<'a, Manager: FileManager> {
     pub manager: &'a TransactionManager<Manager>,
 }
 
-struct TreeCompactor<'a, Root: root::Root, M: FileManager> {
+struct TreeCompactor<'a, Root: root::Root, Manager: FileManager> {
     state: &'a State<Root>,
     vault: Option<&'a dyn Vault>,
-    transactions: Option<TransactableCompaction<'a, M>>,
+    transactions: Option<TransactableCompaction<'a, Manager>>,
     scratch: &'a mut Vec<u8>,
 }
-impl<'a, Root: root::Root, F: ManagedFile> FileOp<F> for TreeCompactor<'a, Root, F::Manager> {
+impl<'a, Root: root::Root, File: ManagedFile> FileOp<File>
+    for TreeCompactor<'a, Root, File::Manager>
+{
     type Output = Result<(PathBuf, TreeCompactionFinisher<'a, Root>), Error>;
 
-    fn execute(&mut self, file: &mut F) -> Self::Output {
+    fn execute(&mut self, file: &mut File) -> Self::Output {
         let current_path = file.path().to_path_buf();
         let file_name = current_path
             .file_name()
@@ -620,13 +626,13 @@ impl<'a, Root: root::Root, F: ManagedFile> FileOp<F> for TreeCompactor<'a, Root,
                 .manager
                 .new_transaction(&[transactions.name.as_bytes()])
         });
-        let mut new_file = F::open_for_append(&compacted_path, None)?;
+        let mut new_file = File::open_for_append(&compacted_path, None)?;
         let mut writer = PagedWriter::new(PageHeader::Data, &mut new_file, self.vault, None, 0);
 
         // Use the read state to list all the currently live chunks
         let mut copied_chunks = HashMap::new();
         let read_state = self.state.read();
-        let mut temporary_header = read_state.header.clone();
+        let mut temporary_header = read_state.root.clone();
         drop(read_state);
         temporary_header.copy_data_to(false, file, &mut copied_chunks, &mut writer, self.vault)?;
 
@@ -634,7 +640,7 @@ impl<'a, Root: root::Root, F: ManagedFile> FileOp<F> for TreeCompactor<'a, Root,
         // since only nodes that have changed will need to be visited.
         let mut write_state = self.state.lock();
         write_state
-            .header
+            .root
             .copy_data_to(true, file, &mut copied_chunks, &mut writer, self.vault)?;
 
         save_tree(&mut write_state, self.vault, None, writer, self.scratch)?;
@@ -675,14 +681,14 @@ struct TreeWriter<'a, Root: root::Root> {
     scratch: &'a mut Vec<u8>,
 }
 
-impl<'a, Root: root::Root, F: ManagedFile> FileOp<F> for TreeWriter<'a, Root> {
+impl<'a, Root: root::Root, File: ManagedFile> FileOp<File> for TreeWriter<'a, Root> {
     type Output = Result<(), Error>;
-    fn execute(&mut self, file: &mut F) -> Self::Output {
+    fn execute(&mut self, file: &mut File) -> Self::Output {
         let mut active_state = self.state.lock();
         if active_state.file_id != file.id() {
-            return Err(Error::from(ErrorKind::DatabaseCompacted));
+            return Err(Error::from(ErrorKind::TreeCompacted));
         }
-        if active_state.header.dirty() {
+        if active_state.root.dirty() {
             let data_block = PagedWriter::new(
                 PageHeader::Data,
                 file,
@@ -705,7 +711,7 @@ impl<'a, Root: root::Root, F: ManagedFile> FileOp<F> for TreeWriter<'a, Root> {
     }
 }
 
-struct DocumentWriter<'a, 'm, Root: root::Root> {
+struct TreeModifier<'a, 'm, Root: root::Root> {
     state: &'a State<Root>,
     vault: Option<&'a dyn Vault>,
     cache: Option<&'a ChunkCache>,
@@ -713,13 +719,13 @@ struct DocumentWriter<'a, 'm, Root: root::Root> {
     scratch: &'a mut Vec<u8>,
 }
 
-impl<'a, 'm, Root: root::Root, F: ManagedFile> FileOp<F> for DocumentWriter<'a, 'm, Root> {
+impl<'a, 'm, Root: root::Root, File: ManagedFile> FileOp<File> for TreeModifier<'a, 'm, Root> {
     type Output = Result<(), Error>;
 
-    fn execute(&mut self, file: &mut F) -> Self::Output {
+    fn execute(&mut self, file: &mut File) -> Self::Output {
         let mut active_state = self.state.lock();
         if active_state.file_id != file.id() {
-            return Err(Error::from(ErrorKind::DatabaseCompacted));
+            return Err(Error::from(ErrorKind::TreeCompacted));
         }
 
         let mut data_block = PagedWriter::new(
@@ -730,16 +736,18 @@ impl<'a, 'm, Root: root::Root, F: ManagedFile> FileOp<F> for DocumentWriter<'a, 
             active_state.current_position,
         );
 
-        // Now that we have the document data's position, we can update the by_sequence and by_id indexes.
         let modification = self.modification.take().unwrap();
         let is_transactional = modification.transaction_id != 0;
-        active_state.header.modify(modification, &mut data_block)?;
+
+        // Execute the modification
+        active_state.root.modify(modification, &mut data_block)?;
 
         if is_transactional {
-            // Transactions will saved later.
+            // Transactions will written to disk later.
             let (_, new_position) = data_block.finish()?;
             active_state.current_position = new_position;
         } else {
+            // Save the tree to disk immediately.
             self.scratch.clear();
             save_tree(
                 &mut *active_state,
@@ -756,15 +764,15 @@ impl<'a, 'm, Root: root::Root, F: ManagedFile> FileOp<F> for DocumentWriter<'a, 
 }
 
 #[allow(clippy::shadow_unrelated)] // It is related, but clippy can't tell.
-fn save_tree<Root: root::Root, F: ManagedFile>(
+fn save_tree<Root: root::Root, File: ManagedFile>(
     active_state: &mut ActiveState<Root>,
     vault: Option<&dyn Vault>,
     cache: Option<&ChunkCache>,
-    mut data_block: PagedWriter<'_, F>,
+    mut data_block: PagedWriter<'_, File>,
     scratch: &mut Vec<u8>,
 ) -> Result<(), Error> {
     scratch.clear();
-    active_state.header.serialize(&mut data_block, scratch)?;
+    active_state.root.serialize(&mut data_block, scratch)?;
     let (file, after_data) = data_block.finish()?;
     active_state.current_position = after_data;
 
@@ -841,37 +849,37 @@ pub enum KeyEvaluation {
     Stop,
 }
 
-struct DocumentGetter<
+struct TreeGetter<
     'a,
-    'k,
+    'keys,
     Root: root::Root,
-    E: FnMut(&Buffer<'static>) -> KeyEvaluation,
-    R: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
+    CallerError: FnMut(&Buffer<'static>) -> KeyEvaluation,
+    KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
 > {
     from_transaction: bool,
     state: &'a State<Root>,
     vault: Option<&'a dyn Vault>,
     cache: Option<&'a ChunkCache>,
-    keys: KeyRange<'k>,
-    key_evaluator: E,
-    key_reader: R,
+    keys: KeyRange<'keys>,
+    key_evaluator: CallerError,
+    key_reader: KeyReader,
 }
 
-impl<'a, 'k, E, R, Root: root::Root, F: ManagedFile> FileOp<F>
-    for DocumentGetter<'a, 'k, Root, E, R>
+impl<'a, 'keys, CallerError, KeyReader, Root: root::Root, File: ManagedFile> FileOp<File>
+    for TreeGetter<'a, 'keys, Root, CallerError, KeyReader>
 where
-    E: FnMut(&Buffer<'static>) -> KeyEvaluation,
-    R: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
+    CallerError: FnMut(&Buffer<'static>) -> KeyEvaluation,
+    KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
 {
     type Output = Result<(), Error>;
-    fn execute(&mut self, file: &mut F) -> Self::Output {
+    fn execute(&mut self, file: &mut File) -> Self::Output {
         if self.from_transaction {
             let state = self.state.lock();
             if state.file_id != file.id() {
-                return Err(Error::from(ErrorKind::DatabaseCompacted));
+                return Err(Error::from(ErrorKind::TreeCompacted));
             }
 
-            state.header.get_multiple(
+            state.root.get_multiple(
                 &mut self.keys,
                 &mut self.key_evaluator,
                 &mut self.key_reader,
@@ -882,10 +890,10 @@ where
         } else {
             let state = self.state.read();
             if state.file_id != file.id() {
-                return Err(Error::from(ErrorKind::DatabaseCompacted));
+                return Err(Error::from(ErrorKind::TreeCompacted));
             }
 
-            state.header.get_multiple(
+            state.root.get_multiple(
                 &mut self.keys,
                 &mut self.key_evaluator,
                 &mut self.key_reader,
@@ -897,12 +905,19 @@ where
     }
 }
 
-struct DocumentScanner<'a, 'k, E, Root: root::Root, KeyEvaluator, KeyReader, KeyRangeBounds>
-where
+struct TreeScanner<
+    'a,
+    'keys,
+    CallerError,
+    Root: root::Root,
+    KeyEvaluator,
+    KeyReader,
+    KeyRangeBounds,
+> where
     KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-    KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<E>>,
-    KeyRangeBounds: RangeBounds<Buffer<'k>>,
-    E: Display + Debug,
+    KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+    KeyRangeBounds: RangeBounds<Buffer<'keys>>,
+    CallerError: Display + Debug,
 {
     forwards: bool,
     from_transaction: bool,
@@ -912,29 +927,28 @@ where
     range: KeyRangeBounds,
     key_evaluator: KeyEvaluator,
     key_reader: KeyReader,
-    _phantom: PhantomData<&'k ()>,
+    _phantom: PhantomData<&'keys ()>,
 }
 
-impl<'a, 'k, E, Root: root::Root, KeyEvaluator, KeyReader, KeyRangeBounds, F> FileOp<F>
-    for DocumentScanner<'a, 'k, E, Root, KeyEvaluator, KeyReader, KeyRangeBounds>
+impl<'a, 'keys, CallerError, Root: root::Root, KeyEvaluator, KeyReader, KeyRangeBounds, File>
+    FileOp<File>
+    for TreeScanner<'a, 'keys, CallerError, Root, KeyEvaluator, KeyReader, KeyRangeBounds>
 where
-    F: ManagedFile,
+    File: ManagedFile,
     KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-    KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<E>>,
-    KeyRangeBounds: RangeBounds<Buffer<'k>> + Debug,
-    E: Display + Debug,
+    KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+    KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
+    CallerError: Display + Debug,
 {
-    type Output = Result<(), AbortError<E>>;
-    fn execute(&mut self, file: &mut F) -> Self::Output {
+    type Output = Result<(), AbortError<CallerError>>;
+    fn execute(&mut self, file: &mut File) -> Self::Output {
         if self.from_transaction {
             let state = self.state.lock();
             if state.file_id != file.id() {
-                return Err(AbortError::Nebari(Error::from(
-                    ErrorKind::DatabaseCompacted,
-                )));
+                return Err(AbortError::Nebari(Error::from(ErrorKind::TreeCompacted)));
             }
 
-            state.header.scan(
+            state.root.scan(
                 &self.range,
                 &mut ScanArgs::new(self.forwards, &mut self.key_evaluator, &mut self.key_reader),
                 file,
@@ -944,12 +958,10 @@ where
         } else {
             let state = self.state.read();
             if state.file_id != file.id() {
-                return Err(AbortError::Nebari(Error::from(
-                    ErrorKind::DatabaseCompacted,
-                )));
+                return Err(AbortError::Nebari(Error::from(ErrorKind::TreeCompacted)));
             }
 
-            state.header.scan(
+            state.root.scan(
                 &self.range,
                 &mut ScanArgs::new(self.forwards, &mut self.key_evaluator, &mut self.key_reader),
                 file,
@@ -961,8 +973,8 @@ where
 }
 
 /// Writes data in pages, allowing for quick scanning through the file.
-pub struct PagedWriter<'a, F: ManagedFile> {
-    file: &'a mut F,
+pub struct PagedWriter<'a, File: ManagedFile> {
+    file: &'a mut File,
     vault: Option<&'a dyn Vault>,
     cache: Option<&'a ChunkCache>,
     position: u64,
@@ -970,28 +982,28 @@ pub struct PagedWriter<'a, F: ManagedFile> {
     offset: usize,
 }
 
-impl<'a, F: ManagedFile> Deref for PagedWriter<'a, F> {
-    type Target = F;
+impl<'a, File: ManagedFile> Deref for PagedWriter<'a, File> {
+    type Target = File;
 
     fn deref(&self) -> &Self::Target {
         self.file
     }
 }
 
-impl<'a, F: ManagedFile> DerefMut for PagedWriter<'a, F> {
+impl<'a, File: ManagedFile> DerefMut for PagedWriter<'a, File> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.file
     }
 }
 
-impl<'a, F: ManagedFile> PagedWriter<'a, F> {
+impl<'a, File: ManagedFile> PagedWriter<'a, File> {
     fn new(
         header: PageHeader,
-        file: &'a mut F,
+        file: &'a mut File,
         vault: Option<&'a dyn Vault>,
         cache: Option<&'a ChunkCache>,
         position: u64,
-    ) -> PagedWriter<'a, F> {
+    ) -> PagedWriter<'a, File> {
         let mut writer = Self {
             file,
             vault,
@@ -1148,7 +1160,7 @@ impl<'a, F: ManagedFile> PagedWriter<'a, F> {
         Ok(())
     }
 
-    fn finish(mut self) -> Result<(&'a mut F, u64), Error> {
+    fn finish(mut self) -> Result<(&'a mut File, u64), Error> {
         if self.offset > 1 {
             self.commit()?;
         }
@@ -1158,10 +1170,10 @@ impl<'a, F: ManagedFile> PagedWriter<'a, F> {
 
 #[allow(clippy::cast_possible_truncation)]
 #[cfg_attr(feature = "tracing", tracing::instrument(skip(file, vault, cache)))]
-fn read_chunk<F: ManagedFile>(
+fn read_chunk<File: ManagedFile>(
     position: u64,
     validate_crc: bool,
-    file: &mut F,
+    file: &mut File,
     vault: Option<&dyn Vault>,
     cache: Option<&ChunkCache>,
 ) -> Result<CacheEntry, Error> {
@@ -1238,11 +1250,11 @@ fn read_chunk<F: ManagedFile>(
     Ok(CacheEntry::Buffer(decrypted))
 }
 
-pub(crate) fn copy_chunk<F: ManagedFile, S: BuildHasher>(
+pub(crate) fn copy_chunk<File: ManagedFile, Hasher: BuildHasher>(
     original_position: u64,
-    from_file: &mut F,
-    copied_chunks: &mut std::collections::HashMap<u64, u64, S>,
-    to_file: &mut PagedWriter<'_, F>,
+    from_file: &mut File,
+    copied_chunks: &mut std::collections::HashMap<u64, u64, Hasher>,
+    to_file: &mut PagedWriter<'_, File>,
     vault: Option<&dyn crate::Vault>,
 ) -> Result<u64, Error> {
     if original_position == 0 {

@@ -25,7 +25,7 @@ where
         let state = ActiveState {
             file_id,
             current_position: 0,
-            header,
+            root: header,
         };
 
         Self {
@@ -34,13 +34,21 @@ where
         }
     }
 
-    /// Locks the state.
+    /// Locks the state for writing.
     pub(crate) fn lock(&self) -> MutexGuard<'_, ActiveState<Root>> {
         self.writer.lock()
     }
 
-    /// Locks the state.
-    pub(crate) fn read(&self) -> RwLockReadGuard<'_, ActiveState<Root>> {
+    /// Reads the current state. Holding onto the returned value will block
+    /// writers from publishing new changes. If you plan on needing access to
+    /// the data for an extended period, clone the state and drop the guard.
+    ///
+    /// Be aware that by not holding the lock, database compaction could execute
+    /// in the background and cause the `file_id` to no longer match the file
+    /// handle your thread is working with. This will result in
+    /// [`ErrorKind::TreeCompacted`](crate::ErrorKind::TreeCompacted) being
+    /// raised from any operation on the file.
+    pub fn read(&self) -> RwLockReadGuard<'_, ActiveState<Root>> {
         self.reader.read()
     }
 }
@@ -61,19 +69,25 @@ impl<Root: super::Root> AnyTreeState for State<Root> {
     }
 }
 
+/// An active state for a tree file.
 #[derive(Clone, Debug, Default)]
 pub struct ActiveState<Root: super::Root> {
+    /// The current file id associated with this tree file. Database compaction
+    /// will cause the file_id to be changed once the operation succeeds.
     pub file_id: Option<u64>,
+    /// The current location within the file for data to be written.
     pub current_position: u64,
-    pub header: Root,
+    /// The root of the B-Tree.
+    pub root: Root,
 }
 
 impl<Root> ActiveState<Root>
 where
     Root: super::Root,
 {
+    /// Returns true if the state has been initialized.
     pub fn initialized(&self) -> bool {
-        self.header.initialized()
+        self.root.initialized()
     }
 
     pub(crate) fn publish(&self, state: &State<Root>) {
@@ -83,6 +97,6 @@ where
 
     pub(crate) fn rollback(&mut self, state: &State<Root>) {
         let reader = state.reader.read();
-        self.header = reader.header.clone();
+        self.root = reader.root.clone();
     }
 }

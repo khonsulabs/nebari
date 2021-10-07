@@ -32,24 +32,24 @@ use crate::{
 
 /// A multi-tree transactional B-Tree database.
 #[derive(Debug)]
-pub struct Roots<F: ManagedFile> {
-    data: Arc<Data<F>>,
+pub struct Roots<File: ManagedFile> {
+    data: Arc<Data<File>>,
 }
 
 #[derive(Debug)]
-struct Data<F: ManagedFile> {
-    context: Context<F::Manager>,
-    transactions: TransactionManager<F::Manager>,
-    thread_pool: ThreadPool<F>,
+struct Data<File: ManagedFile> {
+    context: Context<File::Manager>,
+    transactions: TransactionManager<File::Manager>,
+    thread_pool: ThreadPool<File>,
     path: PathBuf,
     tree_states: Mutex<HashMap<String, Box<dyn AnyTreeState>>>,
 }
 
-impl<F: ManagedFile> Roots<F> {
+impl<File: ManagedFile> Roots<File> {
     fn open<P: Into<PathBuf> + Send>(
         path: P,
-        context: Context<F::Manager>,
-        thread_pool: ThreadPool<F>,
+        context: Context<File::Manager>,
+        thread_pool: ThreadPool<File>,
     ) -> Result<Self, Error> {
         let path = path.into();
         if !path.exists() {
@@ -81,13 +81,13 @@ impl<F: ManagedFile> Roots<F> {
 
     /// Returns the vault used to encrypt this database.
     #[must_use]
-    pub fn context(&self) -> &Context<F::Manager> {
+    pub fn context(&self) -> &Context<File::Manager> {
         &self.data.context
     }
 
     /// Returns the transaction manager for this database.
     #[must_use]
-    pub fn transactions(&self) -> &TransactionManager<F::Manager> {
+    pub fn transactions(&self) -> &TransactionManager<File::Manager> {
         &self.data.transactions
     }
 
@@ -96,7 +96,7 @@ impl<F: ManagedFile> Roots<F> {
     pub fn tree<Root: tree::Root, Name: Into<Cow<'static, str>>>(
         &self,
         name: Name,
-    ) -> Result<Tree<Root, F>, Error> {
+    ) -> Result<Tree<Root, File>, Error> {
         let name = name.into();
         let path = self.tree_path(&name);
         if !path.exists() {
@@ -150,7 +150,7 @@ impl<F: ManagedFile> Roots<F> {
             .clone()
     }
 
-    fn tree_states(&self, names: &[TreeRoot<F>]) -> Vec<Box<dyn AnyTreeState>> {
+    fn tree_states(&self, names: &[TreeRoot<File>]) -> Vec<Box<dyn AnyTreeState>> {
         let mut tree_states = self.data.tree_states.lock();
         let mut output = Vec::with_capacity(names.len());
         for tree in names {
@@ -166,7 +166,10 @@ impl<F: ManagedFile> Roots<F> {
     /// Begins a transaction over `trees`. All trees will be exclusively
     /// accessible by the transaction. Dropping the executing transaction will
     /// roll the transaction back.
-    pub fn transaction(&self, trees: &[TreeRoot<F>]) -> Result<ExecutingTransaction<F>, Error> {
+    pub fn transaction(
+        &self,
+        trees: &[TreeRoot<File>],
+    ) -> Result<ExecutingTransaction<File>, Error> {
         // TODO this extra vec here is annoying. We should have a treename type
         // that we can use instead of str.
         let transaction = self.data.transactions.new_transaction(
@@ -198,7 +201,7 @@ impl<F: ManagedFile> Roots<F> {
     }
 }
 
-impl<M: ManagedFile> Clone for Roots<M> {
+impl<File: ManagedFile> Clone for Roots<File> {
     fn clone(&self) -> Self {
         Self {
             data: self.data.clone(),
@@ -209,14 +212,14 @@ impl<M: ManagedFile> Clone for Roots<M> {
 /// An executing transaction. While this exists, no other transactions can
 /// execute across the same trees as this transaction holds.
 #[must_use]
-pub struct ExecutingTransaction<F: ManagedFile> {
-    roots: Roots<F>,
-    transaction_manager: TransactionManager<F::Manager>,
-    trees: Vec<Box<dyn AnyTransactionTree<F>>>,
+pub struct ExecutingTransaction<File: ManagedFile> {
+    roots: Roots<File>,
+    transaction_manager: TransactionManager<File::Manager>,
+    trees: Vec<Box<dyn AnyTransactionTree<File>>>,
     transaction: Option<TransactionHandle>,
 }
 
-impl<F: ManagedFile> ExecutingTransaction<F> {
+impl<File: ManagedFile> ExecutingTransaction<File> {
     /// Returns the [`LogEntry`] for this transaction.
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
@@ -260,7 +263,7 @@ impl<F: ManagedFile> ExecutingTransaction<F> {
     pub fn tree<Root: tree::Root>(
         &mut self,
         index: usize,
-    ) -> Option<&mut TransactionTree<Root, F>> {
+    ) -> Option<&mut TransactionTree<Root, File>> {
         self.trees
             .get_mut(index)
             .and_then(|any_tree| any_tree.as_mut().as_any_mut().downcast_mut())
@@ -273,7 +276,7 @@ impl<F: ManagedFile> ExecutingTransaction<F> {
     }
 }
 
-impl<F: ManagedFile> Drop for ExecutingTransaction<F> {
+impl<File: ManagedFile> Drop for ExecutingTransaction<File> {
     fn drop(&mut self) {
         if let Some(transaction) = self.transaction.take() {
             self.rollback_tree_states();
@@ -284,12 +287,12 @@ impl<F: ManagedFile> Drop for ExecutingTransaction<F> {
 }
 
 /// A tree that is modifiable during a transaction.
-pub struct TransactionTree<Root: tree::Root, F: ManagedFile> {
+pub struct TransactionTree<Root: tree::Root, File: ManagedFile> {
     pub(crate) transaction_id: u64,
-    pub(crate) tree: TreeFile<Root, F>,
+    pub(crate) tree: TreeFile<Root, File>,
 }
 
-pub trait AnyTransactionTree<F: ManagedFile>: Any + Send + Sync {
+pub trait AnyTransactionTree<File: ManagedFile>: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
@@ -299,7 +302,7 @@ pub trait AnyTransactionTree<F: ManagedFile>: Any + Send + Sync {
     fn rollback(&self);
 }
 
-impl<Root: tree::Root, F: ManagedFile> AnyTransactionTree<F> for TransactionTree<Root, F> {
+impl<Root: tree::Root, File: ManagedFile> AnyTransactionTree<File> for TransactionTree<Root, File> {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -321,15 +324,15 @@ impl<Root: tree::Root, F: ManagedFile> AnyTransactionTree<F> for TransactionTree
     }
 }
 
-impl<F: ManagedFile> TransactionTree<VersionedTreeRoot, F> {
+impl<File: ManagedFile> TransactionTree<VersionedTreeRoot, File> {
     /// Returns the latest sequence id.
     pub fn current_sequence_id(&self) -> u64 {
         let state = self.tree.state.lock();
-        state.header.sequence
+        state.root.sequence
     }
 }
 
-impl<Root: tree::Root, F: ManagedFile> TransactionTree<Root, F> {
+impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     /// Sets `key` to `value`.
     pub fn set(
         &mut self,
@@ -406,18 +409,19 @@ impl<Root: tree::Root, F: ManagedFile> TransactionTree<Root, F> {
         feature = "tracing",
         tracing::instrument(skip(self, key_evaluator, callback))
     )]
-    pub fn scan<'b, E, B, KeyEvaluator, DataCallback>(
+    pub fn scan<'b, CallerError, Range, KeyEvaluator, DataCallback>(
         &mut self,
-        range: B,
+        range: Range,
         forwards: bool,
         mut key_evaluator: KeyEvaluator,
         mut callback: DataCallback,
-    ) -> Result<(), AbortError<E>>
+    ) -> Result<(), AbortError<CallerError>>
     where
-        B: RangeBounds<Buffer<'b>> + Debug + 'static,
+        Range: RangeBounds<Buffer<'b>> + Debug + 'static,
         KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        DataCallback: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<E>>,
-        E: Display + Debug,
+        DataCallback:
+            FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        CallerError: Display + Debug,
     {
         self.tree
             .scan(range, forwards, true, &mut key_evaluator, &mut callback)
@@ -450,16 +454,16 @@ pub enum CompareAndSwapError {
 /// A database configuration used to open a database.
 #[derive(Debug)]
 #[must_use]
-pub struct Config<F: ManagedFile> {
+pub struct Config<File: ManagedFile> {
     path: PathBuf,
     vault: Option<Arc<dyn Vault>>,
     cache: Option<ChunkCache>,
-    file_manager: Option<F::Manager>,
-    thread_pool: Option<ThreadPool<F>>,
-    _file: PhantomData<F>,
+    file_manager: Option<File::Manager>,
+    thread_pool: Option<ThreadPool<File>>,
+    _file: PhantomData<File>,
 }
 
-impl<F: ManagedFile> Config<F> {
+impl<File: ManagedFile> Config<File> {
     /// Creates a new config to open a database located at `path`.
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
         Self {
@@ -485,7 +489,7 @@ impl<F: ManagedFile> Config<F> {
     }
 
     /// Sets the file manager.
-    pub fn file_manager(mut self, file_manager: F::Manager) -> Self {
+    pub fn file_manager(mut self, file_manager: File::Manager) -> Self {
         self.file_manager = Some(file_manager);
         self
     }
@@ -493,13 +497,13 @@ impl<F: ManagedFile> Config<F> {
     /// Uses the `thread_pool` provided instead of creating its own. This will
     /// allow a single thread pool to manage multiple [`Roots`] instances'
     /// transactions.
-    pub fn shared_thread_pool(mut self, thread_pool: &ThreadPool<F>) -> Self {
+    pub fn shared_thread_pool(mut self, thread_pool: &ThreadPool<File>) -> Self {
         self.thread_pool = Some(thread_pool.clone());
         self
     }
 
     /// Opens the database, or creates one if the target path doesn't exist.
-    pub fn open(self) -> Result<Roots<F>, Error> {
+    pub fn open(self) -> Result<Roots<File>, Error> {
         Roots::open(
             self.path,
             Context {
@@ -513,13 +517,13 @@ impl<F: ManagedFile> Config<F> {
 }
 
 /// A named collection of keys and values.
-pub struct Tree<Root: tree::Root, F: ManagedFile> {
-    roots: Roots<F>,
+pub struct Tree<Root: tree::Root, File: ManagedFile> {
+    roots: Roots<File>,
     state: State<Root>,
     name: Cow<'static, str>,
 }
 
-impl<Root: tree::Root, F: ManagedFile> Clone for Tree<Root, F> {
+impl<Root: tree::Root, File: ManagedFile> Clone for Tree<Root, File> {
     fn clone(&self) -> Self {
         Self {
             roots: self.roots.clone(),
@@ -529,7 +533,7 @@ impl<Root: tree::Root, F: ManagedFile> Clone for Tree<Root, F> {
     }
 }
 
-impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
+impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// Returns the name of the tree.
     #[must_use]
     pub fn name(&self) -> &str {
@@ -546,7 +550,7 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
     #[must_use]
     pub fn count(&self) -> u64 {
         let state = self.state.lock();
-        state.header.count()
+        state.root.count()
     }
 
     /// Sets `key` to `value`. This is executed within its own transaction.
@@ -565,7 +569,7 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
     /// changes in pending transactions.
     pub fn get(&self, key: &[u8]) -> Result<Option<Buffer<'static>>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = TreeFile::<Root, F>::read(
+            let mut tree = TreeFile::<Root, File>::read(
                 self.path(),
                 self.state.clone(),
                 self.roots.context(),
@@ -611,7 +615,7 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
         keys: &[&[u8]],
     ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = TreeFile::<Root, F>::read(
+            let mut tree = TreeFile::<Root, File>::read(
                 self.path(),
                 self.state.clone(),
                 self.roots.context(),
@@ -628,7 +632,7 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
         range: B,
     ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = TreeFile::<Root, F>::read(
+            let mut tree = TreeFile::<Root, File>::read(
                 self.path(),
                 self.state.clone(),
                 self.roots.context(),
@@ -649,21 +653,22 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
         feature = "tracing",
         tracing::instrument(skip(self, key_evaluator, callback))
     )]
-    pub fn scan<'b, E, B, KeyEvaluator, DataCallback>(
+    pub fn scan<'range, CallerError, Range, KeyEvaluator, DataCallback>(
         &self,
-        range: B,
+        range: Range,
         forwards: bool,
         mut key_evaluator: KeyEvaluator,
         mut callback: DataCallback,
-    ) -> Result<(), AbortError<E>>
+    ) -> Result<(), AbortError<CallerError>>
     where
-        B: RangeBounds<Buffer<'b>> + Clone + Debug + 'static,
+        Range: RangeBounds<Buffer<'range>> + Clone + Debug + 'static,
         KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        DataCallback: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<E>>,
-        E: Display + Debug,
+        DataCallback:
+            FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        CallerError: Display + Debug,
     {
         catch_compaction_and_retry_abortable(move || {
-            let mut tree = TreeFile::<Root, F>::read(
+            let mut tree = TreeFile::<Root, File>::read(
                 self.path(),
                 self.state.clone(),
                 self.roots.context(),
@@ -684,7 +689,7 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn last_key(&self) -> Result<Option<Buffer<'static>>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = TreeFile::<Root, F>::read(
+            let mut tree = TreeFile::<Root, File>::read(
                 self.path(),
                 self.state.clone(),
                 self.roots.context(),
@@ -699,7 +704,7 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn last(&self) -> Result<Option<(Buffer<'static>, Buffer<'static>)>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = TreeFile::<Root, F>::read(
+            let mut tree = TreeFile::<Root, File>::read(
                 self.path(),
                 self.state.clone(),
                 self.roots.context(),
@@ -717,7 +722,7 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
     /// See [`TreeFile::compact()`](crate::tree::TreeFile::compact) for more
     /// information.
     pub fn compact(&self) -> Result<(), Error> {
-        let tree = TreeFile::<Root, F>::read(
+        let tree = TreeFile::<Root, File>::read(
             self.path(),
             self.state.clone(),
             self.roots.context(),
@@ -734,12 +739,12 @@ impl<Root: tree::Root, F: ManagedFile> Tree<Root, F> {
     }
 }
 
-/// An error that could come from user code or Roots.
+/// An error that could come from user code or Nebari.
 #[derive(thiserror::Error, Debug)]
-pub enum AbortError<U: Display + Debug> {
-    /// An error unrelated to Roots occurred.
+pub enum AbortError<CallerError: Display + Debug> {
+    /// An error unrelated to Nebari occurred.
     #[error("other error: {0}")]
-    Other(U),
+    Other(CallerError),
     /// An error from Roots occurred.
     #[error("database error: {0}")]
     Nebari(#[from] Error),
@@ -758,20 +763,20 @@ impl AbortError<Infallible> {
 
 /// A thread pool that commits transactions to disk in parallel.
 #[derive(Debug)]
-pub struct ThreadPool<F>
+pub struct ThreadPool<File>
 where
-    F: ManagedFile,
+    File: ManagedFile,
 {
-    sender: flume::Sender<ThreadCommit<F>>,
-    receiver: flume::Receiver<ThreadCommit<F>>,
+    sender: flume::Sender<ThreadCommit<File>>,
+    receiver: flume::Receiver<ThreadCommit<File>>,
     thread_count: Arc<AtomicU16>,
 }
 
-impl<F: ManagedFile> ThreadPool<F> {
+impl<File: ManagedFile> ThreadPool<File> {
     fn commit_trees(
         &self,
-        mut trees: Vec<Box<dyn AnyTransactionTree<F>>>,
-    ) -> Result<Vec<Box<dyn AnyTransactionTree<F>>>, Error> {
+        mut trees: Vec<Box<dyn AnyTransactionTree<File>>>,
+    ) -> Result<Vec<Box<dyn AnyTransactionTree<File>>>, Error> {
         static CPU_COUNT: Lazy<usize> = Lazy::new(num_cpus::get);
 
         // If we only have one tree, there's no reason to split IO across
@@ -829,7 +834,7 @@ impl<F: ManagedFile> ThreadPool<F> {
     }
 }
 
-impl<F: ManagedFile> Clone for ThreadPool<F> {
+impl<File: ManagedFile> Clone for ThreadPool<File> {
     fn clone(&self) -> Self {
         Self {
             sender: self.sender.clone(),
@@ -839,7 +844,7 @@ impl<F: ManagedFile> Clone for ThreadPool<F> {
     }
 }
 
-impl<F: ManagedFile> Default for ThreadPool<F> {
+impl<File: ManagedFile> Default for ThreadPool<File> {
     fn default() -> Self {
         let (sender, receiver) = flume::unbounded();
         Self {
@@ -851,7 +856,7 @@ impl<F: ManagedFile> Default for ThreadPool<F> {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn transaction_commit_thread<F: ManagedFile>(receiver: flume::Receiver<ThreadCommit<F>>) {
+fn transaction_commit_thread<File: ManagedFile>(receiver: flume::Receiver<ThreadCommit<File>>) {
     while let Ok(ThreadCommit {
         mut tree,
         completion_sender,
@@ -862,12 +867,12 @@ fn transaction_commit_thread<F: ManagedFile>(receiver: flume::Receiver<ThreadCom
     }
 }
 
-struct ThreadCommit<F>
+struct ThreadCommit<File>
 where
-    F: ManagedFile,
+    File: ManagedFile,
 {
-    tree: Box<dyn AnyTransactionTree<F>>,
-    completion_sender: Sender<Result<Box<dyn AnyTransactionTree<F>>, Error>>,
+    tree: Box<dyn AnyTransactionTree<File>>,
+    completion_sender: Sender<Result<Box<dyn AnyTransactionTree<File>>, Error>>,
 }
 
 fn catch_compaction_and_retry<R, F: Fn() -> Result<R, Error>>(func: F) -> Result<R, Error> {
@@ -875,7 +880,7 @@ fn catch_compaction_and_retry<R, F: Fn() -> Result<R, Error>>(func: F) -> Result
         match func() {
             Ok(result) => return Ok(result),
             Err(error) => {
-                if matches!(error.kind, ErrorKind::DatabaseCompacted) {
+                if matches!(error.kind, ErrorKind::TreeCompacted) {
                     continue;
                 }
 
@@ -896,7 +901,7 @@ fn catch_compaction_and_retry_abortable<
         match func() {
             Ok(result) => return Ok(result),
             Err(AbortError::Nebari(error)) => {
-                if matches!(error.kind, ErrorKind::DatabaseCompacted) {
+                if matches!(error.kind, ErrorKind::TreeCompacted) {
                     continue;
                 }
 
@@ -918,9 +923,9 @@ mod tests {
         tree::{Root, UnversionedTreeRoot},
     };
 
-    fn basic_get_set<F: ManagedFile>() {
+    fn basic_get_set<File: ManagedFile>() {
         let tempdir = tempdir().unwrap();
-        let roots = Config::<F>::new(tempdir.path()).open().unwrap();
+        let roots = Config::<File>::new(tempdir.path()).open().unwrap();
 
         let tree = roots.tree::<VersionedTreeRoot, _>("test").unwrap();
         tree.set(b"test", b"value").unwrap();

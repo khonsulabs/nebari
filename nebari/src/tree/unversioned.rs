@@ -39,25 +39,24 @@ const MAX_ORDER: usize = 1000;
 pub struct UnversionedTreeRoot {
     /// The transaction ID of the tree root. If this transaction ID isn't
     /// present in the transaction log, this root should not be trusted.
-    pub(crate) transaction_id: Option<u64>,
+    pub transaction_id: Option<u64>,
     /// The by-id B-Tree.
-    pub(crate) by_id_root: BTreeEntry<UnversionedByIdIndex, ByIdStats>,
+    pub by_id_root: BTreeEntry<UnversionedByIdIndex, ByIdStats>,
 }
 
 impl UnversionedTreeRoot {
-    fn modify_id_root<'a, 'w, F: ManagedFile>(
+    fn modify_id_root<'a, 'w, File: ManagedFile>(
         &'a mut self,
         mut modification: Modification<'_, Buffer<'static>>,
-        writer: &'a mut PagedWriter<'w, F>,
+        writer: &'a mut PagedWriter<'w, File>,
     ) -> Result<(), Error> {
         modification.reverse()?;
 
-        let total_documents =
-            self.by_id_root.stats().total_documents() + modification.keys.len() as u64;
-        let by_id_order = dynamic_order::<MAX_ORDER>(total_documents);
+        let total_keys = self.by_id_root.stats().total_keys() + modification.keys.len() as u64;
+        let by_id_order = dynamic_order::<MAX_ORDER>(total_keys);
         let minimum_children = by_id_order / 2 - 1;
         let minimum_children =
-            minimum_children.min(usize::try_from(total_documents).unwrap_or(usize::MAX));
+            minimum_children.min(usize::try_from(total_keys).unwrap_or(usize::MAX));
 
         while !modification.keys.is_empty() {
             match self.by_id_root.modify(
@@ -69,15 +68,15 @@ impl UnversionedTreeRoot {
                               value: Option<&Buffer<'static>>,
                               _existing_index,
                               _changes,
-                              writer: &mut PagedWriter<'_, F>| {
+                              writer: &mut PagedWriter<'_, File>| {
                         if let Some(value) = value {
-                            let new_position = writer.write_chunk(value, false)?;
+                            let position = writer.write_chunk(value, false)?;
                             // write_chunk errors if it can't fit within a u32
                             #[allow(clippy::cast_possible_truncation)]
-                            let document_size = value.len() as u32;
+                            let value_length = value.len() as u32;
                             Ok(KeyOperation::Set(UnversionedByIdIndex {
-                                document_size,
-                                position: new_position,
+                                value_length,
+                                position,
                             }))
                         } else {
                             Ok(KeyOperation::Remove)
@@ -109,7 +108,7 @@ impl Root for UnversionedTreeRoot {
     const HEADER: PageHeader = PageHeader::UnversionedHeader;
 
     fn count(&self) -> u64 {
-        self.by_id_root.stats().alive_documents
+        self.by_id_root.stats().alive_keys
     }
 
     fn initialized(&self) -> bool {
@@ -145,9 +144,9 @@ impl Root for UnversionedTreeRoot {
         })
     }
 
-    fn serialize<F: ManagedFile>(
+    fn serialize<File: ManagedFile>(
         &mut self,
-        paged_writer: &mut PagedWriter<'_, F>,
+        paged_writer: &mut PagedWriter<'_, File>,
         mut output: &mut Vec<u8>,
     ) -> Result<(), Error> {
         output.write_u64::<BigEndian>(
@@ -170,10 +169,10 @@ impl Root for UnversionedTreeRoot {
         self.transaction_id.unwrap_or_default()
     }
 
-    fn modify<'a, 'w, F: ManagedFile>(
-        &'a mut self,
+    fn modify<File: ManagedFile>(
+        &mut self,
         modification: Modification<'_, Buffer<'static>>,
-        writer: &'a mut PagedWriter<'w, F>,
+        writer: &mut PagedWriter<'_, File>,
     ) -> Result<(), Error> {
         let transaction_id = modification.transaction_id;
 
@@ -186,12 +185,12 @@ impl Root for UnversionedTreeRoot {
         Ok(())
     }
 
-    fn get_multiple<F: ManagedFile, KeyEvaluator, KeyReader>(
+    fn get_multiple<File: ManagedFile, KeyEvaluator, KeyReader>(
         &self,
         keys: &mut KeyRange<'_>,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut F,
+        file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
@@ -231,18 +230,25 @@ impl Root for UnversionedTreeRoot {
         Ok(())
     }
 
-    fn scan<'k, E: Display + Debug, F: ManagedFile, KeyRangeBounds, KeyEvaluator, KeyReader>(
+    fn scan<
+        'keys,
+        CallerError: Display + Debug,
+        File: ManagedFile,
+        KeyRangeBounds,
+        KeyEvaluator,
+        KeyReader,
+    >(
         &self,
         range: &KeyRangeBounds,
-        args: &mut ScanArgs<Buffer<'static>, E, KeyEvaluator, KeyReader>,
-        file: &mut F,
+        args: &mut ScanArgs<Buffer<'static>, CallerError, KeyEvaluator, KeyReader>,
+        file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
-    ) -> Result<(), AbortError<E>>
+    ) -> Result<(), AbortError<CallerError>>
     where
         KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<E>>,
-        KeyRangeBounds: RangeBounds<Buffer<'k>> + Debug,
+        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
     {
         let mut positions_to_read = Vec::new();
         self.by_id_root.scan(
@@ -276,12 +282,12 @@ impl Root for UnversionedTreeRoot {
         Ok(())
     }
 
-    fn copy_data_to<F: ManagedFile>(
+    fn copy_data_to<File: ManagedFile>(
         &mut self,
         include_nodes: bool,
-        file: &mut F,
+        file: &mut File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_, F>,
+        writer: &mut PagedWriter<'_, File>,
         vault: Option<&dyn Vault>,
     ) -> Result<(), Error> {
         let mut scratch = Vec::new();

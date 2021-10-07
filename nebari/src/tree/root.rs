@@ -30,8 +30,11 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     fn count(&self) -> u64;
 
     /// Returns a reference to a named tree that contains this type of root.
-    fn tree<F: ManagedFile>(name: impl Into<Cow<'static, str>>) -> TreeRoot<F> {
-        TreeRoot(name.into(), Box::new(TreeRootInner::<F, Self>(PhantomData)))
+    fn tree<File: ManagedFile>(name: impl Into<Cow<'static, str>>) -> TreeRoot<File> {
+        TreeRoot(
+            name.into(),
+            Box::new(TreeRootInner::<File, Self>(PhantomData)),
+        )
     }
 
     /// Returns true if the root needs to be saved.
@@ -46,9 +49,9 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
 
     /// Serialize the root and return the bytes. Writes any additional data to
     /// `paged_writer` in the process of serialization.
-    fn serialize<F: ManagedFile>(
+    fn serialize<File: ManagedFile>(
         &mut self,
-        paged_writer: &mut PagedWriter<'_, F>,
+        paged_writer: &mut PagedWriter<'_, File>,
         output: &mut Vec<u8>,
     ) -> Result<(), Error>;
 
@@ -59,10 +62,10 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     fn transaction_id(&self) -> u64;
 
     /// Modifies the tree.
-    fn modify<'a, 'w, F: ManagedFile>(
+    fn modify<'a, 'w, File: ManagedFile>(
         &'a mut self,
         modification: Modification<'_, Buffer<'static>>,
-        writer: &'a mut PagedWriter<'w, F>,
+        writer: &'a mut PagedWriter<'w, File>,
     ) -> Result<(), Error>;
 
     /// Iterates over the tree looking for `keys`. `keys` must be sorted.
@@ -70,12 +73,12 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     /// decisions on how to handle each key. `key_reader` will be invoked for
     /// each key that is requested to be read, but it might be invoked at a
     /// later time and in a different order.
-    fn get_multiple<F: ManagedFile, KeyEvaluator, KeyReader>(
+    fn get_multiple<File: ManagedFile, KeyEvaluator, KeyReader>(
         &self,
         keys: &mut KeyRange<'_>,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut F,
+        file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
@@ -87,36 +90,43 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     /// it is found, allowing for decisions on how to handle each key.
     /// `args.key_reader` will be invoked for each key that is requested to be read,
     /// but it might be invoked at a later time and in a different order.
-    fn scan<'k, E: Display + Debug, F: ManagedFile, KeyRangeBounds, KeyEvaluator, KeyReader>(
+    fn scan<
+        'keys,
+        CallerError: Display + Debug,
+        File: ManagedFile,
+        KeyRangeBounds,
+        KeyEvaluator,
+        KeyReader,
+    >(
         &self,
         range: &KeyRangeBounds,
-        args: &mut ScanArgs<Buffer<'static>, E, KeyEvaluator, KeyReader>,
-        file: &mut F,
+        args: &mut ScanArgs<Buffer<'static>, CallerError, KeyEvaluator, KeyReader>,
+        file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
-    ) -> Result<(), AbortError<E>>
+    ) -> Result<(), AbortError<CallerError>>
     where
         KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<E>>,
-        KeyRangeBounds: RangeBounds<Buffer<'k>> + Debug;
+        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug;
 
     /// Copies all data from `file` into `writer`, updating `self` with the new
     /// file positions.
-    fn copy_data_to<F: ManagedFile>(
+    fn copy_data_to<File: ManagedFile>(
         &mut self,
         include_nodes: bool,
-        file: &mut F,
+        file: &mut File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_, F>,
+        writer: &mut PagedWriter<'_, File>,
         vault: Option<&dyn Vault>,
     ) -> Result<(), Error>;
 }
 
 /// A named tree root.
-pub struct TreeRoot<F: ManagedFile>(Cow<'static, str>, Box<dyn AnyTreeRootInner<F>>);
-struct TreeRootInner<F: ManagedFile, R: Root>(PhantomData<(F, R)>);
+pub struct TreeRoot<File: ManagedFile>(Cow<'static, str>, Box<dyn AnyTreeRootInner<File>>);
+struct TreeRootInner<File: ManagedFile, R: Root>(PhantomData<(File, R)>);
 
-trait AnyTreeRootInner<F: ManagedFile>: Any {
+trait AnyTreeRootInner<File: ManagedFile>: Any {
     fn as_any(&self) -> &dyn Any
     where
         Self: Sized,
@@ -129,12 +139,12 @@ trait AnyTreeRootInner<F: ManagedFile>: Any {
         transaction_id: u64,
         file_path: &Path,
         state: &dyn AnyTreeState,
-        context: &Context<F::Manager>,
-        transactions: Option<&TransactionManager<F::Manager>>,
-    ) -> Result<Box<dyn AnyTransactionTree<F>>, Error>;
+        context: &Context<File::Manager>,
+        transactions: Option<&TransactionManager<File::Manager>>,
+    ) -> Result<Box<dyn AnyTransactionTree<File>>, Error>;
 }
 
-impl<F: ManagedFile, R: Root> AnyTreeRootInner<F> for TreeRootInner<F, R> {
+impl<File: ManagedFile, R: Root> AnyTreeRootInner<File> for TreeRootInner<File, R> {
     fn default_state(&self) -> Box<dyn AnyTreeState> {
         Box::new(State::<R>::default())
     }
@@ -144,9 +154,9 @@ impl<F: ManagedFile, R: Root> AnyTreeRootInner<F> for TreeRootInner<F, R> {
         transaction_id: u64,
         file_path: &Path,
         state: &dyn AnyTreeState,
-        context: &Context<F::Manager>,
-        transactions: Option<&TransactionManager<F::Manager>>,
-    ) -> Result<Box<dyn AnyTransactionTree<F>>, Error> {
+        context: &Context<File::Manager>,
+        transactions: Option<&TransactionManager<File::Manager>>,
+    ) -> Result<Box<dyn AnyTransactionTree<File>>, Error> {
         let tree = TreeFile::write(
             file_path,
             state.as_any().downcast_ref::<State<R>>().unwrap().clone(),
@@ -161,7 +171,7 @@ impl<F: ManagedFile, R: Root> AnyTreeRootInner<F> for TreeRootInner<F, R> {
     }
 }
 
-impl<F: ManagedFile> TreeRoot<F> {
+impl<File: ManagedFile> TreeRoot<File> {
     /// Returns the name of the tree.
     #[must_use]
     pub fn name(&self) -> &str {
@@ -180,9 +190,9 @@ impl<F: ManagedFile> TreeRoot<F> {
         transaction_id: u64,
         file_path: &Path,
         state: &dyn AnyTreeState,
-        context: &Context<F::Manager>,
-        transactions: Option<&TransactionManager<F::Manager>>,
-    ) -> Result<Box<dyn AnyTransactionTree<F>>, Error> {
+        context: &Context<File::Manager>,
+        transactions: Option<&TransactionManager<File::Manager>>,
+    ) -> Result<Box<dyn AnyTransactionTree<File>>, Error> {
         self.1
             .begin_transaction(transaction_id, file_path, state, context, transactions)
     }

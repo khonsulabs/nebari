@@ -414,7 +414,6 @@ where
                 }
                 ChangeResult::Remove => {
                     any_changes = true;
-                    last_index = last_index.saturating_sub(1);
                 }
                 ChangeResult::Changed => any_changes = true,
             }

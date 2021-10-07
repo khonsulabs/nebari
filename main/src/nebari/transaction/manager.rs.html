@@ -319,16 +319,16 @@
 
 <span class="doccomment">/// A shared [`TransactionLog`] manager. Allows multiple threads to interact with a single transaction log.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Clone</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">TransactionManager</span><span class="op">&lt;</span><span class="ident">M</span>: <span class="ident">FileManager</span><span class="op">&gt;</span> {
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">TransactionManager</span><span class="op">&lt;</span><span class="ident">Manager</span>: <span class="ident">FileManager</span><span class="op">&gt;</span> {
     <span class="ident">state</span>: <span class="ident">State</span>,
     <span class="ident">transaction_sender</span>: <span class="ident">flume::Sender</span><span class="op">&lt;</span>(<span class="ident">TransactionHandle</span>, <span class="ident">flume::Sender</span><span class="op">&lt;</span><span class="ident">TreeLocks</span><span class="op">&gt;</span>)<span class="op">&gt;</span>,
-    <span class="ident">context</span>: <span class="ident">Context</span><span class="op">&lt;</span><span class="ident">M</span><span class="op">&gt;</span>,
+    <span class="ident">context</span>: <span class="ident">Context</span><span class="op">&lt;</span><span class="ident">Manager</span><span class="op">&gt;</span>,
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">M</span>: <span class="ident">FileManager</span><span class="op">&gt;</span> <span class="ident">TransactionManager</span><span class="op">&lt;</span><span class="ident">M</span><span class="op">&gt;</span> {
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">Manager</span>: <span class="ident">FileManager</span><span class="op">&gt;</span> <span class="ident">TransactionManager</span><span class="op">&lt;</span><span class="ident">Manager</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Spawns a new transaction manager. The transaction manager runs its own</span>
     <span class="doccomment">/// thread that writes to the transaction log.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">spawn</span>(<span class="ident">directory</span>: <span class="kw-2">&amp;</span><span class="ident">Path</span>, <span class="ident">context</span>: <span class="ident">Context</span><span class="op">&lt;</span><span class="ident">M</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">spawn</span>(<span class="ident">directory</span>: <span class="kw-2">&amp;</span><span class="ident">Path</span>, <span class="ident">context</span>: <span class="ident">Context</span><span class="op">&lt;</span><span class="ident">Manager</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">transaction_sender</span>, <span class="ident">receiver</span>) <span class="op">=</span> <span class="ident">flume::bounded</span>(<span class="number">32</span>);
         <span class="kw">let</span> <span class="ident">log_path</span> <span class="op">=</span> <span class="self">Self</span><span class="ident">::log_path</span>(<span class="ident">directory</span>);
 
@@ -337,7 +337,7 @@
         <span class="ident">std::thread::Builder::new</span>()
             .<span class="ident">name</span>(<span class="ident">String::from</span>(<span class="string">&quot;nebari-txlog&quot;</span>))
             .<span class="ident">spawn</span>(<span class="kw">move</span> <span class="op">|</span><span class="op">|</span> {
-                <span class="ident">transaction_writer_thread</span>::<span class="op">&lt;</span><span class="ident">M::File</span><span class="op">&gt;</span>(
+                <span class="ident">transaction_writer_thread</span>::<span class="op">&lt;</span><span class="ident">Manager::File</span><span class="op">&gt;</span>(
                     <span class="ident">state_sender</span>,
                     <span class="ident">log_path</span>,
                     <span class="ident">receiver</span>,
@@ -376,7 +376,7 @@
         <span class="ident">range</span>: <span class="kw">impl</span> <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">callback</span>: <span class="ident">Callback</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">log</span> <span class="op">=</span> <span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">M::File</span><span class="op">&gt;</span><span class="ident">::read</span>(
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">log</span> <span class="op">=</span> <span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">Manager::File</span><span class="op">&gt;</span><span class="ident">::read</span>(
             <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">path</span>(),
             <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">clone</span>(),
             <span class="self">self</span>.<span class="ident">context</span>.<span class="ident">clone</span>(),
@@ -428,7 +428,7 @@
     }
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">M</span>: <span class="ident">FileManager</span><span class="op">&gt;</span> <span class="ident">Deref</span> <span class="kw">for</span> <span class="ident">TransactionManager</span><span class="op">&lt;</span><span class="ident">M</span><span class="op">&gt;</span> {
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">Manager</span>: <span class="ident">FileManager</span><span class="op">&gt;</span> <span class="ident">Deref</span> <span class="kw">for</span> <span class="ident">TransactionManager</span><span class="op">&lt;</span><span class="ident">Manager</span><span class="op">&gt;</span> {
     <span class="kw">type</span> <span class="ident">Target</span> <span class="op">=</span> <span class="ident">State</span>;
 
     <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="self">Self</span><span class="ident">::Target</span> {
@@ -438,23 +438,23 @@
 
 <span class="comment">// TODO: when an error happens, we should try to recover.</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::needless_pass_by_value</span>)]</span>
-<span class="kw">fn</span> <span class="ident">transaction_writer_thread</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+<span class="kw">fn</span> <span class="ident">transaction_writer_thread</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
     <span class="ident">state_sender</span>: <span class="ident">flume::Sender</span><span class="op">&lt;</span><span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">State</span>, <span class="ident">Error</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">log_path</span>: <span class="ident">PathBuf</span>,
     <span class="ident">transactions</span>: <span class="ident">flume::Receiver</span><span class="op">&lt;</span>(<span class="ident">TransactionHandle</span>, <span class="ident">flume::Sender</span><span class="op">&lt;</span><span class="ident">TreeLocks</span><span class="op">&gt;</span>)<span class="op">&gt;</span>,
-    <span class="ident">context</span>: <span class="ident">Context</span><span class="op">&lt;</span><span class="ident">F::Manager</span><span class="op">&gt;</span>,
+    <span class="ident">context</span>: <span class="ident">Context</span><span class="op">&lt;</span><span class="ident">File::Manager</span><span class="op">&gt;</span>,
 ) {
     <span class="kw">const</span> <span class="ident">BATCH</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">16</span>;
 
     <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State::from_path</span>(<span class="kw-2">&amp;</span><span class="ident">log_path</span>);
-    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span> <span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">F</span><span class="op">&gt;</span><span class="ident">::initialize_state</span>(<span class="kw-2">&amp;</span><span class="ident">state</span>, <span class="kw-2">&amp;</span><span class="ident">context</span>) {
+    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span> <span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="ident">::initialize_state</span>(<span class="kw-2">&amp;</span><span class="ident">state</span>, <span class="kw-2">&amp;</span><span class="ident">context</span>) {
         <span class="ident">drop</span>(<span class="ident">state_sender</span>.<span class="ident">send</span>(<span class="prelude-val">Err</span>(<span class="ident">err</span>)));
         <span class="kw">return</span>;
     }
 
     <span class="ident">drop</span>(<span class="ident">state_sender</span>.<span class="ident">send</span>(<span class="prelude-val">Ok</span>(<span class="ident">state</span>.<span class="ident">clone</span>())));
 
-    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">log</span> <span class="op">=</span> <span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">F</span><span class="op">&gt;</span><span class="ident">::open</span>(<span class="kw-2">&amp;</span><span class="ident">log_path</span>, <span class="ident">state</span>, <span class="ident">context</span>).<span class="ident">unwrap</span>();
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">log</span> <span class="op">=</span> <span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="ident">::open</span>(<span class="kw-2">&amp;</span><span class="ident">log_path</span>, <span class="ident">state</span>, <span class="ident">context</span>).<span class="ident">unwrap</span>();
 
     <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">transaction</span>) <span class="op">=</span> <span class="ident">transactions</span>.<span class="ident">recv</span>() {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction_batch</span> <span class="op">=</span> <span class="ident">Vec::with_capacity</span>(<span class="ident">BATCH</span>);

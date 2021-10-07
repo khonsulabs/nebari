@@ -177,9 +177,6 @@
 <span id="177">177</span>
 <span id="178">178</span>
 <span id="179">179</span>
-<span id="180">180</span>
-<span id="181">181</span>
-<span id="182">182</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std::fmt::Display</span>;
 
@@ -305,17 +302,14 @@
     <span class="doccomment">/// A multi-key operation did not have its keys ordered.</span>
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;multi-key operation did not have its keys ordered&quot;</span>)]</span>
     <span class="ident">KeysNotOrdered</span>,
-    <span class="doccomment">/// A document ID was too many bytes.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;document id too large&quot;</span>)]</span>
-    <span class="ident">IdTooLarge</span>,
     <span class="doccomment">/// An internal error occurred. These errors are not intended to be</span>
     <span class="doccomment">/// recoverable and represent some internal error condition.</span>
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;an internal error occurred: {0}&quot;</span>)]</span>
     <span class="ident">Internal</span>(<span class="ident">InternalError</span>),
-    <span class="doccomment">/// The underlying database file has been compacted, and the request cannot</span>
+    <span class="doccomment">/// The underlying tree file has been compacted, and the request cannot</span>
     <span class="doccomment">/// be completed. Reopen the file and try again.</span>
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;the file has been compacted. reopen the file and try again&quot;</span>)]</span>
-    <span class="ident">DatabaseCompacted</span>,
+    <span class="ident">TreeCompacted</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">ErrorKind</span> {

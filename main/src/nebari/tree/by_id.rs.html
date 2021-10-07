@@ -187,110 +187,136 @@
 <span id="187">187</span>
 <span id="188">188</span>
 <span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">byteorder</span>::{<span class="ident">BigEndian</span>, <span class="ident">ReadBytesExt</span>, <span class="ident">WriteBytesExt</span>};
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">btree_entry::Reducer</span>, <span class="ident">BinarySerialization</span>, <span class="ident">PagedWriter</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">io::ManagedFile</span>, <span class="ident">Buffer</span>};
 
+<span class="doccomment">/// The index stored within [`VersionedTreeRoot::by_id_root`](crate::tree::VersionedTreeRoot::by_id_root).</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">VersionedByIdIndex</span> {
+    <span class="doccomment">/// The unique sequence id generated when writing the value to the file.</span>
     <span class="kw">pub</span> <span class="ident">sequence_id</span>: <span class="ident">u64</span>,
-    <span class="kw">pub</span> <span class="ident">document_size</span>: <span class="ident">u32</span>,
+    <span class="doccomment">/// The size of the value stored on disk.</span>
+    <span class="kw">pub</span> <span class="ident">value_length</span>: <span class="ident">u32</span>,
+    <span class="doccomment">/// The position of the value on disk.</span>
     <span class="kw">pub</span> <span class="ident">position</span>: <span class="ident">u64</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">BinarySerialization</span> <span class="kw">for</span> <span class="ident">VersionedByIdIndex</span> {
-    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
-        <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">F</span><span class="op">&gt;</span>,
+        <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">sequence_id</span>)<span class="question-mark">?</span>;
-        <span class="ident">writer</span>.<span class="ident">write_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">document_size</span>)<span class="question-mark">?</span>;
+        <span class="ident">writer</span>.<span class="ident">write_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">value_length</span>)<span class="question-mark">?</span>;
         <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">position</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">20</span>)
     }
 
     <span class="kw">fn</span> <span class="ident">deserialize_from</span>(<span class="ident">reader</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>, <span class="ident">_current_order</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">sequence_id</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">document_size</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">value_length</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">position</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
             <span class="ident">sequence_id</span>,
-            <span class="ident">document_size</span>,
+            <span class="ident">value_length</span>,
             <span class="ident">position</span>,
         })
     }
 }
 
+<span class="doccomment">/// The index stored within [`UnversionedTreeRoot::by_id_root`](crate::tree::UnversionedTreeRoot::by_id_root).</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">UnversionedByIdIndex</span> {
-    <span class="kw">pub</span> <span class="ident">document_size</span>: <span class="ident">u32</span>,
+    <span class="doccomment">/// The size of the value stored on disk.</span>
+    <span class="kw">pub</span> <span class="ident">value_length</span>: <span class="ident">u32</span>,
+    <span class="doccomment">/// The position of the value on disk.</span>
     <span class="kw">pub</span> <span class="ident">position</span>: <span class="ident">u64</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">BinarySerialization</span> <span class="kw">for</span> <span class="ident">UnversionedByIdIndex</span> {
-    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
-        <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">F</span><span class="op">&gt;</span>,
+        <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="ident">writer</span>.<span class="ident">write_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">document_size</span>)<span class="question-mark">?</span>;
+        <span class="ident">writer</span>.<span class="ident">write_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">value_length</span>)<span class="question-mark">?</span>;
         <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">position</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">12</span>)
     }
 
     <span class="kw">fn</span> <span class="ident">deserialize_from</span>(<span class="ident">reader</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>, <span class="ident">_current_order</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">document_size</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">value_length</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">position</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
-            <span class="ident">document_size</span>,
+            <span class="ident">value_length</span>,
             <span class="ident">position</span>,
         })
     }
 }
 
+<span class="doccomment">/// The reduced index of both [`VersionedByIdIndex`] and [`UnversionedByIdIndex`]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ByIdStats</span> {
-    <span class="kw">pub</span> <span class="ident">alive_documents</span>: <span class="ident">u64</span>,
-    <span class="kw">pub</span> <span class="ident">deleted_documents</span>: <span class="ident">u64</span>,
-    <span class="kw">pub</span> <span class="ident">total_size</span>: <span class="ident">u64</span>,
+    <span class="doccomment">/// The number of keys that have values stored within them.</span>
+    <span class="kw">pub</span> <span class="ident">alive_keys</span>: <span class="ident">u64</span>,
+    <span class="doccomment">/// The number of keys that no longer have values stored within them.</span>
+    <span class="kw">pub</span> <span class="ident">deleted_keys</span>: <span class="ident">u64</span>,
+    <span class="doccomment">/// The total number of bytes stored on disk associated with currently-alive values.</span>
+    <span class="kw">pub</span> <span class="ident">total_indexed_bytes</span>: <span class="ident">u64</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">ByIdStats</span> {
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">total_documents</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
-        <span class="self">self</span>.<span class="ident">alive_documents</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">deleted_documents</span>
+    <span class="doccomment">/// Returns the total number of keys regardless of whether data is stored within them.</span>
+    <span class="attribute">#[<span class="ident">must_use</span>]</span>
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">total_keys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+        <span class="self">self</span>.<span class="ident">alive_keys</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">deleted_keys</span>
     }
 }
 
 <span class="kw">impl</span> <span class="ident">BinarySerialization</span> <span class="kw">for</span> <span class="ident">ByIdStats</span> {
-    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
-        <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">F</span><span class="op">&gt;</span>,
+        <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">alive_documents</span>)<span class="question-mark">?</span>;
-        <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">deleted_documents</span>)<span class="question-mark">?</span>;
-        <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">total_size</span>)<span class="question-mark">?</span>;
+        <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">alive_keys</span>)<span class="question-mark">?</span>;
+        <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">deleted_keys</span>)<span class="question-mark">?</span>;
+        <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">total_indexed_bytes</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">24</span>)
     }
 
     <span class="kw">fn</span> <span class="ident">deserialize_from</span>(<span class="ident">reader</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>, <span class="ident">_current_order</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">alive_documents</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">deleted_documents</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">total_size</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">alive_keys</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">deleted_keys</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">total_indexed_bytes</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
-            <span class="ident">alive_documents</span>,
-            <span class="ident">deleted_documents</span>,
-            <span class="ident">total_size</span>,
+            <span class="ident">alive_keys</span>,
+            <span class="ident">deleted_keys</span>,
+            <span class="ident">total_indexed_bytes</span>,
         })
     }
 }
 
 <span class="kw">impl</span> <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">VersionedByIdIndex</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">ByIdStats</span> {
-    <span class="kw">fn</span> <span class="ident">node_count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
-        <span class="self">self</span>.<span class="ident">alive_documents</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">deleted_documents</span>
+    <span class="kw">fn</span> <span class="ident">key_count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+        <span class="self">self</span>.<span class="ident">alive_keys</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">deleted_keys</span>
     }
 
     <span class="kw">fn</span> <span class="ident">reduce</span>(<span class="ident">values</span>: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><span class="ident">VersionedByIdIndex</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
@@ -303,8 +329,8 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">UnversionedByIdIndex</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">ByIdStats</span> {
-    <span class="kw">fn</span> <span class="ident">node_count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
-        <span class="self">self</span>.<span class="ident">alive_documents</span>
+    <span class="kw">fn</span> <span class="ident">key_count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+        <span class="self">self</span>.<span class="ident">alive_keys</span>
     }
 
     <span class="kw">fn</span> <span class="ident">reduce</span>(<span class="ident">values</span>: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><span class="ident">UnversionedByIdIndex</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
@@ -317,12 +343,12 @@
 }
 
 <span class="kw">fn</span> <span class="ident">reduce</span>(<span class="ident">values</span>: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><span class="kw">impl</span> <span class="ident">IdIndex</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ByIdStats</span> {
-    <span class="kw">let</span> (<span class="ident">alive_documents</span>, <span class="ident">deleted_documents</span>, <span class="ident">total_size</span>) <span class="op">=</span> <span class="ident">values</span>
+    <span class="kw">let</span> (<span class="ident">alive_keys</span>, <span class="ident">deleted_keys</span>, <span class="ident">total_indexed_bytes</span>) <span class="op">=</span> <span class="ident">values</span>
         .<span class="ident">iter</span>()
         .<span class="ident">map</span>(<span class="op">|</span><span class="ident">index</span><span class="op">|</span> {
             <span class="kw">if</span> <span class="ident">index</span>.<span class="ident">position</span>() <span class="op">&gt;</span> <span class="number">0</span> {
-                <span class="comment">// Alive document</span>
-                (<span class="number">1</span>, <span class="number">0</span>, <span class="ident">u64::from</span>(<span class="ident">index</span>.<span class="ident">document_size</span>()))
+                <span class="comment">// Alive key</span>
+                (<span class="number">1</span>, <span class="number">0</span>, <span class="ident">u64::from</span>(<span class="ident">index</span>.<span class="ident">value_size</span>()))
             } <span class="kw">else</span> {
                 <span class="comment">// Deleted</span>
                 (<span class="number">0</span>, <span class="number">1</span>, <span class="number">0</span>)
@@ -339,20 +365,20 @@
         )
         .<span class="ident">unwrap_or_default</span>();
     <span class="ident">ByIdStats</span> {
-        <span class="ident">alive_documents</span>,
-        <span class="ident">deleted_documents</span>,
-        <span class="ident">total_size</span>,
+        <span class="ident">alive_keys</span>,
+        <span class="ident">deleted_keys</span>,
+        <span class="ident">total_indexed_bytes</span>,
     }
 }
 
 <span class="kw">trait</span> <span class="ident">IdIndex</span> {
-    <span class="kw">fn</span> <span class="ident">document_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span>;
+    <span class="kw">fn</span> <span class="ident">value_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span>;
     <span class="kw">fn</span> <span class="ident">position</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span>;
 }
 
 <span class="kw">impl</span> <span class="ident">IdIndex</span> <span class="kw">for</span> <span class="ident">UnversionedByIdIndex</span> {
-    <span class="kw">fn</span> <span class="ident">document_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span> {
-        <span class="self">self</span>.<span class="ident">document_size</span>
+    <span class="kw">fn</span> <span class="ident">value_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span> {
+        <span class="self">self</span>.<span class="ident">value_length</span>
     }
 
     <span class="kw">fn</span> <span class="ident">position</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
@@ -361,8 +387,8 @@
 }
 
 <span class="kw">impl</span> <span class="ident">IdIndex</span> <span class="kw">for</span> <span class="ident">VersionedByIdIndex</span> {
-    <span class="kw">fn</span> <span class="ident">document_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span> {
-        <span class="self">self</span>.<span class="ident">document_size</span>
+    <span class="kw">fn</span> <span class="ident">value_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span> {
+        <span class="self">self</span>.<span class="ident">value_length</span>
     }
 
     <span class="kw">fn</span> <span class="ident">position</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
@@ -372,9 +398,9 @@
 
 <span class="kw">fn</span> <span class="ident">rereduce</span>(<span class="ident">values</span>: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><span class="ident">ByIdStats</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ByIdStats</span> {
     <span class="ident">ByIdStats</span> {
-        <span class="ident">alive_documents</span>: <span class="ident">values</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">v</span><span class="op">|</span> <span class="ident">v</span>.<span class="ident">alive_documents</span>).<span class="ident">sum</span>(),
-        <span class="ident">deleted_documents</span>: <span class="ident">values</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">v</span><span class="op">|</span> <span class="ident">v</span>.<span class="ident">deleted_documents</span>).<span class="ident">sum</span>(),
-        <span class="ident">total_size</span>: <span class="ident">values</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">v</span><span class="op">|</span> <span class="ident">v</span>.<span class="ident">total_size</span>).<span class="ident">sum</span>(),
+        <span class="ident">alive_keys</span>: <span class="ident">values</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">v</span><span class="op">|</span> <span class="ident">v</span>.<span class="ident">alive_keys</span>).<span class="ident">sum</span>(),
+        <span class="ident">deleted_keys</span>: <span class="ident">values</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">v</span><span class="op">|</span> <span class="ident">v</span>.<span class="ident">deleted_keys</span>).<span class="ident">sum</span>(),
+        <span class="ident">total_indexed_bytes</span>: <span class="ident">values</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">v</span><span class="op">|</span> <span class="ident">v</span>.<span class="ident">total_indexed_bytes</span>).<span class="ident">sum</span>(),
     }
 }
 </pre></div>

@@ -179,6 +179,14 @@
 <span id="179">179</span>
 <span id="180">180</span>
 <span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">byteorder</span>::{<span class="ident">BigEndian</span>, <span class="ident">ReadBytesExt</span>, <span class="ident">WriteBytesExt</span>};
 
@@ -281,6 +289,10 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">VersionedByIdIndex</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">ByIdStats</span> {
+    <span class="kw">fn</span> <span class="ident">node_count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+        <span class="self">self</span>.<span class="ident">alive_documents</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">deleted_documents</span>
+    }
+
     <span class="kw">fn</span> <span class="ident">reduce</span>(<span class="ident">values</span>: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><span class="ident">VersionedByIdIndex</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="ident">reduce</span>(<span class="ident">values</span>)
     }
@@ -291,6 +303,10 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">UnversionedByIdIndex</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">ByIdStats</span> {
+    <span class="kw">fn</span> <span class="ident">node_count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+        <span class="self">self</span>.<span class="ident">alive_documents</span>
+    }
+
     <span class="kw">fn</span> <span class="ident">reduce</span>(<span class="ident">values</span>: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><span class="ident">UnversionedByIdIndex</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="ident">reduce</span>(<span class="ident">values</span>)
     }

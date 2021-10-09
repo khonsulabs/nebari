@@ -77,6 +77,8 @@ pub(crate) mod state;
 mod unversioned;
 mod versioned;
 
+pub(crate) const MAX_ORDER: usize = 1000;
+
 use self::serialization::BinarySerialization;
 pub use self::{
     btree_entry::{BTreeEntry, BTreeNode, KeyOperation, Reducer},
@@ -138,6 +140,7 @@ impl TryFrom<u8> for PageHeader {
 ///   contain. This implementation attempts to grow naturally towards this upper
 ///   limit. Changing this parameter does not automatically rebalance the tree,
 ///   but over time the tree will be updated.
+#[derive(Debug)]
 pub struct TreeFile<Root: root::Root, File: ManagedFile> {
     pub(crate) file: <File::Manager as FileManager>::FileHandle,
     /// The state of the file.
@@ -145,6 +148,20 @@ pub struct TreeFile<Root: root::Root, File: ManagedFile> {
     vault: Option<Arc<dyn Vault>>,
     cache: Option<ChunkCache>,
     scratch: Vec<u8>,
+}
+
+impl<Root: root::Root, File: ManagedFile> Deref for TreeFile<Root, File> {
+    type Target = <File::Manager as FileManager>::FileHandle;
+
+    fn deref(&self) -> &Self::Target {
+        &self.file
+    }
+}
+
+impl<Root: root::Root, File: ManagedFile> DerefMut for TreeFile<Root, File> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.file
+    }
 }
 
 impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {

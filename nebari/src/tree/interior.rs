@@ -131,7 +131,11 @@ impl<
         }
     }
 
-    pub(crate) fn map_loaded_entry<
+    /// Loads the pointed at node, if necessary, and invokes `callback` with the
+    /// loaded node. This is useful in situations where the node isn't needed to
+    /// be accessed mutably.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn map_loaded_entry<
         Output,
         CallerError: Display + Debug,
         File: ManagedFile,

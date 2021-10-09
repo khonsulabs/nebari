@@ -6,6 +6,7 @@
 
 use std::{
     collections::HashMap,
+    fmt::Debug,
     io::{Read, Seek, Write},
     path::{Path, PathBuf},
     sync::{
@@ -29,7 +30,7 @@ pub mod memory;
 /// for a non-uring implementation to be provided as well. This is why the
 /// read/write APIs take ownership of the buffer -- to satisfy the requirements
 /// of tokio-uring.
-pub trait ManagedFile: Send + Sync + Seek + Read + Write + Sized + 'static {
+pub trait ManagedFile: Debug + Send + Sync + Seek + Read + Write + Sized + 'static {
     /// The file manager that synchronizes file access across threads.
     type Manager: FileManager<File = Self>;
 
@@ -52,7 +53,7 @@ pub trait ManagedFile: Send + Sync + Seek + Read + Write + Sized + 'static {
 }
 
 /// A manager that is responsible for controlling write access to a file.
-pub trait FileManager: Send + Sync + Clone + Default + std::fmt::Debug + 'static {
+pub trait FileManager: Send + Sync + Clone + Default + Debug + 'static {
     /// The [`ManagedFile`] that this manager is for.
     type File: ManagedFile<Manager = Self>;
     /// A file handle type, which can have operations executed against it.
@@ -89,7 +90,7 @@ pub trait FileManager: Send + Sync + Clone + Default + std::fmt::Debug + 'static
 }
 
 /// A file that can have operations performed on it.
-pub trait OpenableFile<F: ManagedFile>: Sized + Send + Sync {
+pub trait OpenableFile<F: ManagedFile>: Debug + Sized + Send + Sync {
     /// Returns the id of the file assigned from the file manager.
     fn id(&self) -> Option<u64>;
 

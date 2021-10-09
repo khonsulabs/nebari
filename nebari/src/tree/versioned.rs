@@ -27,13 +27,12 @@ use crate::{
         copy_chunk, dynamic_order,
         key_entry::KeyEntry,
         modify::Operation,
-        PageHeader, Root,
+        PageHeader, Root, MAX_ORDER,
     },
     Buffer, ChunkCache, ErrorKind, Vault,
 };
 
 const UNINITIALIZED_SEQUENCE: u64 = 0;
-const MAX_ORDER: usize = 1000;
 
 /// A versioned B-Tree root. This tree root internally uses two btrees, one to
 /// keep track of all writes using a unique "sequence" ID, and one that keeps

@@ -230,6 +230,7 @@ impl FileManager for StdFileManager {
 }
 
 /// An open [`StdFile`] that belongs to a [`StdFileManager`].
+#[derive(Debug)]
 pub struct OpenStdFile {
     file: Option<StdFile>,
     manager: Option<StdFileManager>,

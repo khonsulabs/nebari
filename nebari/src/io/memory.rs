@@ -243,6 +243,7 @@ impl FileManager for MemoryFileManager {
 }
 
 /// An open [`MemoryFile`] that is owned by a [`MemoryFileManager`].
+#[derive(Debug)]
 pub struct OpenMemoryFile(Arc<Mutex<MemoryFile>>);
 
 impl OpenableFile<MemoryFile> for OpenMemoryFile {

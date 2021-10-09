@@ -322,8 +322,6 @@
 <span id="322">322</span>
 <span id="323">323</span>
 <span id="324">324</span>
-<span id="325">325</span>
-<span id="326">326</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
@@ -352,12 +350,10 @@
         <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">NodeInclusion</span>, <span class="ident">ScanArgs</span>},
         <span class="ident">copy_chunk</span>, <span class="ident">dynamic_order</span>,
         <span class="ident">versioned::ChangeResult</span>,
-        <span class="ident">PageHeader</span>, <span class="ident">Root</span>,
+        <span class="ident">PageHeader</span>, <span class="ident">Root</span>, <span class="ident">MAX_ORDER</span>,
     },
     <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">ErrorKind</span>, <span class="ident">Vault</span>,
 };
-
-<span class="kw">const</span> <span class="ident">MAX_ORDER</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">1000</span>;
 
 <span class="doccomment">/// A versioned B-Tree root. This tree root internally uses two btrees, one to</span>
 <span class="doccomment">/// keep track of all writes using a unique &quot;sequence&quot; ID, and one that keeps</span>

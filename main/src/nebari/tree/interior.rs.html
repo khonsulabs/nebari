@@ -301,6 +301,10 @@
 <span id="301">301</span>
 <span id="302">302</span>
 <span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
@@ -435,7 +439,11 @@
         }
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">map_loaded_entry</span><span class="op">&lt;</span>
+    <span class="doccomment">/// Loads the pointed at node, if necessary, and invokes `callback` with the</span>
+    <span class="doccomment">/// loaded node. This is useful in situations where the node isn&#39;t needed to</span>
+    <span class="doccomment">/// be accessed mutably.</span>
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::missing_panics_doc</span>)]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">map_loaded_entry</span><span class="op">&lt;</span>
         <span class="ident">Output</span>,
         <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
         <span class="ident">File</span>: <span class="ident">ManagedFile</span>,

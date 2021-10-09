@@ -285,6 +285,7 @@
 <span id="285">285</span>
 <span id="286">286</span>
 <span id="287">287</span>
+<span id="288">288</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
@@ -531,6 +532,7 @@
 }
 
 <span class="doccomment">/// An open [`MemoryFile`] that is owned by a [`MemoryFileManager`].</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">OpenMemoryFile</span>(<span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span><span class="op">&gt;</span>);
 
 <span class="kw">impl</span> <span class="ident">OpenableFile</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">OpenMemoryFile</span> {

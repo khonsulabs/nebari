@@ -185,6 +185,7 @@
 <span id="185">185</span>
 <span id="186">186</span>
 <span id="187">187</span>
+<span id="188">188</span>
 </pre><pre class="rust">
 <span class="doccomment">//! IO abstractions for Nebari.</span>
 <span class="doccomment">//!</span>
@@ -194,6 +195,7 @@
 
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
+    <span class="ident">fmt::Debug</span>,
     <span class="ident">io</span>::{<span class="ident">Read</span>, <span class="ident">Seek</span>, <span class="ident">Write</span>},
     <span class="ident">path</span>::{<span class="ident">Path</span>, <span class="ident">PathBuf</span>},
     <span class="ident">sync</span>::{
@@ -217,7 +219,7 @@
 <span class="doccomment">/// for a non-uring implementation to be provided as well. This is why the</span>
 <span class="doccomment">/// read/write APIs take ownership of the buffer -- to satisfy the requirements</span>
 <span class="doccomment">/// of tokio-uring.</span>
-<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">ManagedFile</span>: <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Seek</span> <span class="op">+</span> <span class="ident">Read</span> <span class="op">+</span> <span class="ident">Write</span> <span class="op">+</span> <span class="ident">Sized</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> {
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">ManagedFile</span>: <span class="ident">Debug</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Seek</span> <span class="op">+</span> <span class="ident">Read</span> <span class="op">+</span> <span class="ident">Write</span> <span class="op">+</span> <span class="ident">Sized</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> {
     <span class="doccomment">/// The file manager that synchronizes file access across threads.</span>
     <span class="kw">type</span> <span class="ident">Manager</span>: <span class="ident">FileManager</span><span class="op">&lt;</span><span class="ident">File</span> <span class="op">=</span> <span class="self">Self</span><span class="op">&gt;</span>;
 
@@ -240,7 +242,7 @@
 }
 
 <span class="doccomment">/// A manager that is responsible for controlling write access to a file.</span>
-<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">FileManager</span>: <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Default</span> <span class="op">+</span> <span class="ident">std::fmt::Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> {
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">FileManager</span>: <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Default</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> {
     <span class="doccomment">/// The [`ManagedFile`] that this manager is for.</span>
     <span class="kw">type</span> <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&lt;</span><span class="ident">Manager</span> <span class="op">=</span> <span class="self">Self</span><span class="op">&gt;</span>;
     <span class="doccomment">/// A file handle type, which can have operations executed against it.</span>
@@ -277,7 +279,7 @@
 }
 
 <span class="doccomment">/// A file that can have operations performed on it.</span>
-<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">OpenableFile</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>: <span class="ident">Sized</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> {
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">OpenableFile</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>: <span class="ident">Debug</span> <span class="op">+</span> <span class="ident">Sized</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> {
     <span class="doccomment">/// Returns the id of the file assigned from the file manager.</span>
     <span class="kw">fn</span> <span class="ident">id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>;
 

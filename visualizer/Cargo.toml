@@ -1,0 +1,17 @@
+[package]
+name = "visualizer"
+version = "0.1.0"
+edition = "2018"
+description = "runs a visualization of a TreeFile"
+publish = false
+
+[dependencies]
+nebari = { path = "../nebari" }
+gooey = { git = "https://github.com/khonsulabs/gooey.git", branch = "main", default-features = false, features = [
+    "frontend-kludgine",
+] }
+gooey-canvas = { git = "https://github.com/khonsulabs/gooey-canvas.git", branch = "mouse-events", default-features = false, features = [
+    "frontend-kludgine",
+] }
+parking_lot = "0.11"
+byteorder = "1"

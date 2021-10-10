@@ -322,6 +322,8 @@
 <span id="322">322</span>
 <span id="323">323</span>
 <span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
@@ -350,7 +352,7 @@
         <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">NodeInclusion</span>, <span class="ident">ScanArgs</span>},
         <span class="ident">copy_chunk</span>, <span class="ident">dynamic_order</span>,
         <span class="ident">versioned::ChangeResult</span>,
-        <span class="ident">PageHeader</span>, <span class="ident">Root</span>, <span class="ident">MAX_ORDER</span>,
+        <span class="ident">PageHeader</span>, <span class="ident">Root</span>, <span class="ident">DEFAULT_MAX_ORDER</span>,
     },
     <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">ErrorKind</span>, <span class="ident">Vault</span>,
 };
@@ -372,11 +374,12 @@
         <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="kw-2">mut</span> <span class="ident">modification</span>: <span class="ident">Modification</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;w</span>, <span class="ident">File</span><span class="op">&gt;</span>,
+        <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">modification</span>.<span class="ident">reverse</span>()<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">total_keys</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">stats</span>().<span class="ident">total_keys</span>() <span class="op">+</span> <span class="ident">modification</span>.<span class="ident">keys</span>.<span class="ident">len</span>() <span class="kw">as</span> <span class="ident">u64</span>;
-        <span class="kw">let</span> <span class="ident">by_id_order</span> <span class="op">=</span> <span class="ident">dynamic_order</span>::<span class="op">&lt;</span><span class="ident">MAX_ORDER</span><span class="op">&gt;</span>(<span class="ident">total_keys</span>);
+        <span class="kw">let</span> <span class="ident">by_id_order</span> <span class="op">=</span> <span class="ident">dynamic_order</span>(<span class="ident">total_keys</span>, <span class="ident">max_order</span>);
         <span class="kw">let</span> <span class="ident">minimum_children</span> <span class="op">=</span> <span class="ident">by_id_order</span> <span class="op">/</span> <span class="number">2</span> <span class="op">-</span> <span class="number">1</span>;
         <span class="kw">let</span> <span class="ident">minimum_children</span> <span class="op">=</span>
             <span class="ident">minimum_children</span>.<span class="ident">min</span>(<span class="ident">usize::try_from</span>(<span class="ident">total_keys</span>).<span class="ident">unwrap_or</span>(<span class="ident">usize::MAX</span>));
@@ -459,7 +462,7 @@
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">by_id_bytes</span> <span class="op">=</span> <span class="ident">bytes</span>.<span class="ident">read_bytes</span>(<span class="ident">by_id_size</span>)<span class="question-mark">?</span>.<span class="ident">to_owned</span>();
 
-        <span class="kw">let</span> <span class="ident">by_id_root</span> <span class="op">=</span> <span class="ident">BTreeEntry::deserialize_from</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">by_id_bytes</span>, <span class="ident">MAX_ORDER</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">by_id_root</span> <span class="op">=</span> <span class="ident">BTreeEntry::deserialize_from</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">by_id_bytes</span>, <span class="ident">DEFAULT_MAX_ORDER</span>)<span class="question-mark">?</span>;
 
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
             <span class="ident">transaction_id</span>,
@@ -496,10 +499,11 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">modification</span>: <span class="ident">Modification</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
+        <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">transaction_id</span> <span class="op">=</span> <span class="ident">modification</span>.<span class="ident">transaction_id</span>;
 
-        <span class="self">self</span>.<span class="ident">modify_id_root</span>(<span class="ident">modification</span>, <span class="ident">writer</span>)<span class="question-mark">?</span>;
+        <span class="self">self</span>.<span class="ident">modify_id_root</span>(<span class="ident">modification</span>, <span class="ident">writer</span>, <span class="ident">max_order</span>)<span class="question-mark">?</span>;
 
         <span class="kw">if</span> <span class="ident">transaction_id</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
             <span class="self">self</span>.<span class="ident">transaction_id</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">transaction_id</span>);

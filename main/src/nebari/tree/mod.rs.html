@@ -1730,6 +1730,29 @@
 <span id="1730">1730</span>
 <span id="1731">1731</span>
 <span id="1732">1732</span>
+<span id="1733">1733</span>
+<span id="1734">1734</span>
+<span id="1735">1735</span>
+<span id="1736">1736</span>
+<span id="1737">1737</span>
+<span id="1738">1738</span>
+<span id="1739">1739</span>
+<span id="1740">1740</span>
+<span id="1741">1741</span>
+<span id="1742">1742</span>
+<span id="1743">1743</span>
+<span id="1744">1744</span>
+<span id="1745">1745</span>
+<span id="1746">1746</span>
+<span id="1747">1747</span>
+<span id="1748">1748</span>
+<span id="1749">1749</span>
+<span id="1750">1750</span>
+<span id="1751">1751</span>
+<span id="1752">1752</span>
+<span id="1753">1753</span>
+<span id="1754">1754</span>
+<span id="1755">1755</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Append-only B-Tree implementation</span>
 <span class="doccomment">//!</span>
@@ -1810,7 +1833,7 @@
 <span class="kw">mod</span> <span class="ident">unversioned</span>;
 <span class="kw">mod</span> <span class="ident">versioned</span>;
 
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">const</span> <span class="ident">MAX_ORDER</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">1000</span>;
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">const</span> <span class="ident">DEFAULT_MAX_ORDER</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">1000</span>;
 
 <span class="kw">use</span> <span class="self">self</span><span class="ident">::serialization::BinarySerialization</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::{
@@ -1869,10 +1892,6 @@
 <span class="doccomment">///</span>
 <span class="doccomment">/// ## Generics</span>
 <span class="doccomment">/// - `File`: An [`ManagedFile`] implementor.</span>
-<span class="doccomment">/// - `MAX_ORDER`: The maximum number of children a node in the tree can</span>
-<span class="doccomment">///   contain. This implementation attempts to grow naturally towards this upper</span>
-<span class="doccomment">///   limit. Changing this parameter does not automatically rebalance the tree,</span>
-<span class="doccomment">///   but over time the tree will be updated.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">TreeFile</span><span class="op">&lt;</span><span class="ident">Root</span>: <span class="ident">root::Root</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> {
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="ident">file</span>: <span class="op">&lt;</span><span class="ident">File::Manager</span> <span class="kw">as</span> <span class="ident">FileManager</span><span class="op">&gt;</span><span class="ident">::FileHandle</span>,
@@ -2489,9 +2508,12 @@
 
         <span class="kw">let</span> <span class="ident">modification</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">modification</span>.<span class="ident">take</span>().<span class="ident">unwrap</span>();
         <span class="kw">let</span> <span class="ident">is_transactional</span> <span class="op">=</span> <span class="ident">modification</span>.<span class="ident">transaction_id</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span>;
+        <span class="kw">let</span> <span class="ident">max_order</span> <span class="op">=</span> <span class="ident">active_state</span>.<span class="ident">max_order</span>;
 
         <span class="comment">// Execute the modification</span>
-        <span class="ident">active_state</span>.<span class="ident">root</span>.<span class="ident">modify</span>(<span class="ident">modification</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">data_block</span>)<span class="question-mark">?</span>;
+        <span class="ident">active_state</span>
+            .<span class="ident">root</span>
+            .<span class="ident">modify</span>(<span class="ident">modification</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">data_block</span>, <span class="ident">max_order</span>)<span class="question-mark">?</span>;
 
         <span class="kw">if</span> <span class="ident">is_transactional</span> {
             <span class="comment">// Transactions will written to disk later.</span>
@@ -3037,13 +3059,14 @@
     <span class="ident">clippy::cast_possible_truncation</span>,
     <span class="ident">clippy::cast_sign_loss</span>
 )]</span>
-<span class="kw">fn</span> <span class="ident">dynamic_order</span><span class="op">&lt;</span><span class="kw">const</span> <span class="ident">MAX_ORDER</span>: <span class="ident">usize</span><span class="op">&gt;</span>(<span class="ident">number_of_records</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+<span class="kw">fn</span> <span class="ident">dynamic_order</span>(<span class="ident">number_of_records</span>: <span class="ident">u64</span>, <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
     <span class="comment">// Current approximation is the 3rd root.</span>
-    <span class="kw">if</span> <span class="ident">number_of_records</span> <span class="op">&gt;</span> <span class="ident">MAX_ORDER</span>.<span class="ident">pow</span>(<span class="number">3</span>) <span class="kw">as</span> <span class="ident">u64</span> {
-        <span class="ident">MAX_ORDER</span>
+    <span class="kw">let</span> <span class="ident">max_order</span> <span class="op">=</span> <span class="ident">max_order</span>.<span class="ident">unwrap_or</span>(<span class="ident">DEFAULT_MAX_ORDER</span>);
+    <span class="kw">if</span> <span class="ident">number_of_records</span> <span class="op">&gt;</span> <span class="ident">max_order</span>.<span class="ident">pow</span>(<span class="number">3</span>) <span class="kw">as</span> <span class="ident">u64</span> {
+        <span class="ident">max_order</span>
     } <span class="kw">else</span> {
         <span class="kw">let</span> <span class="ident">estimated_order</span> <span class="op">=</span> <span class="number">4</span>.<span class="ident">max</span>((<span class="ident">number_of_records</span> <span class="kw">as</span> <span class="ident">f64</span>).<span class="ident">cbrt</span>() <span class="kw">as</span> <span class="ident">usize</span>);
-        <span class="ident">MAX_ORDER</span>.<span class="ident">min</span>(<span class="ident">estimated_order</span>)
+        <span class="ident">max_order</span>.<span class="ident">min</span>(<span class="ident">estimated_order</span>)
     }
 }
 
@@ -3117,6 +3140,7 @@
         <span class="ident">file_path</span>: <span class="kw-2">&amp;</span><span class="ident">Path</span>,
         <span class="ident">ids</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">HashSet</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Pcg64</span>,
+        <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
     ) {
         <span class="kw">let</span> <span class="ident">id</span> <span class="op">=</span> <span class="kw">loop</span> {
             <span class="kw">let</span> <span class="ident">id</span> <span class="op">=</span> <span class="ident">rng</span>.<span class="ident">generate</span>::<span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>();
@@ -3133,7 +3157,7 @@
                     .<span class="ident">unwrap</span>();
                 <span class="ident">state</span>
             } <span class="kw">else</span> {
-                <span class="ident">State::initialized</span>(<span class="ident">file</span>.<span class="ident">id</span>())
+                <span class="ident">State::initialized</span>(<span class="ident">file</span>.<span class="ident">id</span>(), <span class="ident">max_order</span>)
             };
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span>
                 <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">R</span>, <span class="ident">F</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">file</span>, <span class="ident">state</span>, <span class="ident">context</span>.<span class="ident">vault</span>.<span class="ident">clone</span>(), <span class="ident">context</span>.<span class="ident">cache</span>.<span class="ident">clone</span>())
@@ -3165,11 +3189,12 @@
         <span class="ident">context</span>: <span class="kw-2">&amp;</span><span class="ident">Context</span><span class="op">&lt;</span><span class="ident">F::Manager</span><span class="op">&gt;</span>,
         <span class="ident">file_path</span>: <span class="kw-2">&amp;</span><span class="ident">Path</span>,
         <span class="ident">id</span>: <span class="ident">u64</span>,
+        <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
     ) {
         <span class="kw">let</span> <span class="ident">id_buffer</span> <span class="op">=</span> <span class="ident">Buffer::from</span>(<span class="ident">id</span>.<span class="ident">to_be_bytes</span>().<span class="ident">to_vec</span>());
         {
             <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">context</span>.<span class="ident">file_manager</span>.<span class="ident">append</span>(<span class="ident">file_path</span>).<span class="ident">unwrap</span>();
-            <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State::default</span>();
+            <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State::new</span>(<span class="prelude-val">None</span>, <span class="ident">max_order</span>);
             <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">R</span>, <span class="ident">F</span><span class="op">&gt;</span><span class="ident">::initialize_state</span>(<span class="kw-2">&amp;</span><span class="ident">state</span>, <span class="ident">file_path</span>, <span class="ident">file</span>.<span class="ident">id</span>(), <span class="ident">context</span>, <span class="prelude-val">None</span>)
                 .<span class="ident">unwrap</span>();
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span>
@@ -3219,25 +3244,51 @@
         <span class="comment">// Insert up to the limit of a LEAF, which is ORDER - 1.</span>
         <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">ORDER</span> <span class="op">-</span> <span class="number">1</span> {
             <span class="ident">insert_one_record</span>::<span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span>, <span class="ident">StdFile</span><span class="op">&gt;</span>(
-                <span class="kw-2">&amp;</span><span class="ident">context</span>, <span class="kw-2">&amp;</span><span class="ident">file_path</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ids</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>,
+                <span class="kw-2">&amp;</span><span class="ident">context</span>,
+                <span class="kw-2">&amp;</span><span class="ident">file_path</span>,
+                <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ids</span>,
+                <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>,
+                <span class="prelude-val">Some</span>(<span class="ident">ORDER</span>),
             );
         }
         <span class="macro">println!</span>(<span class="string">&quot;Successfully inserted up to ORDER - 1 nodes.&quot;</span>);
 
         <span class="comment">// The next record will split the node</span>
-        <span class="ident">insert_one_record</span>::<span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span>, <span class="ident">StdFile</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="ident">context</span>, <span class="kw-2">&amp;</span><span class="ident">file_path</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ids</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>);
+        <span class="ident">insert_one_record</span>::<span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span>, <span class="ident">StdFile</span><span class="op">&gt;</span>(
+            <span class="kw-2">&amp;</span><span class="ident">context</span>,
+            <span class="kw-2">&amp;</span><span class="ident">file_path</span>,
+            <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ids</span>,
+            <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>,
+            <span class="prelude-val">Some</span>(<span class="ident">ORDER</span>),
+        );
         <span class="macro">println!</span>(<span class="string">&quot;Successfully introduced one layer of depth.&quot;</span>);
 
         <span class="comment">// Insert a lot more.</span>
         <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="number">1_000</span> {
             <span class="ident">insert_one_record</span>::<span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span>, <span class="ident">StdFile</span><span class="op">&gt;</span>(
-                <span class="kw-2">&amp;</span><span class="ident">context</span>, <span class="kw-2">&amp;</span><span class="ident">file_path</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ids</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>,
+                <span class="kw-2">&amp;</span><span class="ident">context</span>,
+                <span class="kw-2">&amp;</span><span class="ident">file_path</span>,
+                <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ids</span>,
+                <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>,
+                <span class="prelude-val">Some</span>(<span class="ident">ORDER</span>),
             );
         }
     }
 
     <span class="kw">fn</span> <span class="ident">remove</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">Root</span><span class="op">&gt;</span>(<span class="ident">label</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">Pcg64::new_seed</span>(<span class="number">1</span>);
+        <span class="kw">const</span> <span class="ident">ORDER</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">4</span>;
+
+        <span class="comment">// We&#39;ve seen a couple of failures in CI, but have never been able to</span>
+        <span class="comment">// reproduce locally. There used to be a small bit of randomness that</span>
+        <span class="comment">// wasn&#39;t deterministic in the conversion between a HashSet and a Vec</span>
+        <span class="comment">// for the IDs. This randomness has been removed, and instead we&#39;re now</span>
+        <span class="comment">// embracing running a randomly seeded test -- and logging the seed that</span>
+        <span class="comment">// fails so that we can attempt to reproduce it outside of CI.</span>
+
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">seed_rng</span> <span class="op">=</span> <span class="ident">Pcg64::new</span>();
+        <span class="kw">let</span> <span class="ident">seed</span> <span class="op">=</span> <span class="ident">seed_rng</span>.<span class="ident">generate</span>();
+        <span class="macro">println!</span>(<span class="string">&quot;Seeding removal {} with {}&quot;</span>, <span class="ident">label</span>, <span class="ident">seed</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">Pcg64::new_seed</span>(<span class="ident">seed</span>);
         <span class="kw">let</span> <span class="ident">context</span> <span class="op">=</span> <span class="ident">Context</span> {
             <span class="ident">file_manager</span>: <span class="ident">StdFileManager::default</span>(),
             <span class="ident">vault</span>: <span class="prelude-val">None</span>,
@@ -3247,23 +3298,17 @@
         <span class="ident">std::fs::create_dir</span>(<span class="kw-2">&amp;</span><span class="ident">temp_dir</span>).<span class="ident">unwrap</span>();
         <span class="kw">let</span> <span class="ident">file_path</span> <span class="op">=</span> <span class="ident">temp_dir</span>.<span class="ident">join</span>(<span class="string">&quot;tree&quot;</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ids</span> <span class="op">=</span> <span class="ident">HashSet::new</span>();
-        <span class="comment">// Insert up to the limit of a LEAF, which is ORDER - 1.</span>
         <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="number">1000</span> {
-            <span class="ident">insert_one_record</span>::<span class="op">&lt;</span><span class="ident">R</span>, <span class="ident">StdFile</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="ident">context</span>, <span class="kw-2">&amp;</span><span class="ident">file_path</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ids</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>);
+            <span class="ident">insert_one_record</span>::<span class="op">&lt;</span><span class="ident">R</span>, <span class="ident">StdFile</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="ident">context</span>, <span class="kw-2">&amp;</span><span class="ident">file_path</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ids</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="prelude-val">Some</span>(<span class="ident">ORDER</span>));
         }
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ids</span> <span class="op">=</span> <span class="ident">ids</span>.<span class="ident">into_iter</span>().<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span><span class="op">&gt;</span>();
-
-        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">ids</span>.<span class="ident">len</span>() {
-            <span class="kw">let</span> <span class="ident">random</span> <span class="op">=</span> <span class="ident">rng</span>.<span class="ident">generate_range</span>(<span class="ident">i</span>..<span class="ident">ids</span>.<span class="ident">len</span>());
-            <span class="kw">if</span> <span class="ident">random</span> <span class="op">!</span><span class="op">=</span> <span class="ident">i</span> {
-                <span class="ident">ids</span>.<span class="ident">swap</span>(<span class="ident">i</span>, <span class="ident">random</span>);
-            }
-        }
+        <span class="ident">ids</span>.<span class="ident">sort_unstable</span>();
+        <span class="ident">rng</span>.<span class="ident">shuffle</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ids</span>);
 
         <span class="comment">// Remove each of the records</span>
         <span class="kw">for</span> <span class="ident">id</span> <span class="kw">in</span> <span class="ident">ids</span> {
-            <span class="ident">remove_one_record</span>::<span class="op">&lt;</span><span class="ident">R</span>, <span class="ident">StdFile</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="ident">context</span>, <span class="kw-2">&amp;</span><span class="ident">file_path</span>, <span class="ident">id</span>);
+            <span class="ident">remove_one_record</span>::<span class="op">&lt;</span><span class="ident">R</span>, <span class="ident">StdFile</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="ident">context</span>, <span class="kw-2">&amp;</span><span class="ident">file_path</span>, <span class="ident">id</span>, <span class="prelude-val">Some</span>(<span class="ident">ORDER</span>));
         }
     }
 
@@ -3420,6 +3465,7 @@
     }
 
     <span class="kw">fn</span> <span class="ident">compact</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">Root</span><span class="op">&gt;</span>(<span class="ident">label</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) {
+        <span class="kw">const</span> <span class="ident">ORDER</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">4</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">Pcg64::new_seed</span>(<span class="number">1</span>);
         <span class="kw">let</span> <span class="ident">context</span> <span class="op">=</span> <span class="ident">Context</span> {
             <span class="ident">file_manager</span>: <span class="ident">StdFileManager::default</span>(),
@@ -3431,7 +3477,7 @@
         <span class="kw">let</span> <span class="ident">file_path</span> <span class="op">=</span> <span class="ident">temp_dir</span>.<span class="ident">join</span>(<span class="string">&quot;tree&quot;</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ids</span> <span class="op">=</span> <span class="ident">HashSet::new</span>();
         <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="number">5</span> {
-            <span class="ident">insert_one_record</span>::<span class="op">&lt;</span><span class="ident">R</span>, <span class="ident">StdFile</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="ident">context</span>, <span class="kw-2">&amp;</span><span class="ident">file_path</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ids</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>);
+            <span class="ident">insert_one_record</span>::<span class="op">&lt;</span><span class="ident">R</span>, <span class="ident">StdFile</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="ident">context</span>, <span class="kw-2">&amp;</span><span class="ident">file_path</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ids</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="prelude-val">Some</span>(<span class="ident">ORDER</span>));
         }
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span>

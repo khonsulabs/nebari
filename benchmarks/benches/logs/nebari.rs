@@ -61,7 +61,7 @@ impl<B: NebariBenchmark> SimpleBench for InsertLogs<B> {
         let tempfile = TempDir::new()?;
         let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
         let file = manager.append(tempfile.path().join("tree"))?;
-        let state = State::initialized(file.id());
+        let state = State::initialized(file.id(), None);
         let tree = TreeFile::<B::Root, StdFile>::new(
             file,
             state,
@@ -119,7 +119,7 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
         let tempfile = TempDir::new().unwrap();
         let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
         let file = manager.append(tempfile.path().join("tree")).unwrap();
-        let state = State::initialized(file.id());
+        let state = State::initialized(file.id(), None);
         let mut tree = TreeFile::<B::Root, StdFile>::new(
             file,
             state,
@@ -219,7 +219,7 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
         let tempfile = TempDir::new().unwrap();
         let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
         let file = manager.append(tempfile.path().join("tree")).unwrap();
-        let state = State::initialized(file.id());
+        let state = State::initialized(file.id(), None);
         let mut tree = TreeFile::<B::Root, StdFile>::new(
             file,
             state,

@@ -66,6 +66,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
         &'a mut self,
         modification: Modification<'_, Buffer<'static>>,
         writer: &'a mut PagedWriter<'w, File>,
+        max_order: Option<usize>,
     ) -> Result<(), Error>;
 
     /// Iterates over the tree looking for `keys`. `keys` must be sorted.

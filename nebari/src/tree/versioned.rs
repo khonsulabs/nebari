@@ -27,7 +27,7 @@ use crate::{
         copy_chunk, dynamic_order,
         key_entry::KeyEntry,
         modify::Operation,
-        PageHeader, Root, MAX_ORDER,
+        PageHeader, Root, DEFAULT_MAX_ORDER,
     },
     Buffer, ChunkCache, ErrorKind, Vault,
 };
@@ -63,13 +63,14 @@ impl VersionedTreeRoot {
         &mut self,
         mut modification: Modification<'_, BySequenceIndex>,
         writer: &mut PagedWriter<'_, File>,
+        max_order: Option<usize>,
     ) -> Result<(), Error> {
         // Reverse so that pop is efficient.
         modification.reverse()?;
 
         let total_sequence_records =
             self.by_sequence_root.stats().total_sequences + modification.keys.len() as u64;
-        let by_sequence_order = dynamic_order::<MAX_ORDER>(total_sequence_records);
+        let by_sequence_order = dynamic_order(total_sequence_records, max_order);
 
         let by_sequence_minimum_children = by_sequence_order / 2 - 1;
         let by_sequence_minimum_children = by_sequence_minimum_children
@@ -112,12 +113,13 @@ impl VersionedTreeRoot {
         mut modification: Modification<'_, Buffer<'static>>,
         changes: &mut EntryChanges,
         writer: &mut PagedWriter<'_, File>,
+        max_order: Option<usize>,
     ) -> Result<(), Error> {
         modification.reverse()?;
 
         let total_id_records =
             self.by_id_root.stats().total_keys() + modification.keys.len() as u64;
-        let by_id_order = dynamic_order::<MAX_ORDER>(total_id_records);
+        let by_id_order = dynamic_order(total_id_records, max_order);
 
         let by_id_minimum_children = by_id_order / 2 - 1;
         let by_id_minimum_children =
@@ -227,8 +229,9 @@ impl Root for VersionedTreeRoot {
         let mut by_sequence_bytes = bytes.read_bytes(by_sequence_size)?.to_owned();
         let mut by_id_bytes = bytes.read_bytes(by_id_size)?.to_owned();
 
-        let by_sequence_root = BTreeEntry::deserialize_from(&mut by_sequence_bytes, MAX_ORDER)?;
-        let by_id_root = BTreeEntry::deserialize_from(&mut by_id_bytes, MAX_ORDER)?;
+        let by_sequence_root =
+            BTreeEntry::deserialize_from(&mut by_sequence_bytes, DEFAULT_MAX_ORDER)?;
+        let by_id_root = BTreeEntry::deserialize_from(&mut by_id_bytes, DEFAULT_MAX_ORDER)?;
 
         Ok(Self {
             transaction_id,
@@ -275,6 +278,7 @@ impl Root for VersionedTreeRoot {
         &mut self,
         modification: Modification<'_, Buffer<'static>>,
         writer: &mut PagedWriter<'_, File>,
+        max_order: Option<usize>,
     ) -> Result<(), Error> {
         let transaction_id = modification.transaction_id;
 
@@ -283,7 +287,7 @@ impl Root for VersionedTreeRoot {
             current_sequence: self.sequence,
             changes: Vec::with_capacity(modification.keys.len()),
         };
-        self.modify_id_root(modification, &mut changes, writer)?;
+        self.modify_id_root(modification, &mut changes, writer, max_order)?;
 
         // Convert the changes into a modification request for the id root.
         let mut values = Vec::with_capacity(changes.changes.len());
@@ -305,7 +309,7 @@ impl Root for VersionedTreeRoot {
             operation: Operation::SetEach(values),
         };
 
-        self.modify_sequence_root(sequence_modifications, writer)?;
+        self.modify_sequence_root(sequence_modifications, writer, max_order)?;
 
         if transaction_id != 0 {
             self.transaction_id = transaction_id;
@@ -458,7 +462,7 @@ impl Root for VersionedTreeRoot {
         self.by_sequence_root = BTreeEntry::default();
 
         sequence_indexes.sort_by(|a, b| a.0.cmp(&b.0));
-        let by_sequence_order = dynamic_order::<MAX_ORDER>(sequence_indexes.len() as u64);
+        let by_sequence_order = dynamic_order(sequence_indexes.len() as u64, None);
         let mut keys = Vec::with_capacity(sequence_indexes.len());
         let mut indexes = Vec::with_capacity(sequence_indexes.len());
         for (id, index) in sequence_indexes {

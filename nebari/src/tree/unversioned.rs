@@ -25,7 +25,7 @@ use crate::{
         btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
         copy_chunk, dynamic_order,
         versioned::ChangeResult,
-        PageHeader, Root, MAX_ORDER,
+        PageHeader, Root, DEFAULT_MAX_ORDER,
     },
     Buffer, ChunkCache, ErrorKind, Vault,
 };
@@ -47,11 +47,12 @@ impl UnversionedTreeRoot {
         &'a mut self,
         mut modification: Modification<'_, Buffer<'static>>,
         writer: &'a mut PagedWriter<'w, File>,
+        max_order: Option<usize>,
     ) -> Result<(), Error> {
         modification.reverse()?;
 
         let total_keys = self.by_id_root.stats().total_keys() + modification.keys.len() as u64;
-        let by_id_order = dynamic_order::<MAX_ORDER>(total_keys);
+        let by_id_order = dynamic_order(total_keys, max_order);
         let minimum_children = by_id_order / 2 - 1;
         let minimum_children =
             minimum_children.min(usize::try_from(total_keys).unwrap_or(usize::MAX));
@@ -134,7 +135,7 @@ impl Root for UnversionedTreeRoot {
 
         let mut by_id_bytes = bytes.read_bytes(by_id_size)?.to_owned();
 
-        let by_id_root = BTreeEntry::deserialize_from(&mut by_id_bytes, MAX_ORDER)?;
+        let by_id_root = BTreeEntry::deserialize_from(&mut by_id_bytes, DEFAULT_MAX_ORDER)?;
 
         Ok(Self {
             transaction_id,
@@ -171,10 +172,11 @@ impl Root for UnversionedTreeRoot {
         &mut self,
         modification: Modification<'_, Buffer<'static>>,
         writer: &mut PagedWriter<'_, File>,
+        max_order: Option<usize>,
     ) -> Result<(), Error> {
         let transaction_id = modification.transaction_id;
 
-        self.modify_id_root(modification, writer)?;
+        self.modify_id_root(modification, writer, max_order)?;
 
         if transaction_id != 0 {
             self.transaction_id = Some(transaction_id);

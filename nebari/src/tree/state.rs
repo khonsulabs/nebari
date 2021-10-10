@@ -17,13 +17,28 @@ impl<Root> State<Root>
 where
     Root: super::Root,
 {
+    /// Returns an uninitialized state.
+    pub fn new(file_id: Option<u64>, max_order: Option<usize>) -> Self {
+        let state = ActiveState {
+            file_id,
+            max_order,
+            current_position: 0,
+            root: Root::default(),
+        };
+
+        Self {
+            reader: Arc::new(RwLock::new(state.clone())),
+            writer: Arc::new(Mutex::new(state)),
+        }
+    }
     /// Returns an initialized state. This should only be used if you're
     /// creating a file from scratch.
-    pub fn initialized(file_id: Option<u64>) -> Self {
+    pub fn initialized(file_id: Option<u64>, max_order: Option<usize>) -> Self {
         let mut header = Root::default();
         header.initialize_default();
         let state = ActiveState {
             file_id,
+            max_order,
             current_position: 0,
             root: header,
         };
@@ -79,6 +94,10 @@ pub struct ActiveState<Root: super::Root> {
     pub current_position: u64,
     /// The root of the B-Tree.
     pub root: Root,
+    /// The maximum "order" of the B-Tree. This controls the maximum number of
+    /// children any node in the tree may contain. Nebari will automatically
+    /// scale up to this number as the database grows.
+    pub max_order: Option<usize>,
 }
 
 impl<Root> ActiveState<Root>

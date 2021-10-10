@@ -77,7 +77,7 @@ pub(crate) mod state;
 mod unversioned;
 mod versioned;
 
-pub(crate) const MAX_ORDER: usize = 1000;
+pub(crate) const DEFAULT_MAX_ORDER: usize = 1000;
 
 use self::serialization::BinarySerialization;
 pub use self::{
@@ -136,10 +136,6 @@ impl TryFrom<u8> for PageHeader {
 ///
 /// ## Generics
 /// - `File`: An [`ManagedFile`] implementor.
-/// - `MAX_ORDER`: The maximum number of children a node in the tree can
-///   contain. This implementation attempts to grow naturally towards this upper
-///   limit. Changing this parameter does not automatically rebalance the tree,
-///   but over time the tree will be updated.
 #[derive(Debug)]
 pub struct TreeFile<Root: root::Root, File: ManagedFile> {
     pub(crate) file: <File::Manager as FileManager>::FileHandle,
@@ -756,9 +752,12 @@ impl<'a, 'm, Root: root::Root, File: ManagedFile> FileOp<File> for TreeModifier<
 
         let modification = self.modification.take().unwrap();
         let is_transactional = modification.transaction_id != 0;
+        let max_order = active_state.max_order;
 
         // Execute the modification
-        active_state.root.modify(modification, &mut data_block)?;
+        active_state
+            .root
+            .modify(modification, &mut data_block, max_order)?;
 
         if is_transactional {
             // Transactions will written to disk later.
@@ -1304,13 +1303,14 @@ pub(crate) fn copy_chunk<File: ManagedFile, Hasher: BuildHasher>(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss
 )]
-fn dynamic_order<const MAX_ORDER: usize>(number_of_records: u64) -> usize {
+fn dynamic_order(number_of_records: u64, max_order: Option<usize>) -> usize {
     // Current approximation is the 3rd root.
-    if number_of_records > MAX_ORDER.pow(3) as u64 {
-        MAX_ORDER
+    let max_order = max_order.unwrap_or(DEFAULT_MAX_ORDER);
+    if number_of_records > max_order.pow(3) as u64 {
+        max_order
     } else {
         let estimated_order = 4.max((number_of_records as f64).cbrt() as usize);
-        MAX_ORDER.min(estimated_order)
+        max_order.min(estimated_order)
     }
 }
 
@@ -1384,6 +1384,7 @@ mod tests {
         file_path: &Path,
         ids: &mut HashSet<u64>,
         rng: &mut Pcg64,
+        max_order: Option<usize>,
     ) {
         let id = loop {
             let id = rng.generate::<u64>();
@@ -1400,7 +1401,7 @@ mod tests {
                     .unwrap();
                 state
             } else {
-                State::initialized(file.id())
+                State::initialized(file.id(), max_order)
             };
             let mut tree =
                 TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
@@ -1432,11 +1433,12 @@ mod tests {
         context: &Context<F::Manager>,
         file_path: &Path,
         id: u64,
+        max_order: Option<usize>,
     ) {
         let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
         {
             let file = context.file_manager.append(file_path).unwrap();
-            let state = State::default();
+            let state = State::new(None, max_order);
             TreeFile::<R, F>::initialize_state(&state, file_path, file.id(), context, None)
                 .unwrap();
             let mut tree =
@@ -1486,25 +1488,51 @@ mod tests {
         // Insert up to the limit of a LEAF, which is ORDER - 1.
         for _ in 0..ORDER - 1 {
             insert_one_record::<VersionedTreeRoot, StdFile>(
-                &context, &file_path, &mut ids, &mut rng,
+                &context,
+                &file_path,
+                &mut ids,
+                &mut rng,
+                Some(ORDER),
             );
         }
         println!("Successfully inserted up to ORDER - 1 nodes.");
 
         // The next record will split the node
-        insert_one_record::<VersionedTreeRoot, StdFile>(&context, &file_path, &mut ids, &mut rng);
+        insert_one_record::<VersionedTreeRoot, StdFile>(
+            &context,
+            &file_path,
+            &mut ids,
+            &mut rng,
+            Some(ORDER),
+        );
         println!("Successfully introduced one layer of depth.");
 
         // Insert a lot more.
         for _ in 0..1_000 {
             insert_one_record::<VersionedTreeRoot, StdFile>(
-                &context, &file_path, &mut ids, &mut rng,
+                &context,
+                &file_path,
+                &mut ids,
+                &mut rng,
+                Some(ORDER),
             );
         }
     }
 
     fn remove<R: Root>(label: &str) {
-        let mut rng = Pcg64::new_seed(1);
+        const ORDER: usize = 4;
+
+        // We've seen a couple of failures in CI, but have never been able to
+        // reproduce locally. There used to be a small bit of randomness that
+        // wasn't deterministic in the conversion between a HashSet and a Vec
+        // for the IDs. This randomness has been removed, and instead we're now
+        // embracing running a randomly seeded test -- and logging the seed that
+        // fails so that we can attempt to reproduce it outside of CI.
+
+        let mut seed_rng = Pcg64::new();
+        let seed = seed_rng.generate();
+        println!("Seeding removal {} with {}", label, seed);
+        let mut rng = Pcg64::new_seed(seed);
         let context = Context {
             file_manager: StdFileManager::default(),
             vault: None,
@@ -1514,23 +1542,17 @@ mod tests {
         std::fs::create_dir(&temp_dir).unwrap();
         let file_path = temp_dir.join("tree");
         let mut ids = HashSet::new();
-        // Insert up to the limit of a LEAF, which is ORDER - 1.
         for _ in 0..1000 {
-            insert_one_record::<R, StdFile>(&context, &file_path, &mut ids, &mut rng);
+            insert_one_record::<R, StdFile>(&context, &file_path, &mut ids, &mut rng, Some(ORDER));
         }
 
         let mut ids = ids.into_iter().collect::<Vec<_>>();
-
-        for i in 0..ids.len() {
-            let random = rng.generate_range(i..ids.len());
-            if random != i {
-                ids.swap(i, random);
-            }
-        }
+        ids.sort_unstable();
+        rng.shuffle(&mut ids);
 
         // Remove each of the records
         for id in ids {
-            remove_one_record::<R, StdFile>(&context, &file_path, id);
+            remove_one_record::<R, StdFile>(&context, &file_path, id, Some(ORDER));
         }
     }
 
@@ -1687,6 +1709,7 @@ mod tests {
     }
 
     fn compact<R: Root>(label: &str) {
+        const ORDER: usize = 4;
         let mut rng = Pcg64::new_seed(1);
         let context = Context {
             file_manager: StdFileManager::default(),
@@ -1698,7 +1721,7 @@ mod tests {
         let file_path = temp_dir.join("tree");
         let mut ids = HashSet::new();
         for _ in 0..5 {
-            insert_one_record::<R, StdFile>(&context, &file_path, &mut ids, &mut rng);
+            insert_one_record::<R, StdFile>(&context, &file_path, &mut ids, &mut rng, Some(ORDER));
         }
 
         let mut tree =

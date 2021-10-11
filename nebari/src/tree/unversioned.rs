@@ -91,10 +91,12 @@ impl UnversionedTreeRoot {
                 &mut (),
                 writer,
             )? {
-                ChangeResult::Absorb(_) => unreachable!(),
-                ChangeResult::Changed | ChangeResult::Unchanged | ChangeResult::Remove => {}
-                ChangeResult::Split(upper) => {
-                    self.by_id_root.split_root(upper);
+                ChangeResult::Absorb
+                | ChangeResult::Changed
+                | ChangeResult::Unchanged
+                | ChangeResult::Remove => {}
+                ChangeResult::Split => {
+                    self.by_id_root.split_root();
                 }
             }
         }

@@ -27,7 +27,7 @@ use crate::{
         copy_chunk, dynamic_order,
         key_entry::KeyEntry,
         modify::Operation,
-        PageHeader, Root, DEFAULT_MAX_ORDER,
+        Interior, PageHeader, Root, DEFAULT_MAX_ORDER,
     },
     Buffer, ChunkCache, ErrorKind, Vault,
 };
@@ -50,12 +50,19 @@ pub struct VersionedTreeRoot {
     pub by_id_root: BTreeEntry<VersionedByIdIndex, ByIdStats>,
 }
 
-pub enum ChangeResult<Index: BinarySerialization, ReducedIndex: BinarySerialization> {
+#[derive(Debug)]
+pub enum ChangeResult {
     Unchanged,
     Remove,
-    Absorb(Vec<KeyEntry<Index>>),
+    Absorb,
     Changed,
-    Split(BTreeEntry<Index, ReducedIndex>),
+    Split,
+}
+
+#[derive(Debug)]
+pub enum Children<Index, ReducedIndex> {
+    Leaves(Vec<KeyEntry<Index>>),
+    Interiors(Vec<Interior<Index, ReducedIndex>>),
 }
 
 impl VersionedTreeRoot {
@@ -98,10 +105,12 @@ impl VersionedTreeRoot {
                 &mut EntryChanges::default(),
                 writer,
             )? {
-                ChangeResult::Absorb(_) => unreachable!(),
-                ChangeResult::Remove | ChangeResult::Unchanged | ChangeResult::Changed => {}
-                ChangeResult::Split(upper) => {
-                    self.by_sequence_root.split_root(upper);
+                ChangeResult::Absorb
+                | ChangeResult::Remove
+                | ChangeResult::Unchanged
+                | ChangeResult::Changed => {}
+                ChangeResult::Split => {
+                    self.by_sequence_root.split_root();
                 }
             }
         }
@@ -179,11 +188,13 @@ impl VersionedTreeRoot {
                 changes,
                 writer,
             )? {
-                ChangeResult::Remove | ChangeResult::Changed | ChangeResult::Unchanged => {}
-                ChangeResult::Split(upper) => {
-                    self.by_id_root.split_root(upper);
+                ChangeResult::Absorb
+                | ChangeResult::Remove
+                | ChangeResult::Changed
+                | ChangeResult::Unchanged => {}
+                ChangeResult::Split => {
+                    self.by_id_root.split_root();
                 }
-                ChangeResult::Absorb(_) => unreachable!(),
             }
         }
 

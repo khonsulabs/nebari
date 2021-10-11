@@ -17,8 +17,10 @@ use super::{
     KeyRange, PagedWriter,
 };
 use crate::{
-    error::Error, io::ManagedFile, tree::KeyEvaluation, AbortError, Buffer, ChunkCache, ErrorKind,
-    Vault,
+    error::Error,
+    io::ManagedFile,
+    tree::{versioned::Children, KeyEvaluation},
+    AbortError, Buffer, ChunkCache, ErrorKind, Vault,
 };
 
 /// A B-Tree entry that stores a list of key-`Index` pairs.
@@ -115,7 +117,7 @@ where
         max_key: Option<&Buffer<'_>>,
         changes: &mut Context,
         writer: &mut PagedWriter<'_, File>,
-    ) -> Result<ChangeResult<Index, ReducedIndex>, Error>
+    ) -> Result<ChangeResult, Error>
     where
         File: ManagedFile,
         Indexer: Fn(
@@ -151,7 +153,11 @@ where
                 )? {
                     ChangeResult::Changed => {
                         self.dirty = true;
-                        Ok(Self::clean_up_interior(children, context.current_order))
+                        Ok(Self::clean_up_interior(
+                            children,
+                            context.current_order,
+                            context.minimum_children,
+                        ))
                     }
                     other => Ok(other),
                 }
@@ -164,21 +170,15 @@ where
         children: &mut Vec<KeyEntry<Index>>,
         current_order: usize,
         minimum_children: usize,
-    ) -> ChangeResult<Index, ReducedIndex> {
+    ) -> ChangeResult {
         let child_count = children.len();
 
-        if child_count >= current_order {
-            // We need to split this leaf into two leafs, moving a new interior node using the middle element.
-            let midpoint = children.len() / 2;
-            let (_, upper_half) = children.split_at(midpoint);
-            let upper_half = BTreeNode::Leaf(upper_half.to_vec());
-            children.truncate(midpoint);
-
-            ChangeResult::Split(Self::from(upper_half))
+        if child_count > current_order {
+            ChangeResult::Split
         } else if child_count == 0 {
             ChangeResult::Remove
         } else if child_count < minimum_children {
-            ChangeResult::Absorb(std::mem::take(children))
+            ChangeResult::Absorb
         } else {
             ChangeResult::Changed
         }
@@ -187,23 +187,16 @@ where
     fn clean_up_interior(
         children: &mut Vec<Interior<Index, ReducedIndex>>,
         current_order: usize,
-    ) -> ChangeResult<Index, ReducedIndex> {
+        minimum_children: usize,
+    ) -> ChangeResult {
         let child_count = children.len();
 
-        if child_count >= current_order {
-            let midpoint = children.len() / 2;
-            let (_, upper_half) = children.split_at(midpoint);
-
-            // TODO this re-clones the upper-half children, but splitting a vec
-            // without causing multiple copies of data seems
-            // impossible without unsafe.
-            let upper_half = upper_half.to_vec();
-            debug_assert_eq!(midpoint + upper_half.len(), children.len());
-            children.truncate(midpoint);
-
-            ChangeResult::Split(Self::from(BTreeNode::Interior(upper_half)))
+        if child_count > current_order {
+            ChangeResult::Split
         } else if child_count == 0 {
             ChangeResult::Remove
+        } else if child_count < minimum_children {
+            ChangeResult::Absorb
         } else {
             ChangeResult::Changed
         }
@@ -367,7 +360,7 @@ where
         max_key: Option<&Buffer<'_>>,
         changes: &mut Context,
         writer: &mut PagedWriter<'_, File>,
-    ) -> Result<ChangeResult<Index, ReducedIndex>, Error>
+    ) -> Result<ChangeResult, Error>
     where
         File: ManagedFile,
         Indexer: Fn(
@@ -382,14 +375,16 @@ where
         let mut last_index = 0;
         let mut any_changes = false;
         while let Some(key) = modification.keys.last().cloned() {
-            if max_key.map(|max_key| &key > max_key).unwrap_or_default() {
+            if last_index >= children.len()
+                || max_key.map(|max_key| &key > max_key).unwrap_or_default()
+            {
                 break;
             }
             let containing_node_index = children[last_index..]
                 .binary_search_by(|child| child.key.cmp(&key))
                 .map_or_else(
                     |not_found| {
-                        if not_found + last_index == children.len() {
+                        if not_found > 0 && not_found + last_index == children.len() {
                             // If we can't find a key less than what would fit
                             // within our children, this key will become the new key
                             // of the last child.
@@ -411,7 +406,7 @@ where
                 context.current_order,
             )?;
             let child_entry = child.position.get_mut().unwrap();
-            match Self::process_interior_change_result(
+            let (change_result, should_backup) = Self::process_interior_change_result(
                 child_entry.modify(
                     modification,
                     context,
@@ -423,16 +418,20 @@ where
                 children,
                 context,
                 writer,
-            )? {
+            )?;
+            match change_result {
                 ChangeResult::Unchanged => {}
-                ChangeResult::Split(_) => unreachable!(),
-                ChangeResult::Absorb(leaves) => {
-                    return Ok(ChangeResult::Absorb(leaves));
+                ChangeResult::Split => unreachable!(),
+                ChangeResult::Absorb => {
+                    return Ok(ChangeResult::Absorb);
                 }
                 ChangeResult::Remove => {
                     any_changes = true;
                 }
                 ChangeResult::Changed => any_changes = true,
+            }
+            if should_backup {
+                last_index -= 1;
             }
             debug_assert!(children.windows(2).all(|w| w[0].key < w[1].key));
         }
@@ -444,12 +443,12 @@ where
     }
 
     fn process_interior_change_result<File, IndexedType, Context, Indexer, Loader>(
-        result: ChangeResult<Index, ReducedIndex>,
+        result: ChangeResult,
         child_index: usize,
         children: &mut Vec<Interior<Index, ReducedIndex>>,
         context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
         writer: &mut PagedWriter<'_, File>,
-    ) -> Result<ChangeResult<Index, ReducedIndex>, Error>
+    ) -> Result<(ChangeResult, bool), Error>
     where
         File: ManagedFile,
         Indexer: Fn(
@@ -461,87 +460,273 @@ where
         ) -> Result<KeyOperation<Index>, Error>,
         Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
     {
-        match result {
-            ChangeResult::Unchanged => Ok(ChangeResult::Unchanged),
-            ChangeResult::Changed => {
+        let can_absorb = children.len() > 1;
+        match (result, can_absorb) {
+            (ChangeResult::Unchanged, _) => Ok((ChangeResult::Unchanged, false)),
+            (ChangeResult::Changed, _) | (ChangeResult::Absorb, false) => {
                 let child = &mut children[child_index];
                 let child_entry = child.position.get_mut().unwrap();
                 child.key = child_entry.max_key().clone();
                 child.stats = child_entry.stats();
-                Ok(ChangeResult::Changed)
+                Ok((ChangeResult::Changed, false))
             }
-            ChangeResult::Split(upper) => {
-                let child = &mut children[child_index];
-                let child_entry = child.position.get_mut().unwrap();
-                child.key = child_entry.max_key().clone();
-                child.stats = child_entry.stats();
-
-                if children.capacity() < children.len() + 1
-                    && context.current_order > children.len()
-                {
-                    children.reserve(context.current_order - children.len());
-                }
-                children.insert(child_index + 1, Interior::from(upper));
-                Ok(ChangeResult::Changed)
+            (ChangeResult::Split, _) => {
+                Self::process_interior_split(child_index, children, context, writer)
             }
-            ChangeResult::Absorb(leaves) => {
+            (ChangeResult::Absorb, true) => {
+                Self::process_absorb(child_index, children, context, writer)
+            }
+            (ChangeResult::Remove, _) => {
                 children.remove(child_index);
-                let (insert_on_top, sponge_index) = if child_index > 0 {
-                    (true, child_index - 1)
-                } else {
-                    (false, child_index)
-                };
 
-                if let Some(sponge) = children.get_mut(sponge_index) {
-                    sponge.position.load(
-                        writer.file,
-                        false,
-                        writer.vault,
-                        writer.cache,
-                        context.current_order,
-                    )?;
-                    let sponge_entry = sponge.position.get_mut().unwrap();
-                    match Self::process_interior_change_result(
-                        sponge_entry.absorb(
-                            leaves,
-                            insert_on_top,
-                            context.current_order,
-                            context.minimum_children,
-                            writer,
-                        )?,
-                        sponge_index,
-                        children,
-                        context,
-                        writer,
-                    )? {
-                        ChangeResult::Absorb(_)
-                        | ChangeResult::Split(_)
-                        | ChangeResult::Unchanged => unreachable!(),
-                        ChangeResult::Remove | ChangeResult::Changed => Ok(ChangeResult::Remove),
+                Ok((ChangeResult::Changed, false))
+            }
+        }
+    }
+
+    fn process_absorb<File, IndexedType, Context, Indexer, Loader>(
+        child_index: usize,
+        children: &mut Vec<Interior<Index, ReducedIndex>>,
+        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
+        writer: &mut PagedWriter<'_, File>,
+    ) -> Result<(ChangeResult, bool), Error>
+    where
+        File: ManagedFile,
+        Indexer: Fn(
+            &Buffer<'_>,
+            Option<&IndexedType>,
+            Option<&Index>,
+            &mut Context,
+            &mut PagedWriter<'_, File>,
+        ) -> Result<KeyOperation<Index>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
+    {
+        let (insert_on_top, sponge_index) = if child_index > 0 {
+            (true, child_index - 1)
+        } else {
+            (false, child_index)
+        };
+
+        if sponge_index < children.len() - 1 {
+            let mut removed_child = children.remove(child_index);
+            let sponge = children.get_mut(sponge_index).unwrap();
+
+            let removed_child = removed_child.position.get_mut().unwrap();
+            let leaves = match &mut removed_child.node {
+                BTreeNode::Leaf(leaves) => Children::Leaves(std::mem::take(leaves)),
+                BTreeNode::Interior(interiors) => Children::Interiors(std::mem::take(interiors)),
+                BTreeNode::Uninitialized => unreachable!(),
+            };
+
+            sponge.position.load(
+                writer.file,
+                false,
+                writer.vault,
+                writer.cache,
+                context.current_order,
+            )?;
+            let sponge_entry = sponge.position.get_mut().unwrap();
+            match Self::process_interior_change_result(
+                sponge_entry.absorb(
+                    leaves,
+                    insert_on_top,
+                    context.current_order,
+                    context.minimum_children,
+                    writer,
+                )?,
+                sponge_index,
+                children,
+                context,
+                writer,
+            )? {
+                (ChangeResult::Absorb | ChangeResult::Split | ChangeResult::Unchanged, _) => {
+                    unreachable!()
+                }
+                (ChangeResult::Remove, should_backup) => Ok((ChangeResult::Remove, should_backup)),
+                (ChangeResult::Changed, should_backup) => {
+                    Ok((ChangeResult::Changed, should_backup))
+                }
+            }
+        } else {
+            Ok((ChangeResult::Unchanged, false))
+        }
+    }
+
+    fn process_interior_split<File, IndexedType, Context, Indexer, Loader>(
+        child_index: usize,
+        children: &mut Vec<Interior<Index, ReducedIndex>>,
+        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
+        writer: &mut PagedWriter<'_, File>,
+    ) -> Result<(ChangeResult, bool), Error>
+    where
+        File: ManagedFile,
+        Indexer: Fn(
+            &Buffer<'_>,
+            Option<&IndexedType>,
+            Option<&Index>,
+            &mut Context,
+            &mut PagedWriter<'_, File>,
+        ) -> Result<KeyOperation<Index>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
+    {
+        // Before adding a new node, we want to first try to use neighboring
+        // nodes to absorb enough such that a split is no longer needed. With
+        // the dynamic ordering used, we will likely end up with nodes that have
+        // less than the minimum number of nodes, if we were to clean them up.
+        // This stealing mechanism helps bring node utilization up without
+        // requiring much additional IO. Ultimately, the best time to optimize
+        // the tree will be during a compaction phase.
+        if child_index > 0 {
+            match Self::steal_children_from_start(child_index, children, context, writer)? {
+                (ChangeResult::Unchanged, _) => {}
+                (ChangeResult::Changed, should_backup) => {
+                    return Ok((ChangeResult::Changed, should_backup))
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        if child_index < children.len() + 1 {
+            // TODO Write a forward-stealing method. This isn't as critical as
+            // the backward-stealing method -- inserting sequentially will use
+            // the backward stealing method constantly, whereas random data
+            // insertion will use both
+        }
+
+        let child = children[child_index].position.get_mut().unwrap();
+        child.dirty = true;
+        let next_node = match &mut child.node {
+            BTreeNode::Leaf(children) => {
+                let upper = children
+                    .splice((children.len() + 1) / 2.., std::iter::empty())
+                    .collect::<Vec<_>>();
+                Self::from(BTreeNode::Leaf(upper))
+            }
+            BTreeNode::Interior(children) => {
+                let upper = children
+                    .splice((children.len() + 1) / 2.., std::iter::empty())
+                    .collect::<Vec<_>>();
+                Self::from(BTreeNode::Interior(upper))
+            }
+            BTreeNode::Uninitialized => unimplemented!(),
+        };
+        let (max_key, stats) = { (child.max_key().clone(), child.stats()) };
+        children[child_index].key = max_key;
+        children[child_index].stats = stats;
+
+        children.insert(child_index + 1, Interior::from(next_node));
+
+        Ok((ChangeResult::Changed, false))
+    }
+
+    fn steal_children_from_start<File, IndexedType, Context, Indexer, Loader>(
+        child_index: usize,
+        children: &mut Vec<Interior<Index, ReducedIndex>>,
+        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
+        writer: &mut PagedWriter<'_, File>,
+    ) -> Result<(ChangeResult, bool), Error>
+    where
+        File: ManagedFile,
+        Indexer: Fn(
+            &Buffer<'_>,
+            Option<&IndexedType>,
+            Option<&Index>,
+            &mut Context,
+            &mut PagedWriter<'_, File>,
+        ) -> Result<KeyOperation<Index>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
+    {
+        let mut should_backup = false;
+        // Check the previous child to see if it can accept any of this child.
+        children[child_index - 1].position.load(
+            writer.file,
+            false,
+            writer.vault,
+            writer.cache,
+            context.current_order,
+        )?;
+        let previous_child_count = children[child_index - 1].position.get().unwrap().count();
+        if let Some(free_space) = context.current_order.checked_sub(previous_child_count) {
+            if free_space > 0 {
+                should_backup = true;
+                // First, take the children from the node that reported it needed to be split.
+                let stolen_children =
+                    match &mut children[child_index].position.get_mut().unwrap().node {
+                        BTreeNode::Leaf(children) => {
+                            let eligible_amount =
+                                children.len().saturating_sub(context.minimum_children);
+                            let amount_to_steal = free_space.min(eligible_amount);
+                            Children::Leaves(
+                                children
+                                    .splice(0..amount_to_steal, std::iter::empty())
+                                    .collect(),
+                            )
+                        }
+                        BTreeNode::Interior(children) => {
+                            let eligible_amount =
+                                children.len().saturating_sub(context.minimum_children);
+                            let amount_to_steal = free_space.max(eligible_amount);
+                            Children::Interiors(
+                                children
+                                    .splice(0..amount_to_steal, std::iter::empty())
+                                    .collect(),
+                            )
+                        }
+                        BTreeNode::Uninitialized => unreachable!(),
+                    };
+                // Extend the previous node with the new values
+                let previous_child = children[child_index - 1].position.get_mut().unwrap();
+                match (&mut previous_child.node, stolen_children) {
+                    (BTreeNode::Leaf(children), Children::Leaves(new_entries)) => {
+                        children.extend(new_entries);
                     }
-                } else {
-                    Ok(ChangeResult::Absorb(leaves))
+                    (BTreeNode::Interior(children), Children::Interiors(new_entries)) => {
+                        children.extend(new_entries);
+                    }
+                    _ => unreachable!(),
+                }
+                // Update the statistics for the previous child.
+                previous_child.dirty = true;
+                let (max_key, stats) =
+                    { (previous_child.max_key().clone(), previous_child.stats()) };
+                children[child_index - 1].key = max_key;
+                children[child_index - 1].stats = stats;
+
+                // Update the current child.
+                let child = children[child_index].position.get_mut().unwrap();
+                child.dirty = true;
+                let child_count = child.count();
+                let (max_key, stats) = { (child.max_key().clone(), child.stats()) };
+                children[child_index].key = max_key;
+                children[child_index].stats = stats;
+                if child_count <= context.current_order {
+                    return Ok((ChangeResult::Changed, should_backup));
                 }
             }
-            ChangeResult::Remove => {
-                children.remove(child_index);
+        }
 
-                Ok(ChangeResult::Changed)
-            }
+        Ok((ChangeResult::Unchanged, should_backup))
+    }
+
+    fn count(&self) -> usize {
+        match &self.node {
+            BTreeNode::Uninitialized => unreachable!(),
+            BTreeNode::Leaf(children) => children.len(),
+            BTreeNode::Interior(children) => children.len(),
         }
     }
 
     fn absorb<File: ManagedFile>(
         &mut self,
-        leaves: Vec<KeyEntry<Index>>,
+        children: Children<Index, ReducedIndex>,
         insert_at_top: bool,
         current_order: usize,
         minimum_children: usize,
         writer: &mut PagedWriter<'_, File>,
-    ) -> Result<ChangeResult<Index, ReducedIndex>, Error> {
+    ) -> Result<ChangeResult, Error> {
         self.dirty = true;
-        match &mut self.node {
-            BTreeNode::Leaf(existing_children) => {
+        match (&mut self.node, children) {
+            (BTreeNode::Leaf(existing_children), Children::Leaves(leaves)) => {
                 if insert_at_top {
                     existing_children.extend(leaves);
                 } else {
@@ -554,7 +739,7 @@ where
                     minimum_children,
                 ))
             }
-            BTreeNode::Interior(existing_children) => {
+            (BTreeNode::Interior(existing_children), Children::Leaves(leaves)) => {
                 // Pass the leaves along to the first or last child.
                 let sponge = if insert_at_top {
                     existing_children.last_mut().unwrap()
@@ -570,21 +755,62 @@ where
                 )?;
                 let sponge = sponge.position.get_mut().unwrap();
                 sponge.absorb(
-                    leaves,
+                    Children::Leaves(leaves),
                     insert_at_top,
                     current_order,
                     minimum_children,
                     writer,
                 )
             }
+            (BTreeNode::Interior(existing_children), Children::Interiors(interiors)) => {
+                if insert_at_top {
+                    existing_children.extend(interiors);
+                } else {
+                    existing_children.splice(0..0, interiors);
+                }
+
+                Ok(Self::clean_up_interior(
+                    existing_children,
+                    current_order,
+                    minimum_children,
+                ))
+            }
+            (BTreeNode::Leaf(_), Children::Interiors(_)) | (BTreeNode::Uninitialized, _) => {
+                unreachable!()
+            }
+        }
+    }
+
+    pub(crate) fn split(
+        &mut self,
+    ) -> (Interior<Index, ReducedIndex>, Interior<Index, ReducedIndex>) {
+        let mut old_node = Self::from(BTreeNode::Uninitialized);
+        std::mem::swap(self, &mut old_node);
+        match old_node.node {
+            BTreeNode::Leaf(mut children) => {
+                let upper = children
+                    .splice((children.len() + 1) / 2.., std::iter::empty())
+                    .collect::<Vec<_>>();
+                let lower = Self::from(BTreeNode::Leaf(children));
+                let upper = Self::from(BTreeNode::Leaf(upper));
+
+                (Interior::from(lower), Interior::from(upper))
+            }
+            BTreeNode::Interior(mut children) => {
+                let upper = children
+                    .splice((children.len() + 1) / 2.., std::iter::empty())
+                    .collect::<Vec<_>>();
+                let lower = Self::from(BTreeNode::Interior(children));
+                let upper = Self::from(BTreeNode::Interior(upper));
+                (Interior::from(lower), Interior::from(upper))
+            }
             BTreeNode::Uninitialized => unreachable!(),
         }
     }
 
-    pub(crate) fn split_root(&mut self, upper: Self) {
-        let mut lower = Self::from(BTreeNode::Uninitialized);
-        std::mem::swap(self, &mut lower);
-        self.node = BTreeNode::Interior(vec![Interior::from(lower), Interior::from(upper)]);
+    pub(crate) fn split_root(&mut self) {
+        let (lower, upper) = self.split();
+        self.node = BTreeNode::Interior(vec![lower, upper]);
     }
 
     /// Returns the collected statistics for this node.

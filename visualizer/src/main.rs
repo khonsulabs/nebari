@@ -77,6 +77,7 @@ impl Behavior for Visualizer {
             .with(
                 VisualizerWidget::IdField,
                 Input::build()
+                    .value("1")
                     .on_changed(events.map(|_| VisualizerEvent::IdChanged))
                     .finish()
                     .with(Autofocus),

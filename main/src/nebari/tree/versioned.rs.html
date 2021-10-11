@@ -515,6 +515,17 @@
 <span id="515">515</span>
 <span id="516">516</span>
 <span id="517">517</span>
+<span id="518">518</span>
+<span id="519">519</span>
+<span id="520">520</span>
+<span id="521">521</span>
+<span id="522">522</span>
+<span id="523">523</span>
+<span id="524">524</span>
+<span id="525">525</span>
+<span id="526">526</span>
+<span id="527">527</span>
+<span id="528">528</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
@@ -545,7 +556,7 @@
         <span class="ident">copy_chunk</span>, <span class="ident">dynamic_order</span>,
         <span class="ident">key_entry::KeyEntry</span>,
         <span class="ident">modify::Operation</span>,
-        <span class="ident">PageHeader</span>, <span class="ident">Root</span>, <span class="ident">DEFAULT_MAX_ORDER</span>,
+        <span class="ident">Interior</span>, <span class="ident">PageHeader</span>, <span class="ident">Root</span>, <span class="ident">DEFAULT_MAX_ORDER</span>,
     },
     <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">ErrorKind</span>, <span class="ident">Vault</span>,
 };
@@ -568,12 +579,19 @@
     <span class="kw">pub</span> <span class="ident">by_id_root</span>: <span class="ident">BTreeEntry</span><span class="op">&lt;</span><span class="ident">VersionedByIdIndex</span>, <span class="ident">ByIdStats</span><span class="op">&gt;</span>,
 }
 
-<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">ChangeResult</span><span class="op">&lt;</span><span class="ident">Index</span>: <span class="ident">BinarySerialization</span>, <span class="ident">ReducedIndex</span>: <span class="ident">BinarySerialization</span><span class="op">&gt;</span> {
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
+<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">ChangeResult</span> {
     <span class="ident">Unchanged</span>,
     <span class="ident">Remove</span>,
-    <span class="ident">Absorb</span>(<span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">KeyEntry</span><span class="op">&lt;</span><span class="ident">Index</span><span class="op">&gt;</span><span class="op">&gt;</span>),
+    <span class="ident">Absorb</span>,
     <span class="ident">Changed</span>,
-    <span class="ident">Split</span>(<span class="ident">BTreeEntry</span><span class="op">&lt;</span><span class="ident">Index</span>, <span class="ident">ReducedIndex</span><span class="op">&gt;</span>),
+    <span class="ident">Split</span>,
+}
+
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
+<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Children</span><span class="op">&lt;</span><span class="ident">Index</span>, <span class="ident">ReducedIndex</span><span class="op">&gt;</span> {
+    <span class="ident">Leaves</span>(<span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">KeyEntry</span><span class="op">&lt;</span><span class="ident">Index</span><span class="op">&gt;</span><span class="op">&gt;</span>),
+    <span class="ident">Interiors</span>(<span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Interior</span><span class="op">&lt;</span><span class="ident">Index</span>, <span class="ident">ReducedIndex</span><span class="op">&gt;</span><span class="op">&gt;</span>),
 }
 
 <span class="kw">impl</span> <span class="ident">VersionedTreeRoot</span> {
@@ -616,10 +634,12 @@
                 <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">EntryChanges::default</span>(),
                 <span class="ident">writer</span>,
             )<span class="question-mark">?</span> {
-                <span class="ident">ChangeResult::Absorb</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable!</span>(),
-                <span class="ident">ChangeResult::Remove</span> <span class="op">|</span> <span class="ident">ChangeResult::Unchanged</span> <span class="op">|</span> <span class="ident">ChangeResult::Changed</span> <span class="op">=</span><span class="op">&gt;</span> {}
-                <span class="ident">ChangeResult::Split</span>(<span class="ident">upper</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                    <span class="self">self</span>.<span class="ident">by_sequence_root</span>.<span class="ident">split_root</span>(<span class="ident">upper</span>);
+                <span class="ident">ChangeResult::Absorb</span>
+                <span class="op">|</span> <span class="ident">ChangeResult::Remove</span>
+                <span class="op">|</span> <span class="ident">ChangeResult::Unchanged</span>
+                <span class="op">|</span> <span class="ident">ChangeResult::Changed</span> <span class="op">=</span><span class="op">&gt;</span> {}
+                <span class="ident">ChangeResult::Split</span> <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="self">self</span>.<span class="ident">by_sequence_root</span>.<span class="ident">split_root</span>();
                 }
             }
         }
@@ -697,11 +717,13 @@
                 <span class="ident">changes</span>,
                 <span class="ident">writer</span>,
             )<span class="question-mark">?</span> {
-                <span class="ident">ChangeResult::Remove</span> <span class="op">|</span> <span class="ident">ChangeResult::Changed</span> <span class="op">|</span> <span class="ident">ChangeResult::Unchanged</span> <span class="op">=</span><span class="op">&gt;</span> {}
-                <span class="ident">ChangeResult::Split</span>(<span class="ident">upper</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                    <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">split_root</span>(<span class="ident">upper</span>);
+                <span class="ident">ChangeResult::Absorb</span>
+                <span class="op">|</span> <span class="ident">ChangeResult::Remove</span>
+                <span class="op">|</span> <span class="ident">ChangeResult::Changed</span>
+                <span class="op">|</span> <span class="ident">ChangeResult::Unchanged</span> <span class="op">=</span><span class="op">&gt;</span> {}
+                <span class="ident">ChangeResult::Split</span> <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">split_root</span>();
                 }
-                <span class="ident">ChangeResult::Absorb</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable!</span>(),
             }
         }
 

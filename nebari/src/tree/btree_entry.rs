@@ -586,11 +586,12 @@ where
             }
         }
 
-        if child_index < children.len() + 1 {
-            // TODO Write a forward-stealing method. This isn't as critical as
-            // the backward-stealing method -- inserting sequentially will use
-            // the backward stealing method constantly, whereas random data
-            // insertion will use both
+        if child_index + 1 < children.len() {
+            match Self::steal_children_from_end(child_index, children, context, writer)? {
+                ChangeResult::Unchanged => {}
+                ChangeResult::Changed => return Ok((ChangeResult::Changed, false)),
+                _ => unreachable!(),
+            }
         }
 
         let child = children[child_index].position.get_mut().unwrap();
@@ -706,6 +707,92 @@ where
         }
 
         Ok((ChangeResult::Unchanged, should_backup))
+    }
+
+    fn steal_children_from_end<File, IndexedType, Context, Indexer, Loader>(
+        child_index: usize,
+        children: &mut Vec<Interior<Index, ReducedIndex>>,
+        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
+        writer: &mut PagedWriter<'_, File>,
+    ) -> Result<ChangeResult, Error>
+    where
+        File: ManagedFile,
+        Indexer: Fn(
+            &Buffer<'_>,
+            Option<&IndexedType>,
+            Option<&Index>,
+            &mut Context,
+            &mut PagedWriter<'_, File>,
+        ) -> Result<KeyOperation<Index>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
+    {
+        // Check the previous child to see if it can accept any of this child.
+        children[child_index + 1].position.load(
+            writer.file,
+            false,
+            writer.vault,
+            writer.cache,
+            Some(context.current_order),
+        )?;
+        let next_child_count = children[child_index + 1].position.get().unwrap().count();
+        if let Some(free_space) = context.current_order.checked_sub(next_child_count) {
+            if free_space > 0 {
+                // First, take the children from the node that reported it needed to be split.
+                let stolen_children =
+                    match &mut children[child_index].position.get_mut().unwrap().node {
+                        BTreeNode::Leaf(children) => {
+                            let eligible_amount =
+                                children.len().saturating_sub(context.minimum_children);
+                            let amount_to_steal = free_space.min(eligible_amount);
+                            Children::Leaves(
+                                children
+                                    .splice(children.len() - amount_to_steal.., std::iter::empty())
+                                    .collect(),
+                            )
+                        }
+                        BTreeNode::Interior(children) => {
+                            let eligible_amount =
+                                children.len().saturating_sub(context.minimum_children);
+                            let amount_to_steal = free_space.max(eligible_amount);
+                            Children::Interiors(
+                                children
+                                    .splice(children.len() - amount_to_steal.., std::iter::empty())
+                                    .collect(),
+                            )
+                        }
+                        BTreeNode::Uninitialized => unreachable!(),
+                    };
+                // Extend the previous node with the new values
+                let next_child = children[child_index + 1].position.get_mut().unwrap();
+                match (&mut next_child.node, stolen_children) {
+                    (BTreeNode::Leaf(children), Children::Leaves(new_entries)) => {
+                        children.splice(0..0, new_entries);
+                    }
+                    (BTreeNode::Interior(children), Children::Interiors(new_entries)) => {
+                        children.splice(0..0, new_entries);
+                    }
+                    _ => unreachable!(),
+                }
+                // Update the statistics for the previous child.
+                next_child.dirty = true;
+                let (max_key, stats) = { (next_child.max_key().clone(), next_child.stats()) };
+                children[child_index + 1].key = max_key;
+                children[child_index + 1].stats = stats;
+
+                // Update the current child.
+                let child = children[child_index].position.get_mut().unwrap();
+                child.dirty = true;
+                let child_count = child.count();
+                let (max_key, stats) = { (child.max_key().clone(), child.stats()) };
+                children[child_index].key = max_key;
+                children[child_index].stats = stats;
+                if child_count <= context.current_order {
+                    return Ok(ChangeResult::Changed);
+                }
+            }
+        }
+
+        Ok(ChangeResult::Unchanged)
     }
 
     fn count(&self) -> usize {

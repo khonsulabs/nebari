@@ -26,7 +26,10 @@ impl BinarySerialization for VersionedByIdIndex {
         Ok(20)
     }
 
-    fn deserialize_from(reader: &mut Buffer<'_>, _current_order: usize) -> Result<Self, Error> {
+    fn deserialize_from(
+        reader: &mut Buffer<'_>,
+        _current_order: Option<usize>,
+    ) -> Result<Self, Error> {
         let sequence_id = reader.read_u64::<BigEndian>()?;
         let value_length = reader.read_u32::<BigEndian>()?;
         let position = reader.read_u64::<BigEndian>()?;
@@ -58,7 +61,10 @@ impl BinarySerialization for UnversionedByIdIndex {
         Ok(12)
     }
 
-    fn deserialize_from(reader: &mut Buffer<'_>, _current_order: usize) -> Result<Self, Error> {
+    fn deserialize_from(
+        reader: &mut Buffer<'_>,
+        _current_order: Option<usize>,
+    ) -> Result<Self, Error> {
         let value_length = reader.read_u32::<BigEndian>()?;
         let position = reader.read_u64::<BigEndian>()?;
         Ok(Self {
@@ -99,7 +105,10 @@ impl BinarySerialization for ByIdStats {
         Ok(24)
     }
 
-    fn deserialize_from(reader: &mut Buffer<'_>, _current_order: usize) -> Result<Self, Error> {
+    fn deserialize_from(
+        reader: &mut Buffer<'_>,
+        _current_order: Option<usize>,
+    ) -> Result<Self, Error> {
         let alive_keys = reader.read_u64::<BigEndian>()?;
         let deleted_keys = reader.read_u64::<BigEndian>()?;
         let total_indexed_bytes = reader.read_u64::<BigEndian>()?;

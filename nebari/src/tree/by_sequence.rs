@@ -36,7 +36,10 @@ impl BinarySerialization for BySequenceIndex {
         Ok(bytes_written)
     }
 
-    fn deserialize_from(reader: &mut Buffer<'_>, _current_order: usize) -> Result<Self, Error> {
+    fn deserialize_from(
+        reader: &mut Buffer<'_>,
+        _current_order: Option<usize>,
+    ) -> Result<Self, Error> {
         let value_length = reader.read_u32::<BigEndian>()?;
         let position = reader.read_u64::<BigEndian>()?;
         let key_length = reader.read_u16::<BigEndian>()? as usize;
@@ -74,7 +77,10 @@ impl BinarySerialization for BySequenceStats {
         Ok(8)
     }
 
-    fn deserialize_from(reader: &mut Buffer<'_>, _current_order: usize) -> Result<Self, Error> {
+    fn deserialize_from(
+        reader: &mut Buffer<'_>,
+        _current_order: Option<usize>,
+    ) -> Result<Self, Error> {
         let number_of_records = reader.read_u64::<BigEndian>()?;
         Ok(Self {
             total_sequences: number_of_records,

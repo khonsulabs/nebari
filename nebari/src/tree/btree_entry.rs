@@ -403,7 +403,7 @@ where
                 false,
                 writer.vault,
                 writer.cache,
-                context.current_order,
+                Some(context.current_order),
             )?;
             let child_entry = child.position.get_mut().unwrap();
             let (change_result, should_backup) = Self::process_interior_change_result(
@@ -523,7 +523,7 @@ where
                 false,
                 writer.vault,
                 writer.cache,
-                context.current_order,
+                Some(context.current_order),
             )?;
             let sponge_entry = sponge.position.get_mut().unwrap();
             match Self::process_interior_change_result(
@@ -643,7 +643,7 @@ where
             false,
             writer.vault,
             writer.cache,
-            context.current_order,
+            Some(context.current_order),
         )?;
         let previous_child_count = children[child_index - 1].position.get().unwrap().count();
         if let Some(free_space) = context.current_order.checked_sub(previous_child_count) {
@@ -751,7 +751,7 @@ where
                     false,
                     writer.vault,
                     writer.cache,
-                    current_order,
+                    Some(current_order),
                 )?;
                 let sponge = sponge.position.get_mut().unwrap();
                 sponge.absorb(
@@ -927,7 +927,7 @@ where
                         file,
                         vault,
                         cache,
-                        children.len(),
+                        Some(children.len()),
                         |entry, file| entry.scan(range, args, file, vault, cache),
                     )?;
                     if !keep_scanning {
@@ -1005,11 +1005,17 @@ where
                     if let Some(child) = children.get(last_index) {
                         let keep_scanning = child
                             .position
-                            .map_loaded_entry(file, vault, cache, children.len(), |entry, file| {
-                                entry
-                                    .get(keys, key_evaluator, key_reader, file, vault, cache)
-                                    .map_err(AbortError::Nebari)
-                            })
+                            .map_loaded_entry(
+                                file,
+                                vault,
+                                cache,
+                                Some(children.len()),
+                                |entry, file| {
+                                    entry
+                                        .get(keys, key_evaluator, key_reader, file, vault, cache)
+                                        .map_err(AbortError::Nebari)
+                                },
+                            )
                             .map_err(AbortError::infallible)?;
                         if !keep_scanning {
                             break;
@@ -1135,13 +1141,18 @@ impl<
         Ok(bytes_written)
     }
 
-    fn deserialize_from(reader: &mut Buffer<'_>, current_order: usize) -> Result<Self, Error> {
+    fn deserialize_from(
+        reader: &mut Buffer<'_>,
+        current_order: Option<usize>,
+    ) -> Result<Self, Error> {
         let node_header = reader.read_u8()?;
         match node_header {
             0 => {
                 // Interior
                 let mut nodes = Vec::new();
-                nodes.reserve(current_order);
+                if let Some(current_order) = current_order {
+                    nodes.reserve(current_order);
+                }
                 while !reader.is_empty() {
                     nodes.push(Interior::deserialize_from(reader, current_order)?);
                 }
@@ -1153,7 +1164,9 @@ impl<
             1 => {
                 // Leaf
                 let mut nodes = Vec::new();
-                nodes.reserve(current_order);
+                if let Some(current_order) = current_order {
+                    nodes.reserve(current_order);
+                }
                 while !reader.is_empty() {
                     nodes.push(KeyEntry::deserialize_from(reader, current_order)?);
                 }

@@ -93,10 +93,10 @@ impl State {
         self.len() == 0
     }
 
-    fn fetch_tree_locks<'a>(&'a self, trees: &'a [&[u8]], locks: &mut TreeLocks) {
+    fn fetch_tree_locks<'a>(&self, trees: impl Iterator<Item = &'a [u8]>, locks: &mut TreeLocks) {
         let mut tree_locks = self.state.tree_locks.lock();
         for tree in trees {
-            if let Some(lock) = tree_locks.get(&Cow::Borrowed(*tree)) {
+            if let Some(lock) = tree_locks.get(&Cow::Borrowed(tree)) {
                 locks.push(lock.lock());
             } else {
                 let lock = TreeLock::new();
@@ -109,7 +109,15 @@ impl State {
 
     /// Creates a new transaction, exclusively locking `trees`. Will block the thread until the trees can be locked.
     #[must_use]
-    pub fn new_transaction(&self, trees: &[&[u8]]) -> TransactionHandle {
+    pub fn new_transaction<
+        'a,
+        I: IntoIterator<Item = &'a [u8], IntoIter = II>,
+        II: ExactSizeIterator<Item = &'a [u8]>,
+    >(
+        &self,
+        trees: I,
+    ) -> TransactionHandle {
+        let trees = trees.into_iter();
         let mut locked_trees = Vec::with_capacity(trees.len());
         self.fetch_tree_locks(trees, &mut locked_trees);
 

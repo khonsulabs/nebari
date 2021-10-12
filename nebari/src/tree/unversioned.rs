@@ -25,7 +25,7 @@ use crate::{
         btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
         copy_chunk, dynamic_order,
         versioned::ChangeResult,
-        PageHeader, Root, DEFAULT_MAX_ORDER,
+        PageHeader, Root,
     },
     Buffer, ChunkCache, ErrorKind, Vault,
 };
@@ -137,7 +137,7 @@ impl Root for UnversionedTreeRoot {
 
         let mut by_id_bytes = bytes.read_bytes(by_id_size)?.to_owned();
 
-        let by_id_root = BTreeEntry::deserialize_from(&mut by_id_bytes, DEFAULT_MAX_ORDER)?;
+        let by_id_root = BTreeEntry::deserialize_from(&mut by_id_bytes, None)?;
 
         Ok(Self {
             transaction_id,

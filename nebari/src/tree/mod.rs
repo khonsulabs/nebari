@@ -638,7 +638,7 @@ impl<'a, Root: root::Root, File: ManagedFile> FileOp<File>
         let transaction = self.transactions.as_ref().map(|transactions| {
             transactions
                 .manager
-                .new_transaction(&[transactions.name.as_bytes()])
+                .new_transaction([transactions.name.as_bytes()])
         });
         let mut new_file = File::open_for_append(&compacted_path, None)?;
         let mut writer = PagedWriter::new(PageHeader::Data, &mut new_file, self.vault, None, 0);

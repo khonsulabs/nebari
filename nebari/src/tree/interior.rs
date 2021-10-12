@@ -68,7 +68,6 @@ impl<
 {
     /// Attempts to load the node from disk. If the node is already loaded, this
     /// function does nothing.
-    // TODO this isn't a well-designed public function signature. current_order should be optional at a minimum.
     #[allow(clippy::missing_panics_doc)] // Currently the only panic is if the types don't match, which shouldn't happen due to these nodes always being accessed through a root.
     pub fn load<File: ManagedFile>(
         &mut self,
@@ -76,7 +75,7 @@ impl<
         validate_crc: bool,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
-        current_order: usize,
+        current_order: Option<usize>,
     ) -> Result<(), Error> {
         match self {
             Pointer::OnDisk(position) => {
@@ -148,7 +147,7 @@ impl<
         file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
-        current_order: usize,
+        current_order: Option<usize>,
         callback: Cb,
     ) -> Result<Output, AbortError<CallerError>> {
         match self {
@@ -203,7 +202,7 @@ impl<
             Option<&dyn Vault>,
         ) -> Result<bool, Error>,
     {
-        self.position.load(file, true, vault, None, 0)?;
+        self.position.load(file, true, vault, None, None)?;
         let node = self.position.get_mut().unwrap();
         let mut any_data_copied = node.copy_data_to(
             include_nodes,
@@ -284,7 +283,10 @@ impl<
         Ok(bytes_written)
     }
 
-    fn deserialize_from(reader: &mut Buffer<'_>, current_order: usize) -> Result<Self, Error> {
+    fn deserialize_from(
+        reader: &mut Buffer<'_>,
+        current_order: Option<usize>,
+    ) -> Result<Self, Error> {
         let key_len = reader.read_u16::<BigEndian>()? as usize;
         if key_len > reader.len() {
             return Err(Error::data_integrity(format!(

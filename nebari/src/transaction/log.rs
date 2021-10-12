@@ -150,7 +150,14 @@ impl<File: ManagedFile> TransactionLog<File> {
     }
 
     /// Begins a new transaction, exclusively locking `trees`.
-    pub fn new_transaction(&self, trees: &[&[u8]]) -> TransactionHandle {
+    pub fn new_transaction<
+        'a,
+        I: IntoIterator<Item = &'a [u8], IntoIter = II>,
+        II: ExactSizeIterator<Item = &'a [u8]>,
+    >(
+        &self,
+        trees: I,
+    ) -> TransactionHandle {
         self.state.new_transaction(trees)
     }
 
@@ -661,7 +668,7 @@ mod tests {
             let mut transactions =
                 TransactionLog::<File>::open(&log_path, state, context.clone()).unwrap();
             assert_eq!(transactions.current_transaction_id(), id);
-            let mut tx = transactions.new_transaction(&[b"hello"]);
+            let mut tx = transactions.new_transaction([&b"hello"[..]]);
 
             tx.transaction.data = Some(Buffer::from(id.to_be_bytes()));
 
@@ -724,7 +731,7 @@ mod tests {
         let mut valid_ids = Vec::new();
         for id in 1..=10_000 {
             assert_eq!(transactions.current_transaction_id(), id);
-            let tx = transactions.new_transaction(&[b"hello"]);
+            let tx = transactions.new_transaction([&b"hello"[..]]);
             if rng.generate::<u8>() < 8 {
                 // skip a few ids.
                 continue;
@@ -787,7 +794,7 @@ mod tests {
             let manager = manager.clone();
             handles.push(std::thread::spawn(move || {
                 for id in 0_u32..1_000 {
-                    let tx = manager.new_transaction(&[&id.to_be_bytes()]);
+                    let tx = manager.new_transaction([&id.to_be_bytes()[..]]);
                     manager.push(tx).unwrap();
                 }
             }));

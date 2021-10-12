@@ -157,10 +157,6 @@ impl FileManager for StdFileManager {
     }
 
     fn read(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error> {
-        // TODO we should come up with a way to cache open files. We want to
-        // support more than one open reader for a file at any given time, but
-        // we should be able to limit the number of open files. A time+capacity
-        // based Lru cache might work.
         let path = path.as_ref();
         let file_id = self.file_ids.file_id_for_path(path);
 

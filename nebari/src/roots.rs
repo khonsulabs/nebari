@@ -182,14 +182,13 @@ impl<File: ManagedFile> Roots<File> {
         &self,
         trees: &[TreeRoot<File>],
     ) -> Result<ExecutingTransaction<File>, Error> {
-        // TODO this extra vec here is annoying. We should have a treename type
-        // that we can use instead of str.
-        let transaction = self.data.transactions.new_transaction(
-            &trees
-                .iter()
-                .map(|t| check_name(t.name()).map(|_| t.name().as_bytes()))
-                .collect::<Result<Vec<_>, Error>>()?,
-        );
+        for tree in trees {
+            check_name(tree.name()).map(|_| tree.name().as_bytes())?;
+        }
+        let transaction = self
+            .data
+            .transactions
+            .new_transaction(trees.iter().map(|t| t.name().as_bytes()));
         let states = self.tree_states(trees);
         let trees = trees
             .iter()

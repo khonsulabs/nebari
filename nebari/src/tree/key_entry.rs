@@ -63,7 +63,10 @@ impl<Index: BinarySerialization> BinarySerialization for KeyEntry<Index> {
         Ok(bytes_written)
     }
 
-    fn deserialize_from(reader: &mut Buffer<'_>, current_order: usize) -> Result<Self, Error> {
+    fn deserialize_from(
+        reader: &mut Buffer<'_>,
+        current_order: Option<usize>,
+    ) -> Result<Self, Error> {
         let key_len = reader.read_u16::<BigEndian>()? as usize;
         if key_len > reader.len() {
             return Err(Error::data_integrity(format!(

@@ -27,7 +27,7 @@ use crate::{
         copy_chunk, dynamic_order,
         key_entry::KeyEntry,
         modify::Operation,
-        Interior, PageHeader, Root, DEFAULT_MAX_ORDER,
+        Interior, PageHeader, Root,
     },
     Buffer, ChunkCache, ErrorKind, Vault,
 };
@@ -240,9 +240,8 @@ impl Root for VersionedTreeRoot {
         let mut by_sequence_bytes = bytes.read_bytes(by_sequence_size)?.to_owned();
         let mut by_id_bytes = bytes.read_bytes(by_id_size)?.to_owned();
 
-        let by_sequence_root =
-            BTreeEntry::deserialize_from(&mut by_sequence_bytes, DEFAULT_MAX_ORDER)?;
-        let by_id_root = BTreeEntry::deserialize_from(&mut by_id_bytes, DEFAULT_MAX_ORDER)?;
+        let by_sequence_root = BTreeEntry::deserialize_from(&mut by_sequence_bytes, None)?;
+        let by_id_root = BTreeEntry::deserialize_from(&mut by_id_bytes, None)?;
 
         Ok(Self {
             transaction_id,
@@ -426,7 +425,6 @@ impl Root for VersionedTreeRoot {
         Ok(())
     }
 
-    // TODO can we make compaction smarter to not get rid of *all* old data in a versioned file?
     fn copy_data_to<File: ManagedFile>(
         &mut self,
         include_nodes: bool,

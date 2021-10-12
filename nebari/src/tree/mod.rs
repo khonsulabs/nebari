@@ -1,9 +1,8 @@
 //! Append-only B-Tree implementation
 //!
-//! The file format is inspired by
-//! [Couchstore](https://github.com/couchbase/couchstore). The main difference
-//! is that the file header has extra information to allow for cross-tree
-//! transactions.
+//! The file format is loosely inspired by
+//! [Couchstore](https://github.com/couchbase/couchstore). Nebari is not
+//! compatible with Couchstore in any way.
 //!
 //! ## Numbers and Alignment
 //!
@@ -15,12 +14,12 @@
 //!
 //! The file is written in pages that are 4,096 bytes long. Each page has single
 //! `u8` representing the `PageHeader`. If data needs to span more than one
-//! page, every 4,096 byte boundary must contain a `PageHeader::Continuation`.
+//! page, every [`PAGE_SIZE`] byte boundary must contain a `PageHeader::Continuation`.
 //!
 //! ### File Headers
 //!
-//! If the header is a `PageHeader::Header`, the contents of the block will be
-//! a single chunk that contains a serialized `BTreeRoot`.
+//! If the header is a `PageHeader::Header`, the contents of the block will be a
+//! single chunk that contains a serialized `BTreeRoot`.
 //!
 //! ## Chunks
 //!
@@ -93,9 +92,10 @@ pub use self::{
     versioned::VersionedTreeRoot,
 };
 
+/// The number of bytes in each page on-disk.
 // The memory used by PagedWriter is PAGE_SIZE * PAGED_WRITER_BATCH_COUNT. E.g,
 // 4096 * 4 = 16kb
-const PAGE_SIZE: usize = 4096;
+pub const PAGE_SIZE: usize = 4096;
 const PAGED_WRITER_BATCH_COUNT: usize = 4;
 
 const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_BZIP2);

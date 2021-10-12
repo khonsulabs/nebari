@@ -652,7 +652,7 @@ mod tests {
         std::fs::create_dir(&temp_dir).unwrap();
         let log_path = {
             let directory: &Path = &temp_dir;
-            directory.join("transactions")
+            directory.join("_transactions")
         };
 
         for id in 1..=1_000 {
@@ -714,7 +714,7 @@ mod tests {
             vault: None,
             cache: None,
         };
-        let log_path = temp_dir.path().join("transactions");
+        let log_path = temp_dir.path().join("_transactions");
         let mut rng = Pcg64::new_seed(1);
 
         let state = State::from_path(&log_path);

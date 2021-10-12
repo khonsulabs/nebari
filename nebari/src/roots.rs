@@ -92,12 +92,18 @@ impl<File: ManagedFile> Roots<File> {
     }
 
     /// Opens a tree named `name`.
-    // TODO enforce name restrictions.
+    ///
+    /// ## Errors
+    ///
+    /// - [`InvalidTreeName`](ErrorKind::InvalidTreeName): The name contained an
+    ///   invalid character. For a full list of valid characters, see the
+    ///   documentation on [`InvalidTreeName`](ErrorKind::InvalidTreeName).
     pub fn tree<Root: tree::Root, Name: Into<Cow<'static, str>>>(
         &self,
         name: Name,
     ) -> Result<Tree<Root, File>, Error> {
         let name = name.into();
+        check_name(&name)?;
         let path = self.tree_path(&name);
         if !path.exists() {
             self.context().file_manager.append(&path)?;
@@ -166,6 +172,12 @@ impl<File: ManagedFile> Roots<File> {
     /// Begins a transaction over `trees`. All trees will be exclusively
     /// accessible by the transaction. Dropping the executing transaction will
     /// roll the transaction back.
+    ///
+    /// ## Errors
+    ///
+    /// - [`InvalidTreeName`](ErrorKind::InvalidTreeName): A tree name contained
+    ///   an invalid character. For a full list of valid characters, see the
+    ///   documentation on [`InvalidTreeName`](ErrorKind::InvalidTreeName).
     pub fn transaction(
         &self,
         trees: &[TreeRoot<File>],
@@ -175,8 +187,8 @@ impl<File: ManagedFile> Roots<File> {
         let transaction = self.data.transactions.new_transaction(
             &trees
                 .iter()
-                .map(|t| t.name().as_bytes())
-                .collect::<Vec<_>>(),
+                .map(|t| check_name(t.name()).map(|_| t.name().as_bytes()))
+                .collect::<Result<Vec<_>, Error>>()?,
         );
         let states = self.tree_states(trees);
         let trees = trees
@@ -198,6 +210,18 @@ impl<File: ManagedFile> Roots<File> {
             trees,
             transaction_manager: self.data.transactions.clone(),
         })
+    }
+}
+
+fn check_name(name: &str) -> Result<(), Error> {
+    if name != "_transactions"
+        && name
+            .bytes()
+            .all(|c| matches!(c as char, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '.' | '_'))
+    {
+        Ok(())
+    } else {
+        Err(Error::from(ErrorKind::InvalidTreeName))
     }
 }
 
@@ -1082,5 +1106,12 @@ mod tests {
         for thread in threads {
             thread.join().unwrap();
         }
+    }
+
+    #[test]
+    fn name_tests() {
+        assert!(check_name("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-.").is_ok());
+        assert!(check_name("=").is_err());
+        assert!(check_name("_transactions").is_err());
     }
 }

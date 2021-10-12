@@ -113,6 +113,18 @@ pub enum ErrorKind {
     /// An unrecoverable data integrity error was encountered.
     #[error("an unrecoverable error with the data on disk has been found: {0}")]
     DataIntegrity(Box<Error>),
+    /// An invalid tree name was provided.
+    ///
+    /// Valid characters are:
+    ///
+    /// - `'a'..='z'`
+    /// - `'A'..='Z'`
+    /// - `'0'..='9'`
+    /// - `'-'` (Hyphen)
+    /// - `'_'` (Underscore)
+    /// - `'.'` (Period)
+    #[error("tree name not valid")]
+    InvalidTreeName,
     /// A key was too large.
     #[error("key too large")]
     KeyTooLarge,

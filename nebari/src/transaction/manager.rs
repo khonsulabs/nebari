@@ -118,7 +118,7 @@ impl<Manager: FileManager> TransactionManager<Manager> {
     }
 
     fn log_path(directory: &Path) -> PathBuf {
-        directory.join("transactions")
+        directory.join("_transactions")
     }
 
     /// Returns the current state of the transaction log.

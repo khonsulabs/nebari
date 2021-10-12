@@ -292,10 +292,6 @@
 <span id="292">292</span>
 <span id="293">293</span>
 <span id="294">294</span>
-<span id="295">295</span>
-<span id="296">296</span>
-<span id="297">297</span>
-<span id="298">298</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections</span>::{<span class="ident">HashMap</span>, <span class="ident">VecDeque</span>},
@@ -456,10 +452,6 @@
     }
 
     <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::FileHandle</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="comment">// TODO we should come up with a way to cache open files. We want to</span>
-        <span class="comment">// support more than one open reader for a file at any given time, but</span>
-        <span class="comment">// we should be able to limit the number of open files. A time+capacity</span>
-        <span class="comment">// based Lru cache might work.</span>
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_ref</span>();
         <span class="kw">let</span> <span class="ident">file_id</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">file_ids</span>.<span class="ident">file_id_for_path</span>(<span class="ident">path</span>);
 

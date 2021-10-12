@@ -524,8 +524,6 @@
 <span id="524">524</span>
 <span id="525">525</span>
 <span id="526">526</span>
-<span id="527">527</span>
-<span id="528">528</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
@@ -556,7 +554,7 @@
         <span class="ident">copy_chunk</span>, <span class="ident">dynamic_order</span>,
         <span class="ident">key_entry::KeyEntry</span>,
         <span class="ident">modify::Operation</span>,
-        <span class="ident">Interior</span>, <span class="ident">PageHeader</span>, <span class="ident">Root</span>, <span class="ident">DEFAULT_MAX_ORDER</span>,
+        <span class="ident">Interior</span>, <span class="ident">PageHeader</span>, <span class="ident">Root</span>,
     },
     <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">ErrorKind</span>, <span class="ident">Vault</span>,
 };
@@ -769,9 +767,8 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">by_sequence_bytes</span> <span class="op">=</span> <span class="ident">bytes</span>.<span class="ident">read_bytes</span>(<span class="ident">by_sequence_size</span>)<span class="question-mark">?</span>.<span class="ident">to_owned</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">by_id_bytes</span> <span class="op">=</span> <span class="ident">bytes</span>.<span class="ident">read_bytes</span>(<span class="ident">by_id_size</span>)<span class="question-mark">?</span>.<span class="ident">to_owned</span>();
 
-        <span class="kw">let</span> <span class="ident">by_sequence_root</span> <span class="op">=</span>
-            <span class="ident">BTreeEntry::deserialize_from</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">by_sequence_bytes</span>, <span class="ident">DEFAULT_MAX_ORDER</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">by_id_root</span> <span class="op">=</span> <span class="ident">BTreeEntry::deserialize_from</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">by_id_bytes</span>, <span class="ident">DEFAULT_MAX_ORDER</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">by_sequence_root</span> <span class="op">=</span> <span class="ident">BTreeEntry::deserialize_from</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">by_sequence_bytes</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">by_id_root</span> <span class="op">=</span> <span class="ident">BTreeEntry::deserialize_from</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">by_id_bytes</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
 
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
             <span class="ident">transaction_id</span>,
@@ -955,7 +952,6 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="comment">// TODO can we make compaction smarter to not get rid of *all* old data in a versioned file?</span>
     <span class="kw">fn</span> <span class="ident">copy_data_to</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">include_nodes</span>: <span class="ident">bool</span>,

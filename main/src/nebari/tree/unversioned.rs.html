@@ -354,7 +354,7 @@
         <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">NodeInclusion</span>, <span class="ident">ScanArgs</span>},
         <span class="ident">copy_chunk</span>, <span class="ident">dynamic_order</span>,
         <span class="ident">versioned::ChangeResult</span>,
-        <span class="ident">PageHeader</span>, <span class="ident">Root</span>, <span class="ident">DEFAULT_MAX_ORDER</span>,
+        <span class="ident">PageHeader</span>, <span class="ident">Root</span>,
     },
     <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">ErrorKind</span>, <span class="ident">Vault</span>,
 };
@@ -466,7 +466,7 @@
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">by_id_bytes</span> <span class="op">=</span> <span class="ident">bytes</span>.<span class="ident">read_bytes</span>(<span class="ident">by_id_size</span>)<span class="question-mark">?</span>.<span class="ident">to_owned</span>();
 
-        <span class="kw">let</span> <span class="ident">by_id_root</span> <span class="op">=</span> <span class="ident">BTreeEntry::deserialize_from</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">by_id_bytes</span>, <span class="ident">DEFAULT_MAX_ORDER</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">by_id_root</span> <span class="op">=</span> <span class="ident">BTreeEntry::deserialize_from</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">by_id_bytes</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
 
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
             <span class="ident">transaction_id</span>,

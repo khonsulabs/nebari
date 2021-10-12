@@ -2394,7 +2394,7 @@
         <span class="kw">let</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">transactions</span>.<span class="ident">as_ref</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">transactions</span><span class="op">|</span> {
             <span class="ident">transactions</span>
                 .<span class="ident">manager</span>
-                .<span class="ident">new_transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">transactions</span>.<span class="ident">name</span>.<span class="ident">as_bytes</span>()])
+                .<span class="ident">new_transaction</span>([<span class="ident">transactions</span>.<span class="ident">name</span>.<span class="ident">as_bytes</span>()])
         });
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">new_file</span> <span class="op">=</span> <span class="ident">File::open_for_append</span>(<span class="kw-2">&amp;</span><span class="ident">compacted_path</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">writer</span> <span class="op">=</span> <span class="ident">PagedWriter::new</span>(<span class="ident">PageHeader::Data</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">new_file</span>, <span class="self">self</span>.<span class="ident">vault</span>, <span class="prelude-val">None</span>, <span class="number">0</span>);

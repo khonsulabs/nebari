@@ -1,5 +1,4 @@
-//! Transactional append-only B-Tree storage for `BonsaiDb`.
-
+#![doc = include_str!("../../README.md")]
 #![forbid(unsafe_code)]
 #![warn(
     clippy::cargo,

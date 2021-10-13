@@ -16,6 +16,19 @@ This crate provides the `Roots` type, which is the transactional storage layer
 for [`BonsaiDb`](https://dev.bonsaidb.io/). It is loosely inspired by
 [`Couchstore`](https://github.com/couchbase/couchstore).
 
+## Examples
+
+Inserting a key-value pair in an on-disk tree with full revision history:
+
+```rust
+use nebari::{Config, io::fs::StdFile, tree::VersionedTreeRoot};
+let roots = Config::<StdFile>::default_for("simple-database.nebari").open().unwrap();
+let tree = roots.tree::<VersionedTreeRoot, _>("a-tree").unwrap();
+tree.set("hello", "world").unwrap();
+```
+
+For more examples, check out [`nebari/examples/`](./nebari/examples/).
+
 ## Features
 
 Nebari exposes multiple levels of functionality. The lowest level functionality is the [`TreeFile`](https://nebari.bonsaidb.io/main/nebari/tree/struct.TreeFile.html). A `TreeFile` is a key-value store that uses an append-only file format for its implementation.

@@ -2099,8 +2099,8 @@
 <span class="doccomment">/// The number of bytes in each page on-disk.</span>
 <span class="comment">// The memory used by PagedWriter is PAGE_SIZE * PAGED_WRITER_BATCH_COUNT. E.g,</span>
 <span class="comment">// 4096 * 4 = 16kb</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PAGE_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">4096</span>;
-<span class="kw">const</span> <span class="ident">PAGED_WRITER_BATCH_COUNT</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">4</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PAGE_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">256</span>;
+<span class="kw">const</span> <span class="ident">PAGED_WRITER_BATCH_COUNT</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">64</span>;
 
 <span class="kw">const</span> <span class="ident">CRC32</span>: <span class="ident">Crc</span><span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Crc</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="kw-2">&amp;</span><span class="ident">CRC_32_BZIP2</span>);
 

@@ -17,9 +17,10 @@ use super::{
     KeyRange, PagedWriter,
 };
 use crate::{
+    chunk_cache::CacheEntry,
     error::Error,
     io::ManagedFile,
-    tree::{versioned::Children, KeyEvaluation},
+    tree::{key_entry::ValueIndex, read_chunk, versioned::Children, KeyEvaluation},
     AbortError, Buffer, ChunkCache, ErrorKind, Vault,
 };
 
@@ -107,7 +108,7 @@ where
 
 impl<Index, ReducedIndex> BTreeEntry<Index, ReducedIndex>
 where
-    Index: Clone + BinarySerialization + Debug + 'static,
+    Index: ValueIndex + Clone + BinarySerialization + Debug + 'static,
     ReducedIndex: Clone + Reducer<Index> + BinarySerialization + Debug + 'static,
 {
     pub(crate) fn modify<File, IndexedType, Context, Indexer, Loader>(
@@ -935,27 +936,38 @@ where
         File: ManagedFile,
         KeyRangeBounds,
         KeyEvaluator,
-        KeyReader,
+        ScanDataCallback,
     >(
         &self,
         range: &KeyRangeBounds,
-        args: &mut ScanArgs<&Index, CallerError, KeyEvaluator, KeyReader>,
+        args: &mut ScanArgs<Index, CallerError, KeyEvaluator, ScanDataCallback>,
         file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
     where
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, &Index) -> Result<(), AbortError<CallerError>>,
+        KeyEvaluator: FnMut(&Buffer<'static>, &Index) -> KeyEvaluation,
         KeyRangeBounds: RangeBounds<Buffer<'k>> + Debug,
+        ScanDataCallback:
+            FnMut(Buffer<'static>, &Index, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
     {
         match &self.node {
             BTreeNode::Leaf(children) => {
                 for child in DirectionalSliceIterator::new(args.forwards, children) {
                     if range.contains(&child.key) {
-                        match (args.key_evaluator)(&child.key) {
+                        match (args.key_evaluator)(&child.key, &child.index) {
                             KeyEvaluation::ReadData => {
-                                (args.key_reader)(child.key.clone(), &child.index)?;
+                                let data = match read_chunk(
+                                    child.index.position(),
+                                    false,
+                                    file,
+                                    vault,
+                                    cache,
+                                )? {
+                                    CacheEntry::Buffer(contents) => contents,
+                                    CacheEntry::Decoded(_) => unreachable!(),
+                                };
+                                (args.data_callback)(child.key.clone(), &child.index, data)?;
                             }
                             KeyEvaluation::Skip => {}
                             KeyEvaluation::Stop => return Ok(false),
@@ -1029,11 +1041,11 @@ where
 
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(skip(self, key_evaluator, key_reader, file, vault, cache))
+        tracing::instrument(skip(self, key_evaluator, keys, key_reader, file, vault, cache))
     )]
-    pub(crate) fn get<File: ManagedFile, KeyEvaluator, KeyReader>(
+    pub(crate) fn get<'keys, File: ManagedFile, KeyEvaluator, KeyReader, Keys>(
         &self,
-        keys: &mut KeyRange<'_>,
+        keys: &mut KeyRange<'keys, Keys>,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
         file: &mut File,
@@ -1041,8 +1053,9 @@ where
         cache: Option<&ChunkCache>,
     ) -> Result<bool, Error>
     where
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
+        KeyEvaluator: FnMut(&Buffer<'static>, &Index) -> KeyEvaluation,
         KeyReader: FnMut(Buffer<'static>, &Index) -> Result<(), AbortError<Infallible>>,
+        Keys: Iterator<Item = &'keys [u8]>,
     {
         match &self.node {
             BTreeNode::Leaf(children) => {
@@ -1055,10 +1068,9 @@ where
                             keys.next();
                             last_index += matching;
                             let entry = &children[last_index];
-                            match key_evaluator(&entry.key) {
+                            match key_evaluator(&entry.key, &entry.index) {
                                 KeyEvaluation::ReadData => {
-                                    key_reader(entry.key.clone(), &entry.index)
-                                        .map_err(AbortError::infallible)?;
+                                    key_reader(entry.key.clone(), &entry.index)?;
                                 }
                                 KeyEvaluation::Skip => {}
                                 KeyEvaluation::Stop => return Ok(false),
@@ -1090,20 +1102,17 @@ where
                     // the key being searched for isn't contained, it will be
                     // greater than any of the node's keys.
                     if let Some(child) = children.get(last_index) {
-                        let keep_scanning = child
-                            .position
-                            .map_loaded_entry(
-                                file,
-                                vault,
-                                cache,
-                                Some(children.len()),
-                                |entry, file| {
-                                    entry
-                                        .get(keys, key_evaluator, key_reader, file, vault, cache)
-                                        .map_err(AbortError::Nebari)
-                                },
-                            )
-                            .map_err(AbortError::infallible)?;
+                        let keep_scanning = child.position.map_loaded_entry(
+                            file,
+                            vault,
+                            cache,
+                            Some(children.len()),
+                            |entry, file| {
+                                entry
+                                    .get(keys, key_evaluator, key_reader, file, vault, cache)
+                                    .map_err(AbortError::Nebari)
+                            },
+                        )?;
                         if !keep_scanning {
                             break;
                         }
@@ -1311,28 +1320,30 @@ impl<'a, I> Iterator for DirectionalSliceIterator<'a, I> {
     }
 }
 
-pub struct ScanArgs<Index, CallerError: Display + Debug, KeyEvaluator, KeyReader>
+pub struct ScanArgs<Index, CallerError: Display + Debug, KeyEvaluator, DataCallback>
 where
-    KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-    KeyReader: FnMut(Buffer<'static>, Index) -> Result<(), AbortError<CallerError>>,
+    KeyEvaluator: FnMut(&Buffer<'static>, &Index) -> KeyEvaluation,
+    DataCallback:
+        FnMut(Buffer<'static>, &Index, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
 {
     pub forwards: bool,
     pub key_evaluator: KeyEvaluator,
-    pub key_reader: KeyReader,
+    pub data_callback: DataCallback,
     _phantom: PhantomData<(Index, CallerError)>,
 }
 
-impl<Index, CallerError: Display + Debug, KeyEvaluator, KeyReader>
-    ScanArgs<Index, CallerError, KeyEvaluator, KeyReader>
+impl<Index, CallerError: Display + Debug, KeyEvaluator, DataCallback>
+    ScanArgs<Index, CallerError, KeyEvaluator, DataCallback>
 where
-    KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-    KeyReader: FnMut(Buffer<'static>, Index) -> Result<(), AbortError<CallerError>>,
+    KeyEvaluator: FnMut(&Buffer<'static>, &Index) -> KeyEvaluation,
+    DataCallback:
+        FnMut(Buffer<'static>, &Index, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
 {
-    pub fn new(forwards: bool, key_evaluator: KeyEvaluator, key_reader: KeyReader) -> Self {
+    pub fn new(forwards: bool, key_evaluator: KeyEvaluator, data_callback: DataCallback) -> Self {
         Self {
             forwards,
             key_evaluator,
-            key_reader,
+            data_callback,
             _phantom: PhantomData,
         }
     }

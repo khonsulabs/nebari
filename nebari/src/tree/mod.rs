@@ -45,7 +45,7 @@ use std::{
     hash::BuildHasher,
     io::SeekFrom,
     marker::PhantomData,
-    ops::{Deref, DerefMut, RangeBounds},
+    ops::{Bound, Deref, DerefMut, RangeBounds},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -84,12 +84,12 @@ pub use self::{
     by_id::{ByIdStats, UnversionedByIdIndex, VersionedByIdIndex},
     by_sequence::{BySequenceIndex, BySequenceStats},
     interior::{Interior, Pointer},
-    key_entry::KeyEntry,
+    key_entry::{KeyEntry, ValueIndex},
     modify::{CompareSwap, CompareSwapFn, Modification, Operation},
     root::{Root, TreeRoot},
     state::{ActiveState, State},
     unversioned::UnversionedTreeRoot,
-    versioned::VersionedTreeRoot,
+    versioned::{KeySequence, VersionedTreeRoot},
 };
 
 /// The number of bytes in each page on-disk.
@@ -424,7 +424,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             state: &self.state,
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
-            keys: KeyRange::Single(key),
+            keys: KeyRange::new(std::iter::once(key)),
             key_reader: |_key, value| {
                 buffer = Some(value);
                 Ok(())
@@ -434,7 +434,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         Ok(buffer)
     }
 
-    /// Gets the value stored for `key`.
+    /// Gets the values stored in `keys`. Does not error if a key is missing.
+    /// Returns key/value pairs in an unspecified order.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn get_multiple(
         &mut self,
@@ -447,7 +448,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             state: &self.state,
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
-            keys: KeyRange::Multiple(keys),
+            keys: KeyRange::new(keys.iter().copied()),
             key_reader: |key, value| {
                 buffers.push((key, value));
                 Ok(())
@@ -457,7 +458,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         Ok(buffers)
     }
 
-    /// Gets the value stored for `key`.
+    /// Retrieves all keys and values with keys that are contained by `range`.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn get_range<'b, B: RangeBounds<Buffer<'b>> + Debug + 'static>(
         &mut self,
@@ -481,7 +482,13 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         }
     }
 
-    /// Gets the value stored for `key`.
+    /// Scans the tree for keys that are contained within `range`. If `forwards`
+    /// is true, scanning starts at the lowest sort-order key and scans forward.
+    /// Otherwise, scanning starts at the highest sort-order key and scans
+    /// backwards. `key_evaluator` is invoked for each key as it is encountered.
+    /// For all [`KeyEvaluation::ReadData`] results returned, `callback` will be
+    /// invoked with the key and values. The callback may not be invoked in the
+    /// same order as the keys are scanned.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(skip(self, key_evaluator, callback))
@@ -508,8 +515,10 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
             range,
-            key_reader: callback,
-            key_evaluator,
+            key_reader: |key: Buffer<'static>, _: &Root::Index, value: Buffer<'static>| {
+                callback(key, value)
+            },
+            key_evaluator: |key: &Buffer<'static>, _: &Root::Index| key_evaluator(key),
             _phantom: PhantomData,
         })?;
         Ok(())
@@ -527,8 +536,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                 KeyEvaluation::Stop
             },
             &mut |_key, _value| Ok(()),
-        )
-        .map_err(AbortError::infallible)?;
+        )?;
 
         Ok(result)
     }
@@ -556,8 +564,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                 result = Some((key, value));
                 Ok(())
             },
-        )
-        .map_err(AbortError::infallible)?;
+        )?;
 
         Ok(result)
     }
@@ -600,6 +607,54 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     }
 }
 
+impl<File: ManagedFile> TreeFile<VersionedTreeRoot, File> {
+    /// Scans the tree for keys that are contained within `range`. If `forwards`
+    /// is true, scanning starts at the lowest sort-order key and scans forward.
+    /// Otherwise, scanning starts at the highest sort-order key and scans
+    /// backwards. `key_evaluator` is invoked for each key as it is encountered.
+    /// For all [`KeyEvaluation::ReadData`] results returned, `callback` will be
+    /// invoked with the key and values. The callback may not be invoked in the
+    /// same order as the keys are scanned.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(skip(self, key_evaluator, data_callback))
+    )]
+    pub fn scan_sequences<CallerError, Range, KeyEvaluator, DataCallback>(
+        &mut self,
+        range: Range,
+        forwards: bool,
+        in_transaction: bool,
+        key_evaluator: &mut KeyEvaluator,
+        data_callback: &mut DataCallback,
+    ) -> Result<(), AbortError<CallerError>>
+    where
+        Range: RangeBounds<u64> + Debug + 'static,
+        KeyEvaluator: FnMut(KeySequence) -> KeyEvaluation,
+        DataCallback: FnMut(KeySequence, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        CallerError: Display + Debug,
+    {
+        self.file.execute(TreeSequenceScanner {
+            forwards,
+            from_transaction: in_transaction,
+            state: &self.state,
+            vault: self.vault.as_deref(),
+            cache: self.cache.as_ref(),
+            range: U64Bounds::new(range),
+            key_evaluator: &mut move |key: &Buffer<'static>, index: &BySequenceIndex| {
+                let id = BigEndian::read_u64(key);
+                key_evaluator(KeySequence {
+                    key: index.key.clone(),
+                    sequence: id,
+                    last_sequence: index.last_sequence,
+                })
+            },
+            data_callback,
+            _phantom: PhantomData,
+        })?;
+        Ok(())
+    }
+}
+
 /// A compaction process that runs in concert with a transaction manager.
 pub struct TransactableCompaction<'a, Manager: FileManager> {
     /// The name of the tree being compacted.
@@ -619,7 +674,7 @@ impl<'a, Root: root::Root, File: ManagedFile> FileOp<File>
 {
     type Output = Result<(PathBuf, TreeCompactionFinisher<'a, Root>), Error>;
 
-    fn execute(&mut self, file: &mut File) -> Self::Output {
+    fn execute(self, file: &mut File) -> Self::Output {
         let current_path = file.path().to_path_buf();
         let file_name = current_path
             .file_name()
@@ -697,7 +752,7 @@ struct TreeWriter<'a, Root: root::Root> {
 
 impl<'a, Root: root::Root, File: ManagedFile> FileOp<File> for TreeWriter<'a, Root> {
     type Output = Result<(), Error>;
-    fn execute(&mut self, file: &mut File) -> Self::Output {
+    fn execute(self, file: &mut File) -> Self::Output {
         let mut active_state = self.state.lock();
         if active_state.file_id != file.id() {
             return Err(Error::from(ErrorKind::TreeCompacted));
@@ -736,7 +791,7 @@ struct TreeModifier<'a, 'm, Root: root::Root> {
 impl<'a, 'm, Root: root::Root, File: ManagedFile> FileOp<File> for TreeModifier<'a, 'm, Root> {
     type Output = Result<(), Error>;
 
-    fn execute(&mut self, file: &mut File) -> Self::Output {
+    fn execute(mut self, file: &mut File) -> Self::Output {
         let mut active_state = self.state.lock();
         if active_state.file_id != file.id() {
             return Err(Error::from(ErrorKind::TreeCompacted));
@@ -812,46 +867,30 @@ fn save_tree<Root: root::Root, File: ManagedFile>(
 
 /// One or more keys.
 #[derive(Debug)]
-pub enum KeyRange<'a> {
-    /// No keys.
-    Empty,
-    /// A single key.
-    Single(&'a [u8]),
-    /// A list of keys.
-    Multiple(&'a [&'a [u8]]),
+pub struct KeyRange<'a, I: Iterator<Item = &'a [u8]>> {
+    remaining_keys: I,
+    current_key: Option<&'a [u8]>,
 }
 
-impl<'a> KeyRange<'a> {
-    fn current_key(&self) -> Option<&'a [u8]> {
-        match self {
-            KeyRange::Single(key) => Some(*key),
-            KeyRange::Multiple(keys) => keys.get(0).copied(),
-            KeyRange::Empty => None,
+impl<'a, I: Iterator<Item = &'a [u8]>> KeyRange<'a, I> {
+    fn new(mut keys: I) -> Self {
+        Self {
+            current_key: keys.next(),
+            remaining_keys: keys,
         }
+    }
+
+    fn current_key(&self) -> Option<&'a [u8]> {
+        self.current_key
     }
 }
 
-impl<'a> Iterator for KeyRange<'a> {
+impl<'a, I: Iterator<Item = &'a [u8]>> Iterator for KeyRange<'a, I> {
     type Item = &'a [u8];
     fn next(&mut self) -> Option<&'a [u8]> {
-        match self {
-            KeyRange::Empty => None,
-            KeyRange::Single(key) => {
-                let key = *key;
-                *self = Self::Empty;
-                Some(key)
-            }
-            KeyRange::Multiple(keys) => {
-                if keys.is_empty() {
-                    None
-                } else {
-                    let (one_key, remaining) = keys.split_at(1);
-                    *keys = remaining;
-
-                    Some(one_key[0])
-                }
-            }
-        }
+        let key_to_return = self.current_key;
+        self.current_key = self.remaining_keys.next();
+        key_to_return
     }
 }
 
@@ -870,26 +909,30 @@ struct TreeGetter<
     'a,
     'keys,
     Root: root::Root,
-    CallerError: FnMut(&Buffer<'static>) -> KeyEvaluation,
+    KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
     KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
+    Keys: Iterator<Item = &'keys [u8]>,
 > {
     from_transaction: bool,
     state: &'a State<Root>,
     vault: Option<&'a dyn Vault>,
     cache: Option<&'a ChunkCache>,
-    keys: KeyRange<'keys>,
-    key_evaluator: CallerError,
+    keys: Keys,
+    key_evaluator: KeyEvaluator,
     key_reader: KeyReader,
 }
 
-impl<'a, 'keys, CallerError, KeyReader, Root: root::Root, File: ManagedFile> FileOp<File>
-    for TreeGetter<'a, 'keys, Root, CallerError, KeyReader>
+impl<'a, 'keys, KeyEvaluator, KeyReader, Root, File, Keys> FileOp<File>
+    for TreeGetter<'a, 'keys, Root, KeyEvaluator, KeyReader, Keys>
 where
-    CallerError: FnMut(&Buffer<'static>) -> KeyEvaluation,
+    KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
     KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
+    Keys: Iterator<Item = &'keys [u8]>,
+    Root: root::Root,
+    File: ManagedFile,
 {
     type Output = Result<(), Error>;
-    fn execute(&mut self, file: &mut File) -> Self::Output {
+    fn execute(mut self, file: &mut File) -> Self::Output {
         if self.from_transaction {
             let state = self.state.lock();
             if state.file_id != file.id() {
@@ -931,8 +974,12 @@ struct TreeScanner<
     KeyReader,
     KeyRangeBounds,
 > where
-    KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-    KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+    KeyEvaluator: FnMut(&Buffer<'static>, &Root::Index) -> KeyEvaluation,
+    KeyReader: FnMut(
+        Buffer<'static>,
+        &Root::Index,
+        Buffer<'static>,
+    ) -> Result<(), AbortError<CallerError>>,
     KeyRangeBounds: RangeBounds<Buffer<'keys>>,
     CallerError: Display + Debug,
 {
@@ -952,13 +999,17 @@ impl<'a, 'keys, CallerError, Root: root::Root, KeyEvaluator, KeyReader, KeyRange
     for TreeScanner<'a, 'keys, CallerError, Root, KeyEvaluator, KeyReader, KeyRangeBounds>
 where
     File: ManagedFile,
-    KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-    KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+    KeyEvaluator: FnMut(&Buffer<'static>, &Root::Index) -> KeyEvaluation,
+    KeyReader: FnMut(
+        Buffer<'static>,
+        &Root::Index,
+        Buffer<'static>,
+    ) -> Result<(), AbortError<CallerError>>,
     KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
     CallerError: Display + Debug,
 {
-    type Output = Result<(), AbortError<CallerError>>;
-    fn execute(&mut self, file: &mut File) -> Self::Output {
+    type Output = Result<bool, AbortError<CallerError>>;
+    fn execute(mut self, file: &mut File) -> Self::Output {
         if self.from_transaction {
             let state = self.state.lock();
             if state.file_id != file.id() {
@@ -985,6 +1036,95 @@ where
                 self.vault,
                 self.cache,
             )
+        }
+    }
+}
+struct TreeSequenceScanner<'a, 'keys, KeyEvaluator, KeyRangeBounds, DataCallback, CallerError>
+where
+    KeyEvaluator: FnMut(&Buffer<'static>, &BySequenceIndex) -> KeyEvaluation,
+    KeyRangeBounds: RangeBounds<Buffer<'keys>>,
+    DataCallback: FnMut(KeySequence, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+    CallerError: Display + Debug,
+{
+    forwards: bool,
+    from_transaction: bool,
+    state: &'a State<VersionedTreeRoot>,
+    vault: Option<&'a dyn Vault>,
+    cache: Option<&'a ChunkCache>,
+    range: KeyRangeBounds,
+    key_evaluator: KeyEvaluator,
+    data_callback: DataCallback,
+    _phantom: PhantomData<&'keys ()>,
+}
+
+impl<'a, 'keys, KeyEvaluator, KeyRangeBounds, File, DataCallback, CallerError> FileOp<File>
+    for TreeSequenceScanner<'a, 'keys, KeyEvaluator, KeyRangeBounds, DataCallback, CallerError>
+where
+    File: ManagedFile,
+    KeyEvaluator: FnMut(&Buffer<'static>, &BySequenceIndex) -> KeyEvaluation,
+    KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
+    DataCallback: FnMut(KeySequence, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+    CallerError: Display + Debug,
+{
+    type Output = Result<(), AbortError<CallerError>>;
+    fn execute(self, file: &mut File) -> Self::Output {
+        let Self {
+            forwards,
+            from_transaction,
+            state,
+            vault,
+            cache,
+            range,
+            mut key_evaluator,
+            mut data_callback,
+            ..
+        } = self;
+        let mapped_data_callback =
+            |key: Buffer<'static>, index: &BySequenceIndex, data: Buffer<'static>| {
+                let sequence = BigEndian::read_u64(&key);
+                (data_callback)(
+                    KeySequence {
+                        key: index.key.clone(),
+                        sequence,
+                        last_sequence: index.last_sequence,
+                    },
+                    data,
+                )
+            };
+        if from_transaction {
+            let state = state.lock();
+            if state.file_id != file.id() {
+                return Err(AbortError::Nebari(Error::from(ErrorKind::TreeCompacted)));
+            }
+
+            state
+                .root
+                .by_sequence_root
+                .scan(
+                    &range,
+                    &mut ScanArgs::new(forwards, &mut key_evaluator, mapped_data_callback),
+                    file,
+                    vault,
+                    cache,
+                )
+                .map(|_| {})
+        } else {
+            let state = state.read();
+            if state.file_id != file.id() {
+                return Err(AbortError::Nebari(Error::from(ErrorKind::TreeCompacted)));
+            }
+
+            state
+                .root
+                .by_sequence_root
+                .scan(
+                    &range,
+                    &mut ScanArgs::new(forwards, &mut key_evaluator, mapped_data_callback),
+                    file,
+                    vault,
+                    cache,
+                )
+                .map(|_| {})
         }
     }
 }
@@ -1314,11 +1454,75 @@ fn dynamic_order(number_of_records: u64, max_order: Option<usize>) -> usize {
     }
 }
 
+#[derive(Debug)]
+struct U64Bounds {
+    start_bound: Bound<u64>,
+    start_bound_bytes: Bound<Buffer<'static>>,
+    end_bound: Bound<u64>,
+    end_bound_bytes: Bound<Buffer<'static>>,
+}
+
+impl RangeBounds<u64> for U64Bounds {
+    fn start_bound(&self) -> Bound<&u64> {
+        match &self.start_bound {
+            Bound::Included(value) => Bound::Included(value),
+            Bound::Excluded(value) => Bound::Excluded(value),
+            Bound::Unbounded => Bound::Unbounded,
+        }
+    }
+
+    fn end_bound(&self) -> Bound<&u64> {
+        match &self.end_bound {
+            Bound::Included(value) => Bound::Included(value),
+            Bound::Excluded(value) => Bound::Excluded(value),
+            Bound::Unbounded => Bound::Unbounded,
+        }
+    }
+}
+
+impl RangeBounds<Buffer<'static>> for U64Bounds {
+    fn start_bound(&self) -> Bound<&Buffer<'static>> {
+        match &self.start_bound_bytes {
+            Bound::Included(value) => Bound::Included(value),
+            Bound::Excluded(value) => Bound::Excluded(value),
+            Bound::Unbounded => Bound::Unbounded,
+        }
+    }
+
+    fn end_bound(&self) -> Bound<&Buffer<'static>> {
+        match &self.end_bound_bytes {
+            Bound::Included(value) => Bound::Included(value),
+            Bound::Excluded(value) => Bound::Excluded(value),
+            Bound::Unbounded => Bound::Unbounded,
+        }
+    }
+}
+
+impl U64Bounds {
+    pub fn new<B: RangeBounds<u64>>(bounds: B) -> Self {
+        Self {
+            start_bound: bounds.start_bound().cloned(),
+            start_bound_bytes: match bounds.start_bound() {
+                Bound::Included(id) => Bound::Included(Buffer::from(id.to_be_bytes())),
+                Bound::Excluded(id) => Bound::Excluded(Buffer::from(id.to_be_bytes())),
+                Bound::Unbounded => Bound::Unbounded,
+            },
+            end_bound: bounds.end_bound().cloned(),
+            end_bound_bytes: match bounds.end_bound() {
+                Bound::Included(id) => Bound::Included(Buffer::from(id.to_be_bytes())),
+                Bound::Excluded(id) => Bound::Excluded(Buffer::from(id.to_be_bytes())),
+                Bound::Unbounded => Bound::Unbounded,
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
 
     use nanorand::{Pcg64, Rng};
+    use tempfile::NamedTempFile;
 
     use super::*;
     use crate::{
@@ -1751,5 +1955,51 @@ mod tests {
     #[test]
     fn compact_unversioned() {
         compact::<UnversionedTreeRoot>("unversioned");
+    }
+
+    #[test]
+    fn revision_history() {
+        let context = Context {
+            file_manager: StdFileManager::default(),
+            vault: None,
+            cache: None,
+        };
+        let state = State::default();
+        let tempfile = NamedTempFile::new().unwrap();
+        let mut tree =
+            TreeFile::<VersionedTreeRoot, StdFile>::write(tempfile.path(), state, &context, None)
+                .unwrap();
+
+        // Store three versions of the same key.
+        tree.push(0, Buffer::from(b"a"), Buffer::from(b"0"))
+            .unwrap();
+        tree.push(0, Buffer::from(b"a"), Buffer::from(b"1"))
+            .unwrap();
+        tree.push(0, Buffer::from(b"a"), Buffer::from(b"2"))
+            .unwrap();
+
+        // Retrieve the sequences
+        let mut sequences = Vec::new();
+        tree.scan_sequences::<Infallible, _, _, _>(
+            ..,
+            true,
+            false,
+            &mut |_| KeyEvaluation::ReadData,
+            &mut |sequence, value| {
+                sequences.push((sequence, value));
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(sequences.len(), 3);
+        sequences.sort_by(|a, b| a.0.sequence.cmp(&b.0.sequence));
+        assert!(sequences.iter().all(|s| s.0.key.as_slice() == b"a"));
+        assert_eq!(sequences[0].0.last_sequence, None);
+        assert_eq!(sequences[1].0.last_sequence, Some(sequences[0].0.sequence));
+        assert_eq!(sequences[2].0.last_sequence, Some(sequences[1].0.sequence));
+
+        assert_eq!(sequences[0].1.as_slice(), b"0");
+        assert_eq!(sequences[1].1.as_slice(), b"1");
+        assert_eq!(sequences[2].1.as_slice(), b"2");
     }
 }

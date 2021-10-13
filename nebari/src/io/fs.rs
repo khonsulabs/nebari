@@ -238,7 +238,7 @@ impl OpenableFile<StdFile> for OpenStdFile {
         self.file.as_ref().and_then(StdFile::id)
     }
 
-    fn execute<W: FileOp<StdFile>>(&mut self, mut writer: W) -> W::Output {
+    fn execute<W: FileOp<StdFile>>(&mut self, writer: W) -> W::Output {
         writer.execute(self.file.as_mut().unwrap())
     }
 

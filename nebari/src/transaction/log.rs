@@ -176,7 +176,7 @@ struct StateInitializer<'a, F> {
 
 impl<'a, F: ManagedFile> FileOp<F> for StateInitializer<'a, F> {
     type Output = Result<(), Error>;
-    fn execute(&mut self, log: &mut F) -> Result<(), Error> {
+    fn execute(self, log: &mut F) -> Result<(), Error> {
         // Scan back block by block until we find a page header with a value of 1.
         let block_start = self.log_length - PAGE_SIZE as u64;
         let mut scratch_buffer = Vec::new();
@@ -282,7 +282,7 @@ pub(crate) struct EntryFetcher<'a> {
 
 impl<'a, File: ManagedFile> FileOp<File> for EntryFetcher<'a> {
     type Output = Result<ScanResult, Error>;
-    fn execute(&mut self, log: &mut File) -> Result<ScanResult, Error> {
+    fn execute(self, log: &mut File) -> Result<ScanResult, Error> {
         let mut scratch = Vec::with_capacity(PAGE_SIZE);
         fetch_entry(log, &mut scratch, self.state, self.id, self.vault)
     }
@@ -364,7 +364,7 @@ impl<
     > FileOp<File> for EntryScanner<'a, Range, Callback>
 {
     type Output = Result<(), Error>;
-    fn execute(&mut self, log: &mut File) -> Self::Output {
+    fn execute(mut self, log: &mut File) -> Self::Output {
         let mut scratch = Vec::with_capacity(PAGE_SIZE);
         let (start_location, start_transaction, start_length) = match self.ids.start_bound() {
             Bound::Included(start_key) | Bound::Excluded(start_key) => {
@@ -418,7 +418,7 @@ struct LogWriter<File> {
 
 impl<File: ManagedFile> FileOp<File> for LogWriter<File> {
     type Output = Result<(), Error>;
-    fn execute(&mut self, log: &mut File) -> Result<(), Error> {
+    fn execute(mut self, log: &mut File) -> Result<(), Error> {
         let mut log_position = self.state.lock_for_write();
         let mut scratch = [0_u8; PAGE_SIZE];
         let mut completed_transactions = Vec::with_capacity(self.transactions.len());

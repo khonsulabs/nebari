@@ -24,7 +24,7 @@ use crate::{
     io::{FileManager, ManagedFile},
     transaction::{LogEntry, TransactionHandle, TransactionManager},
     tree::{
-        self, state::AnyTreeState, KeyEvaluation, Modification, Operation, State,
+        self, state::AnyTreeState, KeyEvaluation, KeySequence, Modification, Operation, State,
         TransactableCompaction, TreeFile, TreeRoot, VersionedTreeRoot,
     },
     Buffer, ChunkCache, ErrorKind, Vault,
@@ -759,6 +759,44 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
             }),
         )?;
         Ok(())
+    }
+}
+
+impl<File: ManagedFile> Tree<VersionedTreeRoot, File> {
+    /// Scans the tree for keys that are contained within `range`. If `forwards`
+    /// is true, scanning starts at the lowest sort-order key and scans forward.
+    /// Otherwise, scanning starts at the highest sort-order key and scans
+    /// backwards. `key_evaluator` is invoked for each key as it is encountered.
+    /// For all [`KeyEvaluation::ReadData`] results returned, `callback` will be
+    /// invoked with the key and values. The callback may not be invoked in the
+    /// same order as the keys are scanned.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(skip(self, key_evaluator, data_callback))
+    )]
+    pub fn scan_sequences<CallerError, Range, KeyEvaluator, DataCallback>(
+        &mut self,
+        range: Range,
+        forwards: bool,
+        key_evaluator: &mut KeyEvaluator,
+        data_callback: &mut DataCallback,
+    ) -> Result<(), AbortError<CallerError>>
+    where
+        Range: Clone + RangeBounds<u64> + Debug + 'static,
+        KeyEvaluator: FnMut(KeySequence) -> KeyEvaluation,
+        DataCallback: FnMut(KeySequence, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        CallerError: Display + Debug,
+    {
+        catch_compaction_and_retry_abortable(|| {
+            let mut tree = TreeFile::<VersionedTreeRoot, File>::read(
+                self.path(),
+                self.state.clone(),
+                self.roots.context(),
+                Some(self.roots.transactions()),
+            )?;
+
+            tree.scan_sequences(range.clone(), forwards, false, key_evaluator, data_callback)
+        })
     }
 }
 

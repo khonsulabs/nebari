@@ -3,13 +3,15 @@ use std::convert::TryFrom;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};
-use crate::{error::Error, io::ManagedFile, Buffer, ErrorKind};
+use crate::{error::Error, io::ManagedFile, tree::key_entry::ValueIndex, Buffer, ErrorKind};
 
 /// The index stored within [`VersionedTreeRoot::by_sequence_root`](crate::tree::VersionedTreeRoot::by_sequence_root).
 #[derive(Clone, Debug)]
 pub struct BySequenceIndex {
     /// The key associated with this sequence id.
     pub key: Buffer<'static>,
+    /// The previous sequence of this key.
+    pub last_sequence: Option<u64>,
     /// The size of the value stored on disk.
     pub value_length: u32,
     /// The position of the value on disk.
@@ -27,6 +29,8 @@ impl BinarySerialization for BySequenceIndex {
         bytes_written += 4;
         writer.write_u64::<BigEndian>(self.position)?;
         bytes_written += 8;
+        writer.write_u64::<BigEndian>(self.last_sequence.unwrap_or(0))?;
+        bytes_written += 8;
 
         let key_length = u16::try_from(self.key.len()).map_err(|_| ErrorKind::KeyTooLarge)?;
         writer.write_u16::<BigEndian>(key_length)?;
@@ -42,6 +46,7 @@ impl BinarySerialization for BySequenceIndex {
     ) -> Result<Self, Error> {
         let value_length = reader.read_u32::<BigEndian>()?;
         let position = reader.read_u64::<BigEndian>()?;
+        let last_sequence = reader.read_u64::<BigEndian>()?;
         let key_length = reader.read_u16::<BigEndian>()? as usize;
         if key_length > reader.len() {
             return Err(Error::data_integrity(format!(
@@ -54,9 +59,20 @@ impl BinarySerialization for BySequenceIndex {
 
         Ok(Self {
             key,
+            last_sequence: if last_sequence > 0 {
+                Some(last_sequence)
+            } else {
+                None
+            },
             value_length,
             position,
         })
+    }
+}
+
+impl ValueIndex for BySequenceIndex {
+    fn position(&self) -> u64 {
+        self.position
     }
 }
 

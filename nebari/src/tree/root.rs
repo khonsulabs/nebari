@@ -14,8 +14,8 @@ use crate::{
     roots::AnyTransactionTree,
     transaction::TransactionManager,
     tree::{
-        btree_entry::ScanArgs, state::AnyTreeState, KeyEvaluation, KeyRange, Modification,
-        PageHeader, PagedWriter, State, TreeFile,
+        btree_entry::ScanArgs, state::AnyTreeState, KeyEvaluation, Modification, PageHeader,
+        PagedWriter, State, TreeFile,
     },
     AbortError, Buffer, ChunkCache, Context, TransactionTree, Vault,
 };
@@ -24,6 +24,9 @@ use crate::{
 pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     /// The unique header byte for this root.
     const HEADER: PageHeader;
+
+    /// The primary index type contained within this root.
+    type Index;
 
     /// Returns the number of values contained in this tree, not including
     /// deleted records.
@@ -74,9 +77,9 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     /// decisions on how to handle each key. `key_reader` will be invoked for
     /// each key that is requested to be read, but it might be invoked at a
     /// later time and in a different order.
-    fn get_multiple<File: ManagedFile, KeyEvaluator, KeyReader>(
+    fn get_multiple<'keys, File: ManagedFile, KeyEvaluator, KeyReader, Keys>(
         &self,
-        keys: &mut KeyRange<'_>,
+        keys: &mut Keys,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
         file: &mut File,
@@ -85,7 +88,8 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     ) -> Result<(), Error>
     where
         KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>;
+        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
+        Keys: Iterator<Item = &'keys [u8]>;
 
     /// Scans the tree over `range`. `args.key_evaluator` is invoked for each key as
     /// it is found, allowing for decisions on how to handle each key.
@@ -97,19 +101,23 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
         File: ManagedFile,
         KeyRangeBounds,
         KeyEvaluator,
-        KeyReader,
+        ScanDataCallback,
     >(
         &self,
         range: &KeyRangeBounds,
-        args: &mut ScanArgs<Buffer<'static>, CallerError, KeyEvaluator, KeyReader>,
+        args: &mut ScanArgs<Self::Index, CallerError, KeyEvaluator, ScanDataCallback>,
         file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
-    ) -> Result<(), AbortError<CallerError>>
+    ) -> Result<bool, AbortError<CallerError>>
     where
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
-        KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug;
+        KeyEvaluator: FnMut(&Buffer<'static>, &Self::Index) -> KeyEvaluation,
+        KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
+        ScanDataCallback: FnMut(
+            Buffer<'static>,
+            &Self::Index,
+            Buffer<'static>,
+        ) -> Result<(), AbortError<CallerError>>;
 
     /// Copies all data from `file` into `writer`, updating `self` with the new
     /// file positions.

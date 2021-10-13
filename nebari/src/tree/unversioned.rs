@@ -107,6 +107,7 @@ impl UnversionedTreeRoot {
 
 impl Root for UnversionedTreeRoot {
     const HEADER: PageHeader = PageHeader::UnversionedHeader;
+    type Index = UnversionedByIdIndex;
 
     fn count(&self) -> u64 {
         self.by_id_root.stats().alive_keys
@@ -187,9 +188,9 @@ impl Root for UnversionedTreeRoot {
         Ok(())
     }
 
-    fn get_multiple<File: ManagedFile, KeyEvaluator, KeyReader>(
+    fn get_multiple<'keys, File: ManagedFile, KeyEvaluator, KeyReader, Keys>(
         &self,
-        keys: &mut KeyRange<'_>,
+        keys: &mut Keys,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
         file: &mut File,
@@ -199,11 +200,12 @@ impl Root for UnversionedTreeRoot {
     where
         KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
         KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
+        Keys: Iterator<Item = &'keys [u8]>,
     {
         let mut positions_to_read = Vec::new();
         self.by_id_root.get(
-            keys,
-            key_evaluator,
+            &mut KeyRange::new(keys),
+            &mut |key, _index| key_evaluator(key),
             &mut |key, index| {
                 // Deleted keys are stored with a 0 position.
                 if index.position > 0 {
@@ -238,50 +240,25 @@ impl Root for UnversionedTreeRoot {
         File: ManagedFile,
         KeyRangeBounds,
         KeyEvaluator,
-        KeyReader,
+        DataCallback,
     >(
         &self,
         range: &KeyRangeBounds,
-        args: &mut ScanArgs<Buffer<'static>, CallerError, KeyEvaluator, KeyReader>,
+        args: &mut ScanArgs<Self::Index, CallerError, KeyEvaluator, DataCallback>,
         file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
-    ) -> Result<(), AbortError<CallerError>>
+    ) -> Result<bool, AbortError<CallerError>>
     where
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        KeyEvaluator: FnMut(&Buffer<'static>, &Self::Index) -> KeyEvaluation,
         KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
+        DataCallback: FnMut(
+            Buffer<'static>,
+            &Self::Index,
+            Buffer<'static>,
+        ) -> Result<(), AbortError<CallerError>>,
     {
-        let mut positions_to_read = Vec::new();
-        self.by_id_root.scan(
-            range,
-            &mut ScanArgs::new(
-                args.forwards,
-                &mut args.key_evaluator,
-                &mut |key, index: &UnversionedByIdIndex| {
-                    positions_to_read.push((key, index.position));
-                    Ok(())
-                },
-            ),
-            file,
-            vault,
-            cache,
-        )?;
-
-        // Sort by position on disk
-        positions_to_read.sort_by(|a, b| a.1.cmp(&b.1));
-
-        for (key, position) in positions_to_read {
-            if position > 0 {
-                match read_chunk(position, false, file, vault, cache)? {
-                    CacheEntry::Buffer(contents) => {
-                        (args.key_reader)(key, contents)?;
-                    }
-                    CacheEntry::Decoded(_) => unreachable!(),
-                };
-            }
-        }
-        Ok(())
+        self.by_id_root.scan(range, args, file, vault, cache)
     }
 
     fn copy_data_to<File: ManagedFile>(

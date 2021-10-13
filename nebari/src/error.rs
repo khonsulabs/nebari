@@ -1,7 +1,9 @@
-use std::fmt::Display;
+use std::{convert::Infallible, fmt::Display};
 
 use backtrace::Backtrace;
 use thiserror::Error;
+
+use crate::AbortError;
 
 /// An error from Nebari as well as an associated backtrace.
 #[derive(Debug)]
@@ -50,6 +52,12 @@ impl From<ErrorKind> for Error {
             kind,
             backtrace: Backtrace::new(),
         }
+    }
+}
+
+impl From<AbortError<Infallible>> for Error {
+    fn from(ae: AbortError<Infallible>) -> Self {
+        ae.infallible()
     }
 }
 

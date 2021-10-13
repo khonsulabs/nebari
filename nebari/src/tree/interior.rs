@@ -11,7 +11,10 @@ use super::{
     read_chunk, BinarySerialization, PagedWriter,
 };
 use crate::{
-    chunk_cache::CacheEntry, error::Error, io::ManagedFile, tree::btree_entry::NodeInclusion,
+    chunk_cache::CacheEntry,
+    error::Error,
+    io::ManagedFile,
+    tree::{btree_entry::NodeInclusion, key_entry::ValueIndex},
     AbortError, Buffer, ChunkCache, ErrorKind, Vault,
 };
 
@@ -29,7 +32,7 @@ pub struct Interior<Index, ReducedIndex> {
 
 impl<Index, ReducedIndex> From<BTreeEntry<Index, ReducedIndex>> for Interior<Index, ReducedIndex>
 where
-    Index: Clone + Debug + BinarySerialization + 'static,
+    Index: Clone + Debug + ValueIndex + BinarySerialization + 'static,
     ReducedIndex: Reducer<Index> + Clone + Debug + BinarySerialization + 'static,
 {
     fn from(entry: BTreeEntry<Index, ReducedIndex>) -> Self {
@@ -176,7 +179,7 @@ impl<
 }
 
 impl<
-        Index: Clone + BinarySerialization + Debug + 'static,
+        Index: Clone + ValueIndex + BinarySerialization + Debug + 'static,
         ReducedIndex: Reducer<Index> + Clone + BinarySerialization + Debug + 'static,
     > Interior<Index, ReducedIndex>
 {

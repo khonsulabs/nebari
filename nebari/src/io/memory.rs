@@ -252,7 +252,7 @@ impl OpenableFile<MemoryFile> for OpenMemoryFile {
         f.id()
     }
 
-    fn execute<W: FileOp<MemoryFile>>(&mut self, mut writer: W) -> W::Output {
+    fn execute<W: FileOp<MemoryFile>>(&mut self, writer: W) -> W::Output {
         let mut file = self.0.lock();
         writer.execute(&mut file)
     }

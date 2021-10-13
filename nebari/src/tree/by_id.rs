@@ -1,7 +1,7 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};
-use crate::{error::Error, io::ManagedFile, Buffer};
+use crate::{error::Error, io::ManagedFile, tree::key_entry::ValueIndex, Buffer};
 
 /// The index stored within [`VersionedTreeRoot::by_id_root`](crate::tree::VersionedTreeRoot::by_id_root).
 #[derive(Clone, Debug)]
@@ -41,6 +41,12 @@ impl BinarySerialization for VersionedByIdIndex {
     }
 }
 
+impl ValueIndex for VersionedByIdIndex {
+    fn position(&self) -> u64 {
+        self.position
+    }
+}
+
 /// The index stored within [`UnversionedTreeRoot::by_id_root`](crate::tree::UnversionedTreeRoot::by_id_root).
 #[derive(Clone, Debug)]
 pub struct UnversionedByIdIndex {
@@ -71,6 +77,12 @@ impl BinarySerialization for UnversionedByIdIndex {
             value_length,
             position,
         })
+    }
+}
+
+impl ValueIndex for UnversionedByIdIndex {
+    fn position(&self) -> u64 {
+        self.position
     }
 }
 

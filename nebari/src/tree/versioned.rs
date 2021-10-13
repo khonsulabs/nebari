@@ -142,7 +142,7 @@ impl VersionedTreeRoot {
                     minimum_children: by_id_minimum_children,
                     indexer: |key: &Buffer<'_>,
                               value: Option<&Buffer<'static>>,
-                              _existing_index: Option<&VersionedByIdIndex>,
+                              existing_index: Option<&VersionedByIdIndex>,
                               changes: &mut EntryChanges,
                               writer: &mut PagedWriter<'_, File>| {
                         let (position, value_size) = if let Some(value) = value {
@@ -160,8 +160,11 @@ impl VersionedTreeRoot {
                             .expect("sequence rollover prevented");
                         let key = key.to_owned();
                         changes.changes.push(EntryChange {
-                            key: key.clone(),
-                            sequence: changes.current_sequence,
+                            key_sequence: KeySequence {
+                                key: key.clone(),
+                                sequence: changes.current_sequence,
+                                last_sequence: existing_index.map(|idx| idx.sequence_id),
+                            },
                             value_position: position,
                             value_size,
                         });
@@ -206,6 +209,7 @@ impl VersionedTreeRoot {
 
 impl Root for VersionedTreeRoot {
     const HEADER: PageHeader = PageHeader::VersionedHeader;
+    type Index = VersionedByIdIndex;
 
     fn initialized(&self) -> bool {
         self.sequence != UNINITIALIZED_SEQUENCE
@@ -306,11 +310,12 @@ impl Root for VersionedTreeRoot {
             .into_iter()
             .map(|change| {
                 values.push(BySequenceIndex {
-                    key: change.key,
+                    key: change.key_sequence.key,
+                    last_sequence: change.key_sequence.last_sequence,
                     value_length: change.value_size,
                     position: change.value_position,
                 });
-                Buffer::from(change.sequence.to_be_bytes())
+                Buffer::from(change.key_sequence.sequence.to_be_bytes())
             })
             .collect();
         let sequence_modifications = Modification {
@@ -328,9 +333,9 @@ impl Root for VersionedTreeRoot {
         Ok(())
     }
 
-    fn get_multiple<File: ManagedFile, KeyEvaluator, KeyReader>(
+    fn get_multiple<'keys, File: ManagedFile, KeyEvaluator, KeyReader, Keys>(
         &self,
-        keys: &mut KeyRange<'_>,
+        keys: &mut Keys,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
         file: &mut File,
@@ -340,11 +345,12 @@ impl Root for VersionedTreeRoot {
     where
         KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
         KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
+        Keys: Iterator<Item = &'keys [u8]>,
     {
         let mut positions_to_read = Vec::new();
         self.by_id_root.get(
-            keys,
-            key_evaluator,
+            &mut KeyRange::new(keys),
+            &mut |key, _index| key_evaluator(key),
             &mut |key, index| {
                 // Deleted keys are stored with a 0 position.
                 if index.position > 0 {
@@ -379,50 +385,25 @@ impl Root for VersionedTreeRoot {
         File: ManagedFile,
         KeyRangeBounds,
         KeyEvaluator,
-        KeyReader,
+        ScanDataCallback,
     >(
         &self,
         range: &KeyRangeBounds,
-        args: &mut ScanArgs<Buffer<'static>, CallerError, KeyEvaluator, KeyReader>,
+        args: &mut ScanArgs<Self::Index, CallerError, KeyEvaluator, ScanDataCallback>,
         file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
-    ) -> Result<(), AbortError<CallerError>>
+    ) -> Result<bool, AbortError<CallerError>>
     where
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        KeyEvaluator: FnMut(&Buffer<'static>, &Self::Index) -> KeyEvaluation,
         KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
+        ScanDataCallback: FnMut(
+            Buffer<'static>,
+            &Self::Index,
+            Buffer<'static>,
+        ) -> Result<(), AbortError<CallerError>>,
     {
-        let mut positions_to_read = Vec::new();
-        self.by_id_root.scan(
-            range,
-            &mut ScanArgs::new(
-                args.forwards,
-                &mut args.key_evaluator,
-                &mut |key, index: &VersionedByIdIndex| {
-                    positions_to_read.push((key, index.position));
-                    Ok(())
-                },
-            ),
-            file,
-            vault,
-            cache,
-        )?;
-
-        // Sort by position on disk
-        positions_to_read.sort_by(|a, b| a.1.cmp(&b.1));
-
-        for (key, position) in positions_to_read {
-            if position > 0 {
-                match read_chunk(position, false, file, vault, cache)? {
-                    CacheEntry::Buffer(contents) => {
-                        (args.key_reader)(key, contents)?;
-                    }
-                    CacheEntry::Decoded(_) => unreachable!(),
-                };
-            }
-        }
-        Ok(())
+        self.by_id_root.scan(range, args, file, vault, cache)
     }
 
     fn copy_data_to<File: ManagedFile>(
@@ -457,6 +438,7 @@ impl Root for VersionedTreeRoot {
                     key.clone(),
                     BySequenceIndex {
                         key: key.clone(),
+                        last_sequence: None,
                         value_length: index.value_length,
                         position: new_position,
                     },
@@ -519,8 +501,18 @@ pub struct EntryChanges {
     pub changes: Vec<EntryChange>,
 }
 pub struct EntryChange {
-    pub sequence: u64,
-    pub key: Buffer<'static>,
+    pub key_sequence: KeySequence,
     pub value_position: u64,
     pub value_size: u32,
+}
+
+/// A stored revision of a key.
+#[derive(Debug)]
+pub struct KeySequence {
+    /// The key that this entry was written for.
+    pub key: Buffer<'static>,
+    /// The unique sequence id.
+    pub sequence: u64,
+    /// The previous sequence id for this key, if any.
+    pub last_sequence: Option<u64>,
 }

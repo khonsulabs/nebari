@@ -117,7 +117,7 @@ pub trait FileOp<F: ManagedFile> {
     type Output;
 
     /// Executes the operation and returns the result.
-    fn execute(&mut self, file: &mut F) -> Self::Output;
+    fn execute(self, file: &mut F) -> Self::Output;
 }
 
 /// Converts between paths and unique IDs.

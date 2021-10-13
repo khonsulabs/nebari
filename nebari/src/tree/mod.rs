@@ -70,7 +70,7 @@ mod by_sequence;
 mod interior;
 mod key_entry;
 mod modify;
-mod root;
+pub(crate) mod root;
 mod serialization;
 pub(crate) mod state;
 mod unversioned;
@@ -86,7 +86,7 @@ pub use self::{
     interior::{Interior, Pointer},
     key_entry::{KeyEntry, ValueIndex},
     modify::{CompareSwap, CompareSwapFn, Modification, Operation},
-    root::{Root, TreeRoot},
+    root::{AnyTreeRoot, Root, TreeRoot},
     state::{ActiveState, State},
     unversioned::UnversionedTreeRoot,
     versioned::{KeySequence, VersionedTreeRoot},

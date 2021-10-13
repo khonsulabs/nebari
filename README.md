@@ -21,9 +21,9 @@ for [`BonsaiDb`](https://dev.bonsaidb.io/). It is loosely inspired by
 Inserting a key-value pair in an on-disk tree with full revision history:
 
 ```rust
-use nebari::{Config, io::fs::StdFile, tree::VersionedTreeRoot};
+use nebari::{Config, io::fs::StdFile, tree::{VersionedTreeRoot, Root}};
 let roots = Config::<StdFile>::default_for("simple-database.nebari").open().unwrap();
-let tree = roots.tree::<VersionedTreeRoot, _>("a-tree").unwrap();
+let tree = roots.tree(VersionedTreeRoot::tree("a-tree")).unwrap();
 tree.set("hello", "world").unwrap();
 ```
 

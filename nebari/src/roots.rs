@@ -24,8 +24,8 @@ use crate::{
     io::{FileManager, ManagedFile},
     transaction::{LogEntry, TransactionHandle, TransactionManager},
     tree::{
-        self, state::AnyTreeState, KeyEvaluation, KeySequence, Modification, Operation, State,
-        TransactableCompaction, TreeFile, TreeRoot, VersionedTreeRoot,
+        self, root::AnyTreeRoot, state::AnyTreeState, KeyEvaluation, KeySequence, Modification,
+        Operation, State, TransactableCompaction, TreeFile, TreeRoot, VersionedTreeRoot,
     },
     Buffer, ChunkCache, ErrorKind, Vault,
 };
@@ -98,21 +98,20 @@ impl<File: ManagedFile> Roots<File> {
     /// - [`InvalidTreeName`](ErrorKind::InvalidTreeName): The name contained an
     ///   invalid character. For a full list of valid characters, see the
     ///   documentation on [`InvalidTreeName`](ErrorKind::InvalidTreeName).
-    pub fn tree<Root: tree::Root, Name: Into<Cow<'static, str>>>(
+    pub fn tree<Root: tree::Root>(
         &self,
-        name: Name,
+        root: TreeRoot<Root, File>,
     ) -> Result<Tree<Root, File>, Error> {
-        let name = name.into();
-        check_name(&name)?;
-        let path = self.tree_path(&name);
+        check_name(&root.name)?;
+        let path = self.tree_path(&root.name);
         if !path.exists() {
             self.context().file_manager.append(&path)?;
         }
-        let state = self.tree_state(name.clone());
+        let state = self.tree_state(root.name.clone());
         Ok(Tree {
             roots: self.clone(),
             state,
-            name,
+            name: root.name,
         })
     }
 
@@ -156,10 +155,10 @@ impl<File: ManagedFile> Roots<File> {
             .clone()
     }
 
-    fn tree_states(&self, names: &[TreeRoot<File>]) -> Vec<Box<dyn AnyTreeState>> {
+    fn tree_states(&self, trees: &[impl AnyTreeRoot<File>]) -> Vec<Box<dyn AnyTreeState>> {
         let mut tree_states = self.data.tree_states.lock();
-        let mut output = Vec::with_capacity(names.len());
-        for tree in names {
+        let mut output = Vec::with_capacity(trees.len());
+        for tree in trees {
             let state = tree_states
                 .entry(tree.name().to_string())
                 .or_insert_with(|| tree.default_state())
@@ -178,9 +177,9 @@ impl<File: ManagedFile> Roots<File> {
     /// - [`InvalidTreeName`](ErrorKind::InvalidTreeName): A tree name contained
     ///   an invalid character. For a full list of valid characters, see the
     ///   documentation on [`InvalidTreeName`](ErrorKind::InvalidTreeName).
-    pub fn transaction(
+    pub fn transaction<T: AnyTreeRoot<File>>(
         &self,
-        trees: &[TreeRoot<File>],
+        trees: &[T],
     ) -> Result<ExecutingTransaction<File>, Error> {
         for tree in trees {
             check_name(tree.name()).map(|_| tree.name().as_bytes())?;
@@ -999,7 +998,7 @@ mod tests {
         let tempdir = tempdir().unwrap();
         let roots = Config::<File>::new(tempdir.path()).open().unwrap();
 
-        let tree = roots.tree::<VersionedTreeRoot, _>("test").unwrap();
+        let tree = roots.tree(VersionedTreeRoot::tree("test")).unwrap();
         tree.set(b"test", b"value").unwrap();
         let result = tree.get(b"test").unwrap().expect("key not found");
 
@@ -1021,7 +1020,7 @@ mod tests {
         let tempdir = tempdir().unwrap();
 
         let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
-        let tree = roots.tree::<VersionedTreeRoot, _>("test").unwrap();
+        let tree = roots.tree(VersionedTreeRoot::tree("test")).unwrap();
         tree.set(b"test", b"value").unwrap();
 
         // Begin a transaction
@@ -1062,7 +1061,7 @@ mod tests {
         let tempdir = tempdir().unwrap();
 
         let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
-        let tree = roots.tree::<VersionedTreeRoot, _>("test").unwrap();
+        let tree = roots.tree(VersionedTreeRoot::tree("test")).unwrap();
         tree.set(b"test", b"value").unwrap();
 
         // Begin a transaction
@@ -1114,7 +1113,7 @@ mod tests {
         let tempdir = tempdir().unwrap();
 
         let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
-        let tree = roots.tree::<R, _>("test").unwrap();
+        let tree = roots.tree(R::tree("test")).unwrap();
         tree.set("foo", b"bar").unwrap();
 
         // Spawn a pool of threads that will perform a series of operations

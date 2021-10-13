@@ -14,9 +14,9 @@ fn main() -> Result<(), Error> {
 
     // Each tree contains a unique set of keys and values, and can be written
     // using a versioned or unversioned tree root.
-    let tree_one = roots.tree::<VersionedTreeRoot, _>("one")?;
+    let tree_one = roots.tree(VersionedTreeRoot::tree("one"))?;
     tree_one.set("hello", "world")?;
-    let tree_two = roots.tree::<VersionedTreeRoot, _>("two")?;
+    let tree_two = roots.tree(VersionedTreeRoot::tree("two"))?;
     assert!(tree_two.get("hello".as_bytes())?.is_none());
 
     // Each operation on a Tree is executed within an ACID-compliant

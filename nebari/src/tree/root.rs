@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     borrow::Cow,
     collections::HashMap,
     fmt::{Debug, Display},
@@ -33,11 +32,11 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     fn count(&self) -> u64;
 
     /// Returns a reference to a named tree that contains this type of root.
-    fn tree<File: ManagedFile>(name: impl Into<Cow<'static, str>>) -> TreeRoot<File> {
-        TreeRoot(
-            name.into(),
-            Box::new(TreeRootInner::<File, Self>(PhantomData)),
-        )
+    fn tree<File: ManagedFile>(name: impl Into<Cow<'static, str>>) -> TreeRoot<Self, File> {
+        TreeRoot {
+            name: name.into(),
+            _phantom: PhantomData,
+        }
     }
 
     /// Returns true if the root needs to be saved.
@@ -131,17 +130,13 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     ) -> Result<(), Error>;
 }
 
-/// A named tree root.
-pub struct TreeRoot<File: ManagedFile>(Cow<'static, str>, Box<dyn AnyTreeRootInner<File>>);
-struct TreeRootInner<File: ManagedFile, R: Root>(PhantomData<(File, R)>);
+pub struct TreeRoot<R: Root, File: ManagedFile> {
+    pub name: Cow<'static, str>,
+    _phantom: PhantomData<(R, File)>,
+}
 
-trait AnyTreeRootInner<File: ManagedFile>: Any {
-    fn as_any(&self) -> &dyn Any
-    where
-        Self: Sized,
-    {
-        self
-    }
+pub trait AnyTreeRoot<File: ManagedFile> {
+    fn name(&self) -> &str;
     fn default_state(&self) -> Box<dyn AnyTreeState>;
     fn begin_transaction(
         &self,
@@ -153,11 +148,13 @@ trait AnyTreeRootInner<File: ManagedFile>: Any {
     ) -> Result<Box<dyn AnyTransactionTree<File>>, Error>;
 }
 
-impl<File: ManagedFile, R: Root> AnyTreeRootInner<File> for TreeRootInner<File, R> {
+impl<R: Root, File: ManagedFile> AnyTreeRoot<File> for TreeRoot<R, File> {
+    fn name(&self) -> &str {
+        &self.name
+    }
     fn default_state(&self) -> Box<dyn AnyTreeState> {
         Box::new(State::<R>::default())
     }
-
     fn begin_transaction(
         &self,
         transaction_id: u64,
@@ -177,32 +174,5 @@ impl<File: ManagedFile, R: Root> AnyTreeRootInner<File> for TreeRootInner<File, 
             transaction_id,
             tree,
         }))
-    }
-}
-
-impl<File: ManagedFile> TreeRoot<File> {
-    /// Returns the name of the tree.
-    #[must_use]
-    pub fn name(&self) -> &str {
-        &self.0
-    }
-
-    /// Returns the default state for this root.
-    #[must_use]
-    pub fn default_state(&self) -> Box<dyn AnyTreeState> {
-        self.1.default_state()
-    }
-
-    /// Begins a transaction.
-    pub fn begin_transaction(
-        &self,
-        transaction_id: u64,
-        file_path: &Path,
-        state: &dyn AnyTreeState,
-        context: &Context<File::Manager>,
-        transactions: Option<&TransactionManager<File::Manager>>,
-    ) -> Result<Box<dyn AnyTransactionTree<File>>, Error> {
-        self.1
-            .begin_transaction(transaction_id, file_path, state, context, transactions)
     }
 }

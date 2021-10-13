@@ -7,12 +7,12 @@ use ubyte::ToByteUnit;
 
 use crate::{BenchConfig, SimpleBench, UnversionedBenchmark, VersionedBenchmark};
 mod nebari;
-// #[cfg(feature = "persy")]
-// mod persy;
-// #[cfg(feature = "sled")]
-// mod sled;
-// #[cfg(feature = "sqlite")]
-// mod sqlite;
+#[cfg(feature = "persy")]
+mod persy;
+#[cfg(feature = "sled")]
+mod sled;
+#[cfg(feature = "sqlite")]
+mod sqlite;
 
 pub fn benches(c: &mut Criterion) {
     inserts(c);
@@ -26,12 +26,12 @@ pub fn inserts(c: &mut Criterion) {
 
         nebari::InsertBlobs::<VersionedBenchmark>::run(&mut group, &config);
         nebari::InsertBlobs::<UnversionedBenchmark>::run(&mut group, &config);
-        // #[cfg(feature = "sled")]
-        // sled::InsertLogs::run(&mut group, &config);
-        // #[cfg(feature = "sqlite")]
-        // sqlite::InsertLogs::run(&mut group, &config);
-        // #[cfg(feature = "persy")]
-        // persy::InsertLogs::run(&mut group, &config);
+        #[cfg(feature = "sled")]
+        sled::InsertBlobs::run(&mut group, &config);
+        #[cfg(feature = "sqlite")]
+        sqlite::InsertBlobs::run(&mut group, &config);
+        #[cfg(feature = "persy")]
+        persy::InsertBlobs::run(&mut group, &config);
         // #[cfg(feature = "couchdb")]
         // couchdb::InsertLogs::run(&mut group, &config);
     }
@@ -45,18 +45,36 @@ pub struct InsertConfig {
 #[derive(Clone)]
 pub struct Blob(u64, Buffer<'static>);
 
-impl Iterator for Blob {
+pub struct BlobGenerator {
+    last_id: u64,
+    rng: Pcg64,
+    bytes: Vec<u8>,
+}
+
+impl Iterator for BlobGenerator {
     type Item = Blob;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0 += 1;
-        Some(self.clone())
+        self.last_id += 1;
+        // // sqlite has some impressive block-level deduplication. This approach
+        // // to "randomizing" data tricks sqlite to not be able to figure out that
+        // // there's any repeat data. Simpler approaches failed to trick sqlite
+        // // into writing the full blobs.
+        // let number_of_mutations = self.bytes.len() / 16;
+        // let offset = self.rng.generate_range(0..16);
+        // for i in 0..number_of_mutations {
+        //     self.bytes[16 * i + offset] = self.rng.generate();
+        // }
+        for i in 0..self.bytes.len() {
+            self.bytes[i] = self.rng.generate();
+        }
+        Some(Blob(self.last_id, Buffer::from(self.bytes.clone())))
     }
 }
 
 impl BenchConfig for InsertConfig {
     type GroupState = ();
-    type State = Blob;
+    type State = BlobGenerator;
     type Batch = Blob;
 
     fn initialize_group(&self) -> Self::GroupState {}
@@ -67,7 +85,11 @@ impl BenchConfig for InsertConfig {
         for _ in 0..self.blob_size {
             bytes.push(rng.generate());
         }
-        Blob(0, Buffer::from(bytes))
+        BlobGenerator {
+            last_id: 0,
+            rng,
+            bytes,
+        }
     }
 
     fn throughput(&self) -> Throughput {

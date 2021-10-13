@@ -1,4 +1,7 @@
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    time::{Duration, Instant},
+};
 
 use nebari::{
     io::{fs::StdFile, FileManager, ManagedFile, OpenableFile},
@@ -8,12 +11,12 @@ use nebari::{
 use tempfile::TempDir;
 
 use super::InsertConfig;
-use crate::{blobs::Blob, BenchConfig, NebariBenchmark, SimpleBench};
+use crate::{blobs::BlobGenerator, BenchConfig, NebariBenchmark, SimpleBench};
 
 pub struct InsertBlobs<B: NebariBenchmark> {
     _tempfile: TempDir,
     tree: TreeFile<B::Root, StdFile>,
-    blob: Blob,
+    blob: BlobGenerator,
     _bench: PhantomData<B>,
 }
 
@@ -52,16 +55,25 @@ impl<B: NebariBenchmark> SimpleBench for InsertBlobs<B> {
         })
     }
 
-    fn execute_measured(&mut self, _config: &Self::Config) -> Result<(), anyhow::Error> {
+    fn execute_measured(
+        &mut self,
+        _config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
         // While it might be tempting to move serialization out of the measured
         // function, that isn't fair to sql databases which necessarily require
         // encoding the data at least once before saving. While we could pick a
         // faster serialization framework, the goal of our benchmarks aren't to
         // reach maximum speed at all costs: it's to have realistic scenarios
         // measured, and in BonsaiDb, the storage format is going to be `pot`.
-        let blob = self.blob.next().unwrap();
-        self.tree
-            .push(None, Buffer::from(blob.0.to_be_bytes()), blob.1.clone())?;
-        Ok(())
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            let blob = self.blob.next().unwrap();
+            let start = Instant::now();
+            self.tree
+                .push(None, Buffer::from(blob.0.to_be_bytes()), blob.1.clone())?;
+            total_duration += Instant::now() - start;
+        }
+        Ok(total_duration)
     }
 }

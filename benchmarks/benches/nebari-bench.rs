@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, time::Duration};
 
 mod blobs;
 mod logs;
@@ -62,7 +62,11 @@ pub trait SimpleBench: Sized {
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error>;
 
-    fn execute_measured(&mut self, config: &Self::Config) -> Result<(), anyhow::Error>;
+    fn execute_measured(
+        &mut self,
+        config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error>;
 
     fn execute_iterations(group: &mut BenchmarkGroup<WallTime>, config: &Self::Config) {
         let config_group_state = config.initialize_group();
@@ -74,7 +78,7 @@ pub trait SimpleBench: Sized {
             |b, config| {
                 let mut bench =
                     Self::initialize(&group_state, config, &config_group_state).unwrap();
-                b.iter(|| bench.execute_measured(config))
+                b.iter_custom(|iters| bench.execute_measured(config, iters).unwrap())
             },
         );
     }

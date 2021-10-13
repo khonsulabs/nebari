@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use persy::{ByteVec, Config, Persy, ValueMode};
 
 use super::{InsertConfig, LogEntry, LogEntryBatchGenerator, ReadConfig, ReadState};
@@ -45,17 +47,26 @@ impl SimpleBench for InsertLogs {
         })
     }
 
-    fn execute_measured(&mut self, _config: &Self::Config) -> Result<(), anyhow::Error> {
-        let batch = self.state.next().unwrap();
-        let mut tx = self.db.begin()?;
+    fn execute_measured(
+        &mut self,
+        _config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            let batch = self.state.next().unwrap();
+            let start = Instant::now();
+            let mut tx = self.db.begin()?;
 
-        for entry in &batch {
-            tx.put("index", entry.id, ByteVec::new(pot::to_vec(&entry)?))
-                .unwrap();
+            for entry in &batch {
+                tx.put("index", entry.id, ByteVec::new(pot::to_vec(&entry)?))
+                    .unwrap();
+            }
+            let prepared = tx.prepare().unwrap();
+            prepared.commit().unwrap();
+            total_duration += Instant::now() - start;
         }
-        let prepared = tx.prepare().unwrap();
-        prepared.commit().unwrap();
-        Ok(())
+        Ok(total_duration)
     }
 }
 
@@ -108,27 +119,38 @@ impl SimpleBench for ReadLogs {
         Ok(Self { db, state })
     }
 
-    fn execute_measured(&mut self, config: &Self::Config) -> Result<(), anyhow::Error> {
+    fn execute_measured(
+        &mut self,
+        config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
         // To be fair, we're only evaluating that content equals when it's a single get
-        if config.get_count == 1 {
-            let entry = self.state.next().unwrap();
-            let bytes: ByteVec = self
-                .db
-                .get("index", &entry.id)?
-                .next()
-                .expect("value not found");
-            let decoded = pot::from_slice::<LogEntry>(&bytes)?;
-            assert_eq!(&decoded, &entry);
-        } else {
-            for _ in 0..config.get_count {
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            if config.get_count == 1 {
                 let entry = self.state.next().unwrap();
-                self.db
-                    .get::<_, ByteVec>("index", &entry.id)?
+                let start = Instant::now();
+                let bytes: ByteVec = self
+                    .db
+                    .get("index", &entry.id)?
                     .next()
                     .expect("value not found");
+                let decoded = pot::from_slice::<LogEntry>(&bytes)?;
+                assert_eq!(&decoded, &entry);
+                total_duration += Instant::now() - start;
+            } else {
+                for _ in 0..config.get_count {
+                    let entry = self.state.next().unwrap();
+                    let start = Instant::now();
+                    self.db
+                        .get::<_, ByteVec>("index", &entry.id)?
+                        .next()
+                        .expect("value not found");
+                    total_duration += Instant::now() - start;
+                }
             }
         }
-        Ok(())
+        Ok(total_duration)
     }
 }
 
@@ -181,10 +203,19 @@ impl SimpleBench for ScanLogs {
         Ok(Self { db, state })
     }
 
-    fn execute_measured(&mut self, config: &Self::Config) -> Result<(), anyhow::Error> {
-        let range = self.state.next().unwrap();
-        let results = self.db.range::<i64, ByteVec, _>("index", range)?;
-        assert_eq!(results.count(), config.element_count);
-        Ok(())
+    fn execute_measured(
+        &mut self,
+        config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            let range = self.state.next().unwrap();
+            let start = Instant::now();
+            let results = self.db.range::<i64, ByteVec, _>("index", range)?;
+            assert_eq!(results.count(), config.element_count);
+            total_duration += Instant::now() - start;
+        }
+        Ok(total_duration)
     }
 }

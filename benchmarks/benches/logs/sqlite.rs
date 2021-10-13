@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use rusqlite::{params, Connection};
 use tempfile::NamedTempFile;
 
@@ -55,20 +57,29 @@ impl SimpleBench for InsertLogs {
         })
     }
 
-    fn execute_measured(&mut self, _config: &Self::Config) -> Result<(), anyhow::Error> {
-        self.sqlite.execute("begin transaction;", [])?;
+    fn execute_measured(
+        &mut self,
+        _config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            let batch = self.state.next().unwrap();
+            let start = Instant::now();
+            self.sqlite.execute("begin transaction;", [])?;
 
-        let mut prepared = self
-            .sqlite
-            .prepare("insert into logs (id, timestamp, message) values (?, ?, ?)")?;
-        for log in self.state.next().unwrap() {
-            // sqlite doesn't support u64, so we're going to cast to i64
-            prepared.execute(params![log.id as i64, log.timestamp as i64, log.message])?;
+            let mut prepared = self
+                .sqlite
+                .prepare("insert into logs (id, timestamp, message) values (?, ?, ?)")?;
+            for log in batch {
+                // sqlite doesn't support u64, so we're going to cast to i64
+                prepared.execute(params![log.id as i64, log.timestamp as i64, log.message])?;
+            }
+
+            self.sqlite.execute("commit transaction;", [])?;
+            total_duration += Instant::now() - start;
         }
-
-        self.sqlite.execute("commit transaction;", [])?;
-
-        Ok(())
+        Ok(total_duration)
     }
 }
 
@@ -124,40 +135,51 @@ impl SimpleBench for ReadLogs {
         })
     }
 
-    fn execute_measured(&mut self, config: &Self::Config) -> Result<(), anyhow::Error> {
-        if config.get_count == 1 {
-            let entry = self.state.next().unwrap();
-            let fetched = self.sqlite.query_row(
-                "SELECT id, timestamp, message FROM logs WHERE id = ?",
-                [entry.id],
-                |row| {
+    fn execute_measured(
+        &mut self,
+        config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            if config.get_count == 1 {
+                let entry = self.state.next().unwrap();
+                let start = Instant::now();
+                let fetched = self.sqlite.query_row(
+                    "SELECT id, timestamp, message FROM logs WHERE id = ?",
+                    [entry.id],
+                    |row| {
+                        Ok(LogEntry {
+                            id: row.get(0)?,
+                            timestamp: row.get::<_, i64>(1)? as u64,
+                            message: row.get(2)?,
+                        })
+                    },
+                )?;
+                assert_eq!(&fetched, &entry);
+                total_duration += Instant::now() - start;
+            } else {
+                let entries = (0..config.get_count)
+                    .map(|_| (self.state.next().unwrap().id as i64).to_string())
+                    .collect::<Vec<_>>();
+                let start = Instant::now();
+
+                let mut prepared = self.sqlite.prepare(&format!(
+                    "SELECT id, timestamp, message FROM logs WHERE id IN ({})",
+                    entries.join(",")
+                ))?;
+                let rows = prepared.query([])?.mapped(|row| {
                     Ok(LogEntry {
                         id: row.get(0)?,
                         timestamp: row.get::<_, i64>(1)? as u64,
                         message: row.get(2)?,
                     })
-                },
-            )?;
-            assert_eq!(&fetched, &entry);
-        } else {
-            let entries = (0..config.get_count)
-                .map(|_| (self.state.next().unwrap().id as i64).to_string())
-                .collect::<Vec<_>>();
-
-            let mut prepared = self.sqlite.prepare(&format!(
-                "SELECT id, timestamp, message FROM logs WHERE id IN ({})",
-                entries.join(",")
-            ))?;
-            let rows = prepared.query([])?.mapped(|row| {
-                Ok(LogEntry {
-                    id: row.get(0)?,
-                    timestamp: row.get::<_, i64>(1)? as u64,
-                    message: row.get(2)?,
-                })
-            });
-            assert_eq!(rows.count(), config.get_count);
+                });
+                assert_eq!(rows.count(), config.get_count);
+                total_duration += Instant::now() - start;
+            }
         }
-        Ok(())
+        Ok(total_duration)
     }
 }
 
@@ -213,19 +235,28 @@ impl SimpleBench for ScanLogs {
         })
     }
 
-    fn execute_measured(&mut self, config: &Self::Config) -> Result<(), anyhow::Error> {
-        let range = self.state.next().unwrap();
-        let mut prepared = self
-            .sqlite
-            .prepare("SELECT id, timestamp, message FROM logs WHERE id >= ? AND id <= ?")?;
-        let rows = prepared.query([range.start(), range.end()])?.mapped(|row| {
-            Ok(LogEntry {
-                id: row.get(0)?,
-                timestamp: row.get::<_, i64>(1)? as u64,
-                message: row.get(2)?,
-            })
-        });
-        assert_eq!(rows.count(), config.element_count);
-        Ok(())
+    fn execute_measured(
+        &mut self,
+        config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            let range = self.state.next().unwrap();
+            let start = Instant::now();
+            let mut prepared = self
+                .sqlite
+                .prepare("SELECT id, timestamp, message FROM logs WHERE id >= ? AND id <= ?")?;
+            let rows = prepared.query([range.start(), range.end()])?.mapped(|row| {
+                Ok(LogEntry {
+                    id: row.get(0)?,
+                    timestamp: row.get::<_, i64>(1)? as u64,
+                    message: row.get(2)?,
+                })
+            });
+            assert_eq!(rows.count(), config.element_count);
+            total_duration += Instant::now() - start;
+        }
+        Ok(total_duration)
     }
 }

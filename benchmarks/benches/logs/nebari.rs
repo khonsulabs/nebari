@@ -1,4 +1,7 @@
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    time::{Duration, Instant},
+};
 
 use nebari::{
     io::{fs::StdFile, FileManager, ManagedFile, OpenableFile},
@@ -54,28 +57,37 @@ impl<B: NebariBenchmark> SimpleBench for InsertLogs<B> {
         })
     }
 
-    fn execute_measured(&mut self, _config: &Self::Config) -> Result<(), anyhow::Error> {
+    fn execute_measured(
+        &mut self,
+        _config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
         // While it might be tempting to move serialization out of the measured
         // function, that isn't fair to sql databases which necessarily require
         // encoding the data at least once before saving. While we could pick a
         // faster serialization framework, the goal of our benchmarks aren't to
         // reach maximum speed at all costs: it's to have realistic scenarios
         // measured, and in BonsaiDb, the storage format is going to be `pot`.
-        let batch = self.state.next().unwrap();
-        self.tree.modify(Modification {
-            transaction_id: None,
-            keys: batch
-                .iter()
-                .map(|e| Buffer::from(e.id.to_be_bytes()))
-                .collect(),
-            operation: Operation::SetEach(
-                batch
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            let batch = self.state.next().unwrap();
+            let start = Instant::now();
+            self.tree.modify(Modification {
+                transaction_id: None,
+                keys: batch
                     .iter()
-                    .map(|e| Buffer::from(pot::to_vec(e).unwrap()))
+                    .map(|e| Buffer::from(e.id.to_be_bytes()))
                     .collect(),
-            ),
-        })?;
-        Ok(())
+                operation: Operation::SetEach(
+                    batch
+                        .iter()
+                        .map(|e| Buffer::from(pot::to_vec(e).unwrap()))
+                        .collect(),
+                ),
+            })?;
+            total_duration += Instant::now() - start;
+        }
+        Ok(total_duration)
     }
 }
 
@@ -157,25 +169,36 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
         Ok(Self { tree, state })
     }
 
-    fn execute_measured(&mut self, config: &Self::Config) -> Result<(), anyhow::Error> {
-        if config.get_count == 1 {
-            let entry = self.state.next().unwrap();
-            let bytes = self
-                .tree
-                .get(&entry.id.to_be_bytes(), false)?
-                .expect("value not found");
-            let decoded = pot::from_slice::<LogEntry>(&bytes)?;
-            assert_eq!(&decoded, &entry);
-        } else {
-            let mut entry_key_bytes = (0..config.get_count)
-                .map(|_| self.state.next().unwrap().id.to_be_bytes())
-                .collect::<Vec<_>>();
-            entry_key_bytes.sort_unstable();
-            let entry_keys = entry_key_bytes.iter().map(|k| &k[..]).collect::<Vec<_>>();
-            let buffers = self.tree.get_multiple(&entry_keys, false)?;
-            assert_eq!(buffers.len(), config.get_count);
+    fn execute_measured(
+        &mut self,
+        config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            if config.get_count == 1 {
+                let entry = self.state.next().unwrap();
+                let start = Instant::now();
+                let bytes = self
+                    .tree
+                    .get(&entry.id.to_be_bytes(), false)?
+                    .expect("value not found");
+                let decoded = pot::from_slice::<LogEntry>(&bytes)?;
+                assert_eq!(&decoded, &entry);
+                total_duration += Instant::now() - start;
+            } else {
+                let mut entry_key_bytes = (0..config.get_count)
+                    .map(|_| self.state.next().unwrap().id.to_be_bytes())
+                    .collect::<Vec<_>>();
+                let start = Instant::now();
+                entry_key_bytes.sort_unstable();
+                let entry_keys = entry_key_bytes.iter().map(|k| &k[..]).collect::<Vec<_>>();
+                let buffers = self.tree.get_multiple(&entry_keys, false)?;
+                assert_eq!(buffers.len(), config.get_count);
+                total_duration += Instant::now() - start;
+            }
         }
-        Ok(())
+        Ok(total_duration)
     }
 }
 
@@ -257,12 +280,21 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
         Ok(Self { tree, state })
     }
 
-    fn execute_measured(&mut self, config: &Self::Config) -> Result<(), anyhow::Error> {
-        let range = self.state.next().unwrap();
-        let range =
-            Buffer::from(range.start().to_be_bytes())..=Buffer::from(range.end().to_be_bytes());
-        let entries = self.tree.get_range(range, false)?;
-        assert_eq!(entries.len(), config.element_count);
-        Ok(())
+    fn execute_measured(
+        &mut self,
+        config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            let range = self.state.next().unwrap();
+            let start = Instant::now();
+            let range =
+                Buffer::from(range.start().to_be_bytes())..=Buffer::from(range.end().to_be_bytes());
+            let entries = self.tree.get_range(range, false)?;
+            assert_eq!(entries.len(), config.element_count);
+            total_duration += Instant::now() - start;
+        }
+        Ok(total_duration)
     }
 }

@@ -1212,6 +1212,7 @@ impl<
         writer: &mut Vec<u8>,
         paged_writer: &mut PagedWriter<'_, File>,
     ) -> Result<usize, Error> {
+        self.dirty = false;
         let mut bytes_written = 0;
         // The next byte determines the node type.
         match &mut self.node {

@@ -56,15 +56,6 @@ impl Iterator for BlobGenerator {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.last_id += 1;
-        // // sqlite has some impressive block-level deduplication. This approach
-        // // to "randomizing" data tricks sqlite to not be able to figure out that
-        // // there's any repeat data. Simpler approaches failed to trick sqlite
-        // // into writing the full blobs.
-        // let number_of_mutations = self.bytes.len() / 16;
-        // let offset = self.rng.generate_range(0..16);
-        // for i in 0..number_of_mutations {
-        //     self.bytes[16 * i + offset] = self.rng.generate();
-        // }
         for i in 0..self.bytes.len() {
             self.bytes[i] = self.rng.generate();
         }

@@ -41,7 +41,6 @@ use std::{
     collections::HashMap,
     convert::TryFrom,
     fmt::{Debug, Display},
-    fs::OpenOptions,
     hash::BuildHasher,
     io::SeekFrom,
     marker::PhantomData,
@@ -96,19 +95,12 @@ pub use self::{
 // The memory used by PagedWriter is PAGE_SIZE * PAGED_WRITER_BATCH_COUNT. E.g,
 // 4096 * 4 = 16kb
 pub const PAGE_SIZE: usize = 256;
-const PAGED_WRITER_BATCH_COUNT: usize = 64;
 
 const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_BZIP2);
 
 /// The header byte for a tree file's page.
 #[derive(Eq, PartialEq)]
 pub enum PageHeader {
-    // Using a strange value so that errors in the page writing/reading
-    // algorithm are easier to detect.
-    /// A page that continues data from a previous page.
-    Continuation = 0xF1,
-    /// A page that contains only chunks, no headers.
-    Data = 1,
     /// A [`VersionedTreeRoot`] header.
     VersionedHeader = 2,
     /// An [`UnversionedTreeRoot`] header.
@@ -120,8 +112,6 @@ impl TryFrom<u8> for PageHeader {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0xF1 => Ok(Self::Continuation),
-            1 => Ok(Self::Data),
             2 => Ok(Self::VersionedHeader),
             3 => Ok(Self::UnversionedHeader),
             _ => Err(ErrorKind::data_integrity(format!(
@@ -224,52 +214,33 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         }
 
         active_state.file_id = file_id;
-        let mut file_length = context.file_manager.file_length(file_path)?;
+        let file_length = context.file_manager.file_length(file_path)?;
         if file_length == 0 {
             active_state.root.initialize_default();
             active_state.publish(state);
             return Ok(());
         }
 
-        let excess_length = file_length % PAGE_SIZE as u64;
-        if excess_length > 0 {
-            // Truncate the file to the proper page size. This should only happen in a recovery situation.
-            eprintln!(
-                "Tree {:?} has {} extra bytes. Truncating.",
-                file_path, excess_length
-            );
-            let file = OpenOptions::new()
-                .append(true)
-                .write(true)
-                .open(&file_path)?;
-            file_length -= excess_length;
-            file.set_len(file_length)?;
-            file.sync_all()?;
-        }
-
         let mut tree = File::open_for_read(file_path, None)?;
 
         // Scan back block by block until we find a header page.
-        let mut block_start = file_length - PAGE_SIZE as u64;
-        let mut scratch_buffer = vec![0_u8];
+        let mut block_start = file_length - (file_length % PAGE_SIZE as u64);
+        if file_length - block_start < 4 {
+            // We need room for at least the 4-byte page header
+            block_start -= PAGE_SIZE as u64;
+        }
+        let mut scratch_buffer = vec![0_u8; 4];
         active_state.root = loop {
             // Read the page header
             tree.seek(SeekFrom::Start(block_start))?;
-            tree.read_exact(&mut scratch_buffer[0..1])?;
+            tree.read_exact(&mut scratch_buffer)?;
 
             #[allow(clippy::match_on_vec_items)]
-            match PageHeader::try_from(scratch_buffer[0])? {
-                PageHeader::Continuation | PageHeader::Data => {
-                    if block_start == 0 {
-                        return Err(Error::data_integrity(format!(
-                            "Tree {:?} contained data, but no valid pages were found",
-                            file_path
-                        )));
-                    }
-                    block_start -= PAGE_SIZE as u64;
-                    continue;
-                }
-                header => {
+            match (
+                &scratch_buffer[0..3],
+                PageHeader::try_from(scratch_buffer[3]),
+            ) {
+                (b"Nbr", Ok(header)) => {
                     if header != Root::HEADER {
                         return Err(Error::data_integrity(format!(
                             "Tree {:?} contained another header type",
@@ -277,7 +248,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                         )));
                     }
                     let contents = match read_chunk(
-                        block_start + 1,
+                        block_start + 4,
                         true,
                         &mut tree,
                         context.vault(),
@@ -302,6 +273,16 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                         }
                     }
                     break root;
+                }
+                (_, Ok(_) | Err(_)) => {
+                    if block_start == 0 {
+                        return Err(Error::data_integrity(format!(
+                            "Tree {:?} contained data, but no valid pages were found",
+                            file_path
+                        )));
+                    }
+                    block_start -= PAGE_SIZE as u64;
+                    continue;
                 }
             }
         };
@@ -693,7 +674,7 @@ impl<'a, Root: root::Root, File: ManagedFile> FileOp<File>
                 .new_transaction([transactions.name.as_bytes()])
         });
         let mut new_file = File::open_for_append(&compacted_path, None)?;
-        let mut writer = PagedWriter::new(PageHeader::Data, &mut new_file, self.vault, None, 0);
+        let mut writer = PagedWriter::new(None, &mut new_file, self.vault, None, 0)?;
 
         // Use the read state to list all the currently live chunks
         let mut copied_chunks = HashMap::new();
@@ -756,12 +737,12 @@ impl<'a, Root: root::Root, File: ManagedFile> FileOp<File> for TreeWriter<'a, Ro
         }
         if active_state.root.dirty() {
             let data_block = PagedWriter::new(
-                PageHeader::Data,
+                None,
                 file,
                 self.vault.as_deref(),
                 self.cache,
                 active_state.current_position,
-            );
+            )?;
 
             self.scratch.clear();
             save_tree(
@@ -795,12 +776,12 @@ impl<'a, 'm, Root: root::Root, File: ManagedFile> FileOp<File> for TreeModifier<
         }
 
         let mut data_block = PagedWriter::new(
-            PageHeader::Data,
+            None,
             file,
             self.vault.as_deref(),
             self.cache,
             active_state.current_position,
-        );
+        )?;
 
         let modification = self.modification.take().unwrap();
         let is_transactional = modification.transaction_id.is_some();
@@ -847,12 +828,12 @@ fn save_tree<Root: root::Root, File: ManagedFile>(
 
     // Write a new header.
     let mut header_block = PagedWriter::new(
-        Root::HEADER,
+        Some(Root::HEADER),
         file,
         vault,
         cache,
         active_state.current_position,
-    );
+    )?;
     header_block.write_chunk(scratch, false)?;
 
     let (file, after_header) = header_block.finish()?;
@@ -1132,8 +1113,8 @@ pub struct PagedWriter<'a, File: ManagedFile> {
     vault: Option<&'a dyn Vault>,
     cache: Option<&'a ChunkCache>,
     position: u64,
-    scratch: [u8; PAGE_SIZE * PAGED_WRITER_BATCH_COUNT],
     offset: usize,
+    buffered_write: [u8; WRITE_BUFFER_SIZE],
 }
 
 impl<'a, File: ManagedFile> Deref for PagedWriter<'a, File> {
@@ -1150,78 +1131,83 @@ impl<'a, File: ManagedFile> DerefMut for PagedWriter<'a, File> {
     }
 }
 
+const WRITE_BUFFER_SIZE: usize = 8 * 1024;
+
 impl<'a, File: ManagedFile> PagedWriter<'a, File> {
     fn new(
-        header: PageHeader,
+        header: Option<PageHeader>,
         file: &'a mut File,
         vault: Option<&'a dyn Vault>,
         cache: Option<&'a ChunkCache>,
         position: u64,
-    ) -> PagedWriter<'a, File> {
+    ) -> Result<PagedWriter<'a, File>, Error> {
         let mut writer = Self {
             file,
             vault,
             cache,
             position,
-            scratch: [0; PAGE_SIZE * PAGED_WRITER_BATCH_COUNT],
             offset: 0,
+            buffered_write: [0; WRITE_BUFFER_SIZE],
         };
-        writer.scratch[0] = header as u8;
-        for page_num in 1..PAGED_WRITER_BATCH_COUNT {
-            writer.scratch[page_num * PAGE_SIZE] = PageHeader::Continuation as u8;
+        if let Some(header) = header {
+            // Ensure alignment if we have a header
+            #[allow(clippy::cast_possible_truncation)]
+            let padding_needed = PAGE_SIZE - (writer.position % PAGE_SIZE as u64) as usize;
+            let mut padding_and_header = Vec::new();
+            padding_and_header.resize(padding_needed + 4, header as u8);
+            padding_and_header.splice(
+                padding_and_header.len() - 4..padding_and_header.len() - 1,
+                b"Nbr".iter().copied(),
+            );
+            writer.write(&padding_and_header)?;
         }
-        writer.offset = 1;
-        writer
+        if writer.current_position() == 0 {
+            // Write a magic code
+            writer.write(b"Nbri")?;
+        }
+        Ok(writer)
     }
 
     fn current_position(&self) -> u64 {
         self.position + self.offset as u64
     }
 
-    fn write(&mut self, data: &[u8]) -> Result<usize, Error> {
+    fn write(&mut self, mut data: &[u8]) -> Result<usize, Error> {
         let bytes_written = data.len();
-        self.commit_if_needed(true)?;
-
-        let new_offset = self.offset + data.len();
-        let start_page = self.offset / PAGE_SIZE;
-        let end_page = (new_offset - 1) / PAGE_SIZE;
-        if start_page == end_page && new_offset <= self.scratch.len() {
-            // Everything fits within the current page
-            self.scratch[self.offset..new_offset].copy_from_slice(data);
-            self.offset = new_offset;
+        if data.len() > self.buffered_write.len() {
+            self.commit_if_needed()?;
+            self.file.write_all(data)?;
+            self.position += data.len() as u64;
         } else {
-            // This won't fully fit within the page remainder. First, fill the remainder of the page
-            let page_remaining = PAGE_SIZE - self.offset % PAGE_SIZE;
-            let (fill_amount, mut remaining) = data.split_at(page_remaining);
-            if !fill_amount.is_empty() {
-                self.scratch[self.offset..self.offset + fill_amount.len()]
-                    .copy_from_slice(fill_amount);
-                self.offset += fill_amount.len();
+            while !data.is_empty() {
+                let bytes_available = self.buffered_write.len() - self.offset;
+                let bytes_to_copy = bytes_available.min(data.len());
+                let new_offset = self.offset + bytes_to_copy;
+                let (data_to_copy, remaining) = data.split_at(bytes_to_copy);
+                self.buffered_write[self.offset..new_offset].copy_from_slice(data_to_copy);
+                self.offset = new_offset;
+                if self.offset == self.buffered_write.len() {
+                    self.commit()?;
+                }
+
+                data = remaining;
             }
-
-            // If the data is large enough to span multiple pages, continue to do so.
-            while remaining.len() >= PAGE_SIZE {
-                self.commit_if_needed(true)?;
-
-                let (one_page, after) = remaining.split_at(PAGE_SIZE - 1);
-                remaining = after;
-
-                self.scratch[self.offset..self.offset + PAGE_SIZE - 1].copy_from_slice(one_page);
-                self.offset += PAGE_SIZE - 1;
-            }
-
-            self.commit_if_needed(!remaining.is_empty())?;
-
-            // If there's any data left, add it to the scratch
-            if !remaining.is_empty() {
-                let final_offset = self.offset + remaining.len();
-                self.scratch[self.offset..final_offset].copy_from_slice(remaining);
-                self.offset = final_offset;
-            }
-
-            self.commit_if_needed(!remaining.is_empty())?;
         }
         Ok(bytes_written)
+    }
+
+    fn commit_if_needed(&mut self) -> Result<(), Error> {
+        if self.offset > 0 {
+            self.commit()?;
+        }
+        Ok(())
+    }
+
+    fn commit(&mut self) -> Result<(), Error> {
+        self.file.write_all(&self.buffered_write[0..self.offset])?;
+        self.position += self.offset as u64;
+        self.offset = 0;
+        Ok(())
     }
 
     /// Writes a chunk of data to the file, after possibly encrypting it.
@@ -1235,27 +1221,7 @@ impl<'a, File: ManagedFile> PagedWriter<'a, File> {
         let length =
             u32::try_from(possibly_encrypted.len()).map_err(|_| ErrorKind::ValueTooLarge)?;
         let crc = CRC32.checksum(&possibly_encrypted);
-        let mut position = self.current_position();
-        // Ensure that the chunk header can be read contiguously
-        let position_relative_to_page = position % PAGE_SIZE as u64;
-        if position_relative_to_page + 8 > PAGE_SIZE as u64 {
-            // Write the number of zeroes required to pad the current position
-            // such that our header's 8 bytes will not be interrupted by a page
-            // header.
-            let bytes_needed = if position_relative_to_page == 0 {
-                1
-            } else {
-                PAGE_SIZE - position_relative_to_page as usize
-            };
-            let zeroes = [0; 8];
-            self.write(&zeroes[0..bytes_needed])?;
-            position = self.current_position();
-        }
-
-        if position % PAGE_SIZE as u64 == 0 {
-            // A page header will be written before our first byte.
-            position += 1;
-        }
+        let position = self.current_position();
 
         self.write_u32::<BigEndian>(length)?;
         self.write_u32::<BigEndian>(crc)?;
@@ -1282,42 +1248,8 @@ impl<'a, File: ManagedFile> PagedWriter<'a, File> {
         self.write(&buffer)
     }
 
-    /// Writes the scratch buffer and resets `offset`.
-    #[cfg_attr(not(debug_assertions), allow(unused_mut))]
-    fn commit(&mut self) -> Result<(), Error> {
-        let length = (self.offset + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE;
-
-        // In debug builds, fill the padding with a recognizable number: the
-        // answer to the ultimate question of life, the universe and everything.
-        // For refence, 42 in hex is 0x2A.
-        #[cfg(debug_assertions)]
-        if self.offset < length {
-            self.scratch[self.offset..length].fill(42);
-        }
-
-        self.file.seek(SeekFrom::Start(self.position))?;
-        self.file.write_all(&self.scratch[..length])?;
-        self.position += length as u64;
-
-        // Set the header to be a continuation block
-        self.scratch[0] = PageHeader::Continuation as u8;
-        self.offset = 1;
-        Ok(())
-    }
-
-    fn commit_if_needed(&mut self, about_to_write: bool) -> Result<(), Error> {
-        if self.offset == self.scratch.len() {
-            self.commit()?;
-        } else if about_to_write && self.offset % PAGE_SIZE == 0 {
-            self.offset += 1;
-        }
-        Ok(())
-    }
-
     fn finish(mut self) -> Result<(&'a mut File, u64), Error> {
-        if self.offset > 1 {
-            self.commit()?;
-        }
+        self.commit_if_needed()?;
         Ok((self.file, self.position))
     }
 }
@@ -1343,43 +1275,9 @@ fn read_chunk<File: ManagedFile>(
     file.read_exact(&mut header)?;
     let length = BigEndian::read_u32(&header[0..4]) as usize;
 
-    let mut data_start = position + 8;
-    // If the data starts on a page boundary, there will have been a page
-    // boundary inserted. Note: We don't read this byte, so technically it's
-    // unchecked as part of this process.
-    if data_start % PAGE_SIZE as u64 == 0 {
-        data_start += 1;
-        file.seek(SeekFrom::Current(1))?;
-    }
-
-    let data_start_relative_to_page = data_start % PAGE_SIZE as u64;
-    let data_end_relative_to_page = data_start_relative_to_page + length as u64;
-    // Minus 2 may look like code cruft, but it's due to the correct value being
-    // `data_end_relative_to_page as usize - 1`, except that if a write occurs
-    // that ends exactly on a page boundary, we omit the boundary.
-    let number_of_page_boundaries = (data_end_relative_to_page as usize - 2) / (PAGE_SIZE - 1);
-
-    let data_page_start = data_start - data_start % PAGE_SIZE as u64;
-    let total_bytes_to_read = length + number_of_page_boundaries;
     let mut scratch = Vec::new();
-    scratch.resize(total_bytes_to_read, 0);
+    scratch.resize(length, 0);
     file.read_exact(&mut scratch)?;
-
-    // We need to remove the `PageHeader::Continuation` bytes before continuing.
-    let first_page_relative_end = data_page_start + PAGE_SIZE as u64 - data_start;
-    for page in 0..number_of_page_boundaries {
-        let write_start = first_page_relative_end as usize + page * (PAGE_SIZE - 1);
-        let read_start = write_start + page + 1;
-        let length = (length - write_start).min(PAGE_SIZE - 1);
-        scratch.copy_within(read_start..read_start + length, write_start);
-    }
-    scratch.truncate(length);
-
-    // This is an extra sanity check on the above algorithm, but given the
-    // thoroughness of the unit test around this functionality, it's only
-    // checked in debug mode. The CRC will still fail on bad reads, but noticing
-    // the length is incorrect is a sign that the byte removal loop is bad.
-    debug_assert_eq!(scratch.len(), length);
 
     if validate_crc {
         let crc = BigEndian::read_u32(&header[4..8]);
@@ -1533,7 +1431,7 @@ mod tests {
     fn test_paged_write(offset: usize, length: usize) -> Result<(), Error> {
         let mut file = MemoryFile::open_for_append(format!("test-{}-{}", offset, length), None)?;
         let mut paged_writer =
-            PagedWriter::new(PageHeader::VersionedHeader, &mut file, None, None, 0);
+            PagedWriter::new(Some(PageHeader::VersionedHeader), &mut file, None, None, 0)?;
 
         let mut scratch = Vec::new();
         scratch.resize(offset.max(length), 0);
@@ -1542,7 +1440,7 @@ mod tests {
         }
         scratch.fill(1);
         let written_position = paged_writer.write_chunk(&scratch[..length], false)?;
-        drop(paged_writer.finish()?);
+        drop(paged_writer.finish());
 
         match read_chunk(written_position, true, &mut file, None, None)? {
             CacheEntry::Buffer(data) => {

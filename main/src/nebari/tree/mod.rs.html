@@ -2074,7 +2074,7 @@
 <span class="kw">mod</span> <span class="ident">interior</span>;
 <span class="kw">mod</span> <span class="ident">key_entry</span>;
 <span class="kw">mod</span> <span class="ident">modify</span>;
-<span class="kw">mod</span> <span class="ident">root</span>;
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod</span> <span class="ident">root</span>;
 <span class="kw">mod</span> <span class="ident">serialization</span>;
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod</span> <span class="ident">state</span>;
 <span class="kw">mod</span> <span class="ident">unversioned</span>;
@@ -2090,7 +2090,7 @@
     <span class="ident">interior</span>::{<span class="ident">Interior</span>, <span class="ident">Pointer</span>},
     <span class="ident">key_entry</span>::{<span class="ident">KeyEntry</span>, <span class="ident">ValueIndex</span>},
     <span class="ident">modify</span>::{<span class="ident">CompareSwap</span>, <span class="ident">CompareSwapFn</span>, <span class="ident">Modification</span>, <span class="ident">Operation</span>},
-    <span class="ident">root</span>::{<span class="ident">Root</span>, <span class="ident">TreeRoot</span>},
+    <span class="ident">root</span>::{<span class="ident">AnyTreeRoot</span>, <span class="ident">Root</span>, <span class="ident">TreeRoot</span>},
     <span class="ident">state</span>::{<span class="ident">ActiveState</span>, <span class="ident">State</span>},
     <span class="ident">unversioned::UnversionedTreeRoot</span>,
     <span class="ident">versioned</span>::{<span class="ident">KeySequence</span>, <span class="ident">VersionedTreeRoot</span>},

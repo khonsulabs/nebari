@@ -1152,6 +1152,17 @@
 <span id="1152">1152</span>
 <span id="1153">1153</span>
 <span id="1154">1154</span>
+<span id="1155">1155</span>
+<span id="1156">1156</span>
+<span id="1157">1157</span>
+<span id="1158">1158</span>
+<span id="1159">1159</span>
+<span id="1160">1160</span>
+<span id="1161">1161</span>
+<span id="1162">1162</span>
+<span id="1163">1163</span>
+<span id="1164">1164</span>
+<span id="1165">1165</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">any::Any</span>,
@@ -1649,6 +1660,17 @@
             <span class="ident">vault</span>: <span class="prelude-val">None</span>,
             <span class="ident">cache</span>: <span class="prelude-val">None</span>,
             <span class="ident">thread_pool</span>: <span class="prelude-val">None</span>,
+            <span class="ident">file_manager</span>: <span class="prelude-val">None</span>,
+            <span class="ident">_file</span>: <span class="ident">PhantomData</span>,
+        }
+    }
+    <span class="doccomment">/// Returns a default configuration to open a database located at `path`.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">default_for</span><span class="op">&lt;</span><span class="ident">P</span>: <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="ident">path</span>: <span class="ident">P</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="self">Self</span> {
+            <span class="ident">path</span>: <span class="ident">path</span>.<span class="ident">as_ref</span>().<span class="ident">to_path_buf</span>(),
+            <span class="ident">vault</span>: <span class="prelude-val">None</span>,
+            <span class="ident">cache</span>: <span class="prelude-val">Some</span>(<span class="ident">ChunkCache::new</span>(<span class="number">2000</span>, <span class="number">65536</span>)),
+            <span class="ident">thread_pool</span>: <span class="prelude-val">Some</span>(<span class="ident">ThreadPool::default</span>()),
             <span class="ident">file_manager</span>: <span class="prelude-val">None</span>,
             <span class="ident">_file</span>: <span class="ident">PhantomData</span>,
         }

@@ -1,4 +1,100 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Transactional append-only B-Tree storage for `BonsaiDb`."><meta name="keywords" content="rust, rustlang, rust-lang, nebari"><title>nebari - Rust</title><link rel="stylesheet" type="text/css" href="../normalize.css"><link rel="stylesheet" type="text/css" href="../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../ayu.css" disabled ><script id="default-settings" ></script><script src="../storage.js"></script><script src="../crates.js"></script><noscript><link rel="stylesheet" href="../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../favicon.svg"><link rel="alternate icon" type="image/png" href="../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../down-arrow.svg");}</style></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../nebari/index.html'><div class='logo-container rust-logo'><img src='../rust-logo.png' alt='logo'></div></a><h2 class="location">Crate nebari</h2><div class="block version"><div class="narrow-helper"></div><p>Version 0.1.0</p></div><div class="sidebar-elems"><a id="all-types" href="all.html"><p>See all nebari's items</p></a><div class="block items"><ul><li><a href="#modules">Modules</a></li><li><a href="#structs">Structs</a></li><li><a href="#enums">Enums</a></li><li><a href="#traits">Traits</a></li></ul></div><div id="sidebar-vars" data-name="nebari" data-ty="mod" data-relpath=""></div><script defer src="sidebar-items.js"></script></div></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../wheel.svg"></a></div></form></nav><section id="main" class="content"><h1 class="fqn"><span class="in-band">Crate <a class="mod" href="#">nebari</a><button id="copy-path" onclick="copy_path(this)" title="copy path"><img src="../clipboard.svg" width="19" height="18" alt="Copy item import" title="Copy item import to clipboard"></button></span><span class="out-of-band"><span id="render-detail"><a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">[<span class="inner">&#x2212;</span>]</a></span><a class="srclink" href="../src/nebari/lib.rs.html#1-44" title="goto source code">[src]</a></span></h1><details class="rustdoc-toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Transactional append-only B-Tree storage for <code>BonsaiDb</code>.</p>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="nebari"><meta name="keywords" content="rust, rustlang, rust-lang, nebari"><title>nebari - Rust</title><link rel="stylesheet" type="text/css" href="../normalize.css"><link rel="stylesheet" type="text/css" href="../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../ayu.css" disabled ><script id="default-settings" ></script><script src="../storage.js"></script><script src="../crates.js"></script><noscript><link rel="stylesheet" href="../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../favicon.svg"><link rel="alternate icon" type="image/png" href="../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../down-arrow.svg");}</style></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../nebari/index.html'><div class='logo-container rust-logo'><img src='../rust-logo.png' alt='logo'></div></a><h2 class="location">Crate nebari</h2><div class="block version"><div class="narrow-helper"></div><p>Version 0.1.0</p></div><div class="sidebar-elems"><a id="all-types" href="all.html"><p>See all nebari's items</p></a><div class="block items"><ul><li><a href="#modules">Modules</a></li><li><a href="#structs">Structs</a></li><li><a href="#enums">Enums</a></li><li><a href="#traits">Traits</a></li></ul></div><div id="sidebar-vars" data-name="nebari" data-ty="mod" data-relpath=""></div><script defer src="sidebar-items.js"></script></div></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../wheel.svg"></a></div></form></nav><section id="main" class="content"><h1 class="fqn"><span class="in-band">Crate <a class="mod" href="#">nebari</a><button id="copy-path" onclick="copy_path(this)" title="copy path"><img src="../clipboard.svg" width="19" height="18" alt="Copy item import" title="Copy item import to clipboard"></button></span><span class="out-of-band"><span id="render-detail"><a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">[<span class="inner">&#x2212;</span>]</a></span><a class="srclink" href="../src/nebari/lib.rs.html#1-43" title="goto source code">[src]</a></span></h1><details class="rustdoc-toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h1 id="nebari" class="section-header"><a href="#nebari">nebari</a></h1>
+<p><img src="https://img.shields.io/badge/unsafe-forbid-success" alt="nebari forbids unsafe code" />
+<img src="https://img.shields.io/badge/status-experimental-blueviolet" alt="nebari is considered experimental and unsupported" />
+<a href="https://crates.io/crates/nebari"><img src="https://img.shields.io/crates/v/nebari.svg" alt="crate version" /></a>
+<a href="https://github.com/khonsulabs/nebari/actions?query=workflow:Tests"><img src="https://img.shields.io/github/workflow/status/khonsulabs/nebari/Tests/main" alt="Live Build Status" /></a>
+<a href="https://nebari.bonsaidb.io/coverage/"><img src="https://khonsulabs.github.io/nebari/coverage/badge.svg" alt="HTML Coverage Report for main branch" /></a>
+<a href="https://nebari.bonsaidb.io/main/nebari/"><img src="https://img.shields.io/badge/docs-main-informational" alt="Documentation for main branch" /></a></p>
+<blockquote>
+<p>nebari - noun - the surface roots that flare out from the base of a bonsai tree</p>
+</blockquote>
+<p><strong>Warning:</strong> This crate is early in development. The format of the file is not
+considered stable yet. Do not use in production.</p>
+<p>This crate provides the <code>Roots</code> type, which is the transactional storage layer
+for <a href="https://dev.bonsaidb.io/"><code>BonsaiDb</code></a>. It is loosely inspired by
+<a href="https://github.com/couchbase/couchstore"><code>Couchstore</code></a>.</p>
+<h2 id="examples" class="section-header"><a href="#examples">Examples</a></h2>
+<p>Inserting a key-value pair in an on-disk tree with full revision history:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered">
+<span class="kw">use</span> <span class="ident">nebari</span>::{<span class="ident">Config</span>, <span class="ident">io::fs::StdFile</span>, <span class="ident">tree::VersionedTreeRoot</span>};
+<span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::default_for</span>(<span class="string">&quot;simple-database.nebari&quot;</span>).<span class="ident">open</span>().<span class="ident">unwrap</span>();
+<span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span>, <span class="kw">_</span><span class="op">&gt;</span>(<span class="string">&quot;a-tree&quot;</span>).<span class="ident">unwrap</span>();
+<span class="ident">tree</span>.<span class="ident">set</span>(<span class="string">&quot;hello&quot;</span>, <span class="string">&quot;world&quot;</span>).<span class="ident">unwrap</span>();</pre></div>
+<p>For more examples, check out <a href="./nebari/examples/"><code>nebari/examples/</code></a>.</p>
+<h2 id="features" class="section-header"><a href="#features">Features</a></h2>
+<p>Nebari exposes multiple levels of functionality. The lowest level functionality is the <a href="https://nebari.bonsaidb.io/main/nebari/tree/struct.TreeFile.html"><code>TreeFile</code></a>. A <code>TreeFile</code> is a key-value store that uses an append-only file format for its implementation.</p>
+<p>Using <code>TreeFile</code>s and a transaction log, <a href="https://nebari.bonsaidb.io/main/nebari/struct.Roots.html"><code>Roots</code></a> enables ACID-compliant, multi-tree transactions.</p>
+<p>Each tree supports:</p>
+<ul>
+<li><strong>Key-value storage</strong>: Keys can be any arbitrary byte sequence up to 65,535
+bytes long. For efficiency, keys should be kept to smaller lengths. Values can be up to 4 gigabytes (2^32 bytes) in size.</li>
+<li><strong>Flexible query options</strong>: Fetch records one key at a time, multiple keys at once, or ranges of keys.</li>
+<li><strong>Powerful multi-key operations</strong>: Internally, all functions that alter the
+data in a tree use
+<a href="https://nebari.bonsaidb.io/main/nebari/tree/struct.TreeFile.html#method.modify"><code>TreeFile::modify()</code></a>
+which allows operating on one or more keys and performing <a href="https://nebari.bonsaidb.io/main/nebari/tree/enum.Operation.html">various
+operations</a>.</li>
+<li><strong>Pluggable low-level modifications</strong>: The <a href="https://nebari.bonsaidb.io/main/nebari/trait.Vault.html"><code>Vault</code>
+trait</a> allows you to
+bring your own encryption, compression, or other functionality to this format.
+Each independently-addressible chunk of data that is written to the file
+passes through the vault.</li>
+<li><strong>Optional full revision history</strong>. If you don’t want to lose old revisions of data, you can use a <a href="https://nebari.bonsaidb.io/main/nebari/tree/struct.VersionedTreeRoot.html"><code>VersionedTreeRoot</code></a> to store information that <a href="https://github.com/khonsulabs/nebari/issues/10">will allow querying old revisions</a>. Or, if you want to avoid the extra IO, use the <a href="https://nebari.bonsaidb.io/main/nebari/tree/struct.UnversionedTreeRoot.html"><code>UnversionedTreeRoot</code></a> which only stores the information needed to retrieve the latest data in the file.</li>
+<li><strong><a href="https://en.wikipedia.org/wiki/ACID">ACID</a>-compliance</strong>:
+<ul>
+<li>
+<p><strong>Atomicity</strong>: Every operation on a <code>TreeFile</code> is done atomically.
+<a href="https://nebari.bonsaidb.io/main/nebari/tree/enum.Operation.html#variant.CompareSwap"><code>Operation::CompareSwap</code></a>
+can be used to perform atomic operations that require evaluating the currently stored value.</p>
+</li>
+<li>
+<p><strong>Consistency</strong>: Atomic locking operations are used when publishing a new
+transaction state. This ensures that readers can never operate on a partially
+updated state.</p>
+</li>
+<li>
+<p><strong>Isolation</strong>: Currently, each tree can only be accessed exclusively within
+a transaction. This means that if two transactions request the same tree,
+one will execute and complete before the second is allowed access to the
+tree. This strategy could be modified in the future to allow for more
+flexibility.</p>
+</li>
+<li>
+<p><strong>Durability</strong>: The append-only file format is designed to only allow
+reading data that has been fully flushed to disk. Any writes that were
+interrupted will be truncated from the end of the file.</p>
+<p>Transaction IDs are recorded in the tree headers. When restoring from disk,
+the transaction IDs are verified with the transaction log. Because of the
+append-only format, if we encounter a transaction that wasn’t recorded, we
+can continue scanning the file to recover the previous state. We do this
+until we find a successfluly commited transaction.</p>
+<p>This process is much simpler than most database implementations due to the
+simple guarantees that append-only formats provide.</p>
+</li>
+</ul>
+</li>
+</ul>
+<h3 id="why-use-an-append-only-file-format" class="section-header"><a href="#why-use-an-append-only-file-format">Why use an append-only file format?</a></h3>
+<p><a href="https://github.com/ecton">@ecton</a> wasn’t a database engineer before starting this project, and depending on your viewpoint may still not be considered a database engineer. Implementing ACID-compliance is not something that should be attempted lightly.</p>
+<p>Creating ACID-compliance with append-only formats is much easier to achieve, however, as long as you can guarantee two things:</p>
+<ul>
+<li>When opening a previously existing file, can you identify where the last valid write occurred?</li>
+<li>When writing the file, do not report that a transaction has succeeded until the file is fully flushed to disk.</li>
+</ul>
+<p>The B-Tree implementation in Nebari is designed to offer those exact guarantees.</p>
+<p>The major downside of append-only formats is that deleted data isn’t cleaned up
+until a maintenance process occurs: compaction. This process rewrites the files
+contents, skipping over entries that are no longer alive. This process can
+happen without blocking the file from being operated on, but it does
+introduce IO overhead during the operation.</p>
+<p>Nebari <a href="https://github.com/khonsulabs/nebari/issues/3">will provide</a> the APIs
+necessary to perform compaction, but may delegate scheduling and automation to
+users of the library and <code>BonsaiDb</code>.</p>
+<h2 id="open-source-licenses" class="section-header"><a href="#open-source-licenses">Open-source Licenses</a></h2>
+<p>This project, like all projects from <a href="https://khonsulabs.com/">Khonsu Labs</a>, are
+open-source. This repository is available under the <a href="./LICENSE-MIT">MIT License</a>
+or the <a href="./LICENSE-APACHE">Apache License 2.0</a>.</p>
 </div></details><h2 id="modules" class="section-header"><a href="#modules">Modules</a></h2>
 <div class="item-table"><div class="item-left module-item"><a class="mod" href="io/index.html" title="nebari::io mod">io</a></div><div class="item-right docblock-short"><p>IO abstractions for Nebari.</p>
 </div><div class="item-left module-item"><a class="mod" href="transaction/index.html" title="nebari::transaction mod">transaction</a></div><div class="item-right docblock-short"><p>ACID-compliant transaction log and manager.</p>

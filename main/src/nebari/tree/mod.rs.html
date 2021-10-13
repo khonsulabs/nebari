@@ -2001,8 +2001,6 @@
 <span id="2001">2001</span>
 <span id="2002">2002</span>
 <span id="2003">2003</span>
-<span id="2004">2004</span>
-<span id="2005">2005</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Append-only B-Tree implementation</span>
 <span class="doccomment">//!</span>
@@ -2045,7 +2043,7 @@
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">borrow::Cow</span>,
     <span class="ident">collections::HashMap</span>,
-    <span class="ident">convert</span>::{<span class="ident">Infallible</span>, <span class="ident">TryFrom</span>},
+    <span class="ident">convert::TryFrom</span>,
     <span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Display</span>},
     <span class="ident">fs::OpenOptions</span>,
     <span class="ident">hash::BuildHasher</span>,
@@ -2320,7 +2318,7 @@
     <span class="doccomment">/// Pushes a key/value pair. Replaces any previous value if set.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">push</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">transaction_id</span>: <span class="ident">u64</span>,
+        <span class="ident">transaction_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">key</span>: <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
         <span class="ident">value</span>: <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
@@ -2356,7 +2354,7 @@
         <span class="ident">key</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>],
         <span class="ident">old</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="kw-2">mut</span> <span class="ident">new</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-        <span class="ident">transaction_id</span>: <span class="ident">u64</span>,
+        <span class="ident">transaction_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">CompareAndSwapError</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">result</span> <span class="op">=</span> <span class="prelude-val">Ok</span>(());
         <span class="self">self</span>.<span class="ident">modify</span>(<span class="ident">Modification</span> {
@@ -2381,7 +2379,7 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">remove</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">key</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>],
-        <span class="ident">transaction_id</span>: <span class="ident">u64</span>,
+        <span class="ident">transaction_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">existing_value</span> <span class="op">=</span> <span class="prelude-val">None</span>;
         <span class="self">self</span>.<span class="ident">modify</span>(<span class="ident">Modification</span> {
@@ -2401,7 +2399,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">key</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">value</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-        <span class="ident">transaction_id</span>: <span class="ident">u64</span>,
+        <span class="ident">transaction_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">existing_value</span> <span class="op">=</span> <span class="prelude-val">None</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">value</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">value</span>.<span class="ident">into</span>());
@@ -2472,7 +2470,7 @@
         <span class="ident">in_transaction</span>: <span class="ident">bool</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">results</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
-        <span class="kw">match</span> <span class="self">self</span>.<span class="ident">scan</span>::<span class="op">&lt;</span><span class="ident">Infallible</span>, <span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span><span class="op">&gt;</span>(
+        <span class="self">self</span>.<span class="ident">scan</span>(
             <span class="ident">range</span>,
             <span class="bool-val">true</span>,
             <span class="ident">in_transaction</span>,
@@ -2481,11 +2479,8 @@
                 <span class="ident">results</span>.<span class="ident">push</span>((<span class="ident">key</span>, <span class="ident">value</span>));
                 <span class="prelude-val">Ok</span>(())
             },
-        ) {
-            <span class="prelude-val">Ok</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">results</span>),
-            <span class="prelude-val">Err</span>(<span class="ident">AbortError::Other</span>(<span class="kw">_</span>)) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable!</span>(),
-            <span class="prelude-val">Err</span>(<span class="ident">AbortError::Nebari</span>(<span class="ident">error</span>)) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">error</span>),
-        }
+        )<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(<span class="ident">results</span>)
     }
 
     <span class="doccomment">/// Scans the tree for keys that are contained within `range`. If `forwards`</span>
@@ -2812,7 +2807,7 @@
         );
 
         <span class="kw">let</span> <span class="ident">modification</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">modification</span>.<span class="ident">take</span>().<span class="ident">unwrap</span>();
-        <span class="kw">let</span> <span class="ident">is_transactional</span> <span class="op">=</span> <span class="ident">modification</span>.<span class="ident">transaction_id</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span>;
+        <span class="kw">let</span> <span class="ident">is_transactional</span> <span class="op">=</span> <span class="ident">modification</span>.<span class="ident">transaction_id</span>.<span class="ident">is_some</span>();
         <span class="kw">let</span> <span class="ident">max_order</span> <span class="op">=</span> <span class="ident">active_state</span>.<span class="ident">max_order</span>;
 
         <span class="comment">// Execute the modification</span>
@@ -3525,7 +3520,7 @@
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
-    <span class="kw">use</span> <span class="ident">std::collections::HashSet</span>;
+    <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">collections::HashSet</span>, <span class="ident">convert::Infallible</span>};
 
     <span class="kw">use</span> <span class="ident">nanorand</span>::{<span class="ident">Pcg64</span>, <span class="ident">Rng</span>};
     <span class="kw">use</span> <span class="ident">tempfile::NamedTempFile</span>;
@@ -3616,7 +3611,7 @@
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span>
                 <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">R</span>, <span class="ident">F</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">file</span>, <span class="ident">state</span>, <span class="ident">context</span>.<span class="ident">vault</span>.<span class="ident">clone</span>(), <span class="ident">context</span>.<span class="ident">cache</span>.<span class="ident">clone</span>())
                     .<span class="ident">unwrap</span>();
-            <span class="ident">tree</span>.<span class="ident">push</span>(<span class="number">0</span>, <span class="ident">id_buffer</span>.<span class="ident">clone</span>(), <span class="ident">Buffer::from</span>(<span class="string">b&quot;hello world&quot;</span>))
+            <span class="ident">tree</span>.<span class="ident">push</span>(<span class="prelude-val">None</span>, <span class="ident">id_buffer</span>.<span class="ident">clone</span>(), <span class="ident">Buffer::from</span>(<span class="string">b&quot;hello world&quot;</span>))
                 .<span class="ident">unwrap</span>();
 
             <span class="comment">// This shouldn&#39;t have to scan the file, as the data fits in memory.</span>
@@ -3655,7 +3650,7 @@
                 <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">R</span>, <span class="ident">F</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">file</span>, <span class="ident">state</span>, <span class="ident">context</span>.<span class="ident">vault</span>.<span class="ident">clone</span>(), <span class="ident">context</span>.<span class="ident">cache</span>.<span class="ident">clone</span>())
                     .<span class="ident">unwrap</span>();
             <span class="ident">tree</span>.<span class="ident">modify</span>(<span class="ident">Modification</span> {
-                <span class="ident">transaction_id</span>: <span class="number">0</span>,
+                <span class="ident">transaction_id</span>: <span class="prelude-val">None</span>,
                 <span class="ident">keys</span>: <span class="macro">vec!</span>[<span class="ident">id_buffer</span>.<span class="ident">clone</span>()],
                 <span class="ident">operation</span>: <span class="ident">Operation::Remove</span>,
             })
@@ -3808,7 +3803,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">R</span>, <span class="ident">F</span><span class="op">&gt;</span><span class="ident">::write</span>(<span class="ident">file_path</span>, <span class="ident">state</span>, <span class="kw-2">&amp;</span><span class="ident">context</span>, <span class="prelude-val">None</span>).<span class="ident">unwrap</span>();
         <span class="kw">for</span> (<span class="ident">_index</span>, <span class="ident">id</span>) <span class="kw">in</span> <span class="ident">ids</span>.<span class="ident">enumerate</span>() {
             <span class="kw">let</span> <span class="ident">id_buffer</span> <span class="op">=</span> <span class="ident">Buffer::from</span>(<span class="ident">id</span>.<span class="ident">to_be_bytes</span>().<span class="ident">to_vec</span>());
-            <span class="ident">tree</span>.<span class="ident">push</span>(<span class="number">0</span>, <span class="ident">id_buffer</span>.<span class="ident">clone</span>(), <span class="ident">Buffer::from</span>(<span class="string">b&quot;hello world&quot;</span>))
+            <span class="ident">tree</span>.<span class="ident">push</span>(<span class="prelude-val">None</span>, <span class="ident">id_buffer</span>.<span class="ident">clone</span>(), <span class="ident">Buffer::from</span>(<span class="string">b&quot;hello world&quot;</span>))
                 .<span class="ident">unwrap</span>();
         }
     }
@@ -3843,7 +3838,7 @@
                 .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span><span class="op">&gt;</span>();
             <span class="ident">ids</span>.<span class="ident">sort_unstable</span>();
             <span class="kw">let</span> <span class="ident">modification</span> <span class="op">=</span> <span class="ident">Modification</span> {
-                <span class="ident">transaction_id</span>: <span class="number">0</span>,
+                <span class="ident">transaction_id</span>: <span class="prelude-val">None</span>,
                 <span class="ident">keys</span>: <span class="ident">ids</span>
                     .<span class="ident">iter</span>()
                     .<span class="ident">map</span>(<span class="op">|</span><span class="ident">id</span><span class="op">|</span> <span class="ident">Buffer::from</span>(<span class="ident">id</span>.<span class="ident">to_be_bytes</span>().<span class="ident">to_vec</span>()))
@@ -3878,7 +3873,8 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ids</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
         <span class="kw">for</span> <span class="ident">id</span> <span class="kw">in</span> <span class="number">0</span>..<span class="number">3_u32</span>.<span class="ident">pow</span>(<span class="number">4</span>) {
             <span class="kw">let</span> <span class="ident">id_buffer</span> <span class="op">=</span> <span class="ident">Buffer::from</span>(<span class="ident">id</span>.<span class="ident">to_be_bytes</span>().<span class="ident">to_vec</span>());
-            <span class="ident">tree</span>.<span class="ident">push</span>(<span class="number">0</span>, <span class="ident">id_buffer</span>.<span class="ident">clone</span>(), <span class="ident">id_buffer</span>.<span class="ident">clone</span>()).<span class="ident">unwrap</span>();
+            <span class="ident">tree</span>.<span class="ident">push</span>(<span class="prelude-val">None</span>, <span class="ident">id_buffer</span>.<span class="ident">clone</span>(), <span class="ident">id_buffer</span>.<span class="ident">clone</span>())
+                .<span class="ident">unwrap</span>();
             <span class="ident">ids</span>.<span class="ident">push</span>(<span class="ident">id_buffer</span>);
         }
 
@@ -3977,11 +3973,11 @@
                 .<span class="ident">unwrap</span>();
 
         <span class="comment">// Store three versions of the same key.</span>
-        <span class="ident">tree</span>.<span class="ident">push</span>(<span class="number">0</span>, <span class="ident">Buffer::from</span>(<span class="string">b&quot;a&quot;</span>), <span class="ident">Buffer::from</span>(<span class="string">b&quot;0&quot;</span>))
+        <span class="ident">tree</span>.<span class="ident">push</span>(<span class="prelude-val">None</span>, <span class="ident">Buffer::from</span>(<span class="string">b&quot;a&quot;</span>), <span class="ident">Buffer::from</span>(<span class="string">b&quot;0&quot;</span>))
             .<span class="ident">unwrap</span>();
-        <span class="ident">tree</span>.<span class="ident">push</span>(<span class="number">0</span>, <span class="ident">Buffer::from</span>(<span class="string">b&quot;a&quot;</span>), <span class="ident">Buffer::from</span>(<span class="string">b&quot;1&quot;</span>))
+        <span class="ident">tree</span>.<span class="ident">push</span>(<span class="prelude-val">None</span>, <span class="ident">Buffer::from</span>(<span class="string">b&quot;a&quot;</span>), <span class="ident">Buffer::from</span>(<span class="string">b&quot;1&quot;</span>))
             .<span class="ident">unwrap</span>();
-        <span class="ident">tree</span>.<span class="ident">push</span>(<span class="number">0</span>, <span class="ident">Buffer::from</span>(<span class="string">b&quot;a&quot;</span>), <span class="ident">Buffer::from</span>(<span class="string">b&quot;2&quot;</span>))
+        <span class="ident">tree</span>.<span class="ident">push</span>(<span class="prelude-val">None</span>, <span class="ident">Buffer::from</span>(<span class="string">b&quot;a&quot;</span>), <span class="ident">Buffer::from</span>(<span class="string">b&quot;2&quot;</span>))
             .<span class="ident">unwrap</span>();
 
         <span class="comment">// Retrieve the sequences</span>
@@ -4004,9 +4000,9 @@
         <span class="macro">assert_eq!</span>(<span class="ident">sequences</span>[<span class="number">1</span>].<span class="number">0</span>.<span class="ident">last_sequence</span>, <span class="prelude-val">Some</span>(<span class="ident">sequences</span>[<span class="number">0</span>].<span class="number">0</span>.<span class="ident">sequence</span>));
         <span class="macro">assert_eq!</span>(<span class="ident">sequences</span>[<span class="number">2</span>].<span class="number">0</span>.<span class="ident">last_sequence</span>, <span class="prelude-val">Some</span>(<span class="ident">sequences</span>[<span class="number">1</span>].<span class="number">0</span>.<span class="ident">sequence</span>));
 
-        <span class="macro">assert_eq!</span>(<span class="ident">sequences</span>[<span class="number">0</span>].<span class="number">1</span>.<span class="ident">as_slice</span>(), <span class="string">b&quot;0&quot;</span>);
-        <span class="macro">assert_eq!</span>(<span class="ident">sequences</span>[<span class="number">1</span>].<span class="number">1</span>.<span class="ident">as_slice</span>(), <span class="string">b&quot;1&quot;</span>);
-        <span class="macro">assert_eq!</span>(<span class="ident">sequences</span>[<span class="number">2</span>].<span class="number">1</span>.<span class="ident">as_slice</span>(), <span class="string">b&quot;2&quot;</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">sequences</span>[<span class="number">0</span>].<span class="number">1</span>, <span class="string">b&quot;0&quot;</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">sequences</span>[<span class="number">1</span>].<span class="number">1</span>, <span class="string">b&quot;1&quot;</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">sequences</span>[<span class="number">2</span>].<span class="number">1</span>, <span class="string">b&quot;2&quot;</span>);
     }
 }
 </pre></div>

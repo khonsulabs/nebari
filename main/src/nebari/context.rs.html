@@ -30,7 +30,7 @@
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">io::FileManager</span>, <span class="ident">ChunkCache</span>, <span class="ident">Vault</span>};
 
 <span class="doccomment">/// A shared environment for database operations.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Clone</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>, <span class="ident">Debug</span>, <span class="ident">Clone</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Context</span><span class="op">&lt;</span><span class="ident">M</span>: <span class="ident">FileManager</span><span class="op">&gt;</span> {
     <span class="doccomment">/// The file manager for the [`ManagedFile`](crate::io::ManagedFile) implementor.</span>
     <span class="kw">pub</span> <span class="ident">file_manager</span>: <span class="ident">M</span>,

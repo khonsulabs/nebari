@@ -209,11 +209,23 @@
 <span id="209">209</span>
 <span id="210">210</span>
 <span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">byteorder</span>::{<span class="ident">BigEndian</span>, <span class="ident">ReadBytesExt</span>, <span class="ident">WriteBytesExt</span>};
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">btree_entry::Reducer</span>, <span class="ident">BinarySerialization</span>, <span class="ident">PagedWriter</span>};
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">io::ManagedFile</span>, <span class="ident">Buffer</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">io::ManagedFile</span>, <span class="ident">tree::key_entry::ValueIndex</span>, <span class="ident">Buffer</span>};
 
 <span class="doccomment">/// The index stored within [`VersionedTreeRoot::by_id_root`](crate::tree::VersionedTreeRoot::by_id_root).</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
@@ -253,6 +265,12 @@
     }
 }
 
+<span class="kw">impl</span> <span class="ident">ValueIndex</span> <span class="kw">for</span> <span class="ident">VersionedByIdIndex</span> {
+    <span class="kw">fn</span> <span class="ident">position</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+        <span class="self">self</span>.<span class="ident">position</span>
+    }
+}
+
 <span class="doccomment">/// The index stored within [`UnversionedTreeRoot::by_id_root`](crate::tree::UnversionedTreeRoot::by_id_root).</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">UnversionedByIdIndex</span> {
@@ -283,6 +301,12 @@
             <span class="ident">value_length</span>,
             <span class="ident">position</span>,
         })
+    }
+}
+
+<span class="kw">impl</span> <span class="ident">ValueIndex</span> <span class="kw">for</span> <span class="ident">UnversionedByIdIndex</span> {
+    <span class="kw">fn</span> <span class="ident">position</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+        <span class="self">self</span>.<span class="ident">position</span>
     }
 }
 

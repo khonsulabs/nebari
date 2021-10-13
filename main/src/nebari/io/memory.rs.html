@@ -541,7 +541,7 @@
         <span class="ident">f</span>.<span class="ident">id</span>()
     }
 
-    <span class="kw">fn</span> <span class="ident">execute</span><span class="op">&lt;</span><span class="ident">W</span>: <span class="ident">FileOp</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">writer</span>: <span class="ident">W</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">W::Output</span> {
+    <span class="kw">fn</span> <span class="ident">execute</span><span class="op">&lt;</span><span class="ident">W</span>: <span class="ident">FileOp</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">writer</span>: <span class="ident">W</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">W::Output</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">file</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">lock</span>();
         <span class="ident">writer</span>.<span class="ident">execute</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">file</span>)
     }

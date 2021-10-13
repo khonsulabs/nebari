@@ -105,19 +105,37 @@
 <span id="105">105</span>
 <span id="106">106</span>
 <span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std::convert::TryFrom</span>;
 
 <span class="kw">use</span> <span class="ident">byteorder</span>::{<span class="ident">BigEndian</span>, <span class="ident">ReadBytesExt</span>, <span class="ident">WriteBytesExt</span>};
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">btree_entry::Reducer</span>, <span class="ident">BinarySerialization</span>, <span class="ident">PagedWriter</span>};
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">io::ManagedFile</span>, <span class="ident">Buffer</span>, <span class="ident">ErrorKind</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">io::ManagedFile</span>, <span class="ident">tree::key_entry::ValueIndex</span>, <span class="ident">Buffer</span>, <span class="ident">ErrorKind</span>};
 
 <span class="doccomment">/// The index stored within [`VersionedTreeRoot::by_sequence_root`](crate::tree::VersionedTreeRoot::by_sequence_root).</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">BySequenceIndex</span> {
     <span class="doccomment">/// The key associated with this sequence id.</span>
     <span class="kw">pub</span> <span class="ident">key</span>: <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
+    <span class="doccomment">/// The previous sequence of this key.</span>
+    <span class="kw">pub</span> <span class="ident">last_sequence</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The size of the value stored on disk.</span>
     <span class="kw">pub</span> <span class="ident">value_length</span>: <span class="ident">u32</span>,
     <span class="doccomment">/// The position of the value on disk.</span>
@@ -135,6 +153,8 @@
         <span class="ident">bytes_written</span> <span class="op">+</span><span class="op">=</span> <span class="number">4</span>;
         <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">position</span>)<span class="question-mark">?</span>;
         <span class="ident">bytes_written</span> <span class="op">+</span><span class="op">=</span> <span class="number">8</span>;
+        <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">last_sequence</span>.<span class="ident">unwrap_or</span>(<span class="number">0</span>))<span class="question-mark">?</span>;
+        <span class="ident">bytes_written</span> <span class="op">+</span><span class="op">=</span> <span class="number">8</span>;
 
         <span class="kw">let</span> <span class="ident">key_length</span> <span class="op">=</span> <span class="ident">u16::try_from</span>(<span class="self">self</span>.<span class="ident">key</span>.<span class="ident">len</span>()).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">ErrorKind::KeyTooLarge</span>)<span class="question-mark">?</span>;
         <span class="ident">writer</span>.<span class="ident">write_u16</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="ident">key_length</span>)<span class="question-mark">?</span>;
@@ -150,6 +170,7 @@
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">value_length</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">position</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">last_sequence</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">key_length</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u16</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span> <span class="kw">as</span> <span class="ident">usize</span>;
         <span class="kw">if</span> <span class="ident">key_length</span> <span class="op">&gt;</span> <span class="ident">reader</span>.<span class="ident">len</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::data_integrity</span>(<span class="macro">format!</span>(
@@ -162,9 +183,20 @@
 
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
             <span class="ident">key</span>,
+            <span class="ident">last_sequence</span>: <span class="kw">if</span> <span class="ident">last_sequence</span> <span class="op">&gt;</span> <span class="number">0</span> {
+                <span class="prelude-val">Some</span>(<span class="ident">last_sequence</span>)
+            } <span class="kw">else</span> {
+                <span class="prelude-val">None</span>
+            },
             <span class="ident">value_length</span>,
             <span class="ident">position</span>,
         })
+    }
+}
+
+<span class="kw">impl</span> <span class="ident">ValueIndex</span> <span class="kw">for</span> <span class="ident">BySequenceIndex</span> {
+    <span class="kw">fn</span> <span class="ident">position</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+        <span class="self">self</span>.<span class="ident">position</span>
     }
 }
 

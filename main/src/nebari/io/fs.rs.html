@@ -533,7 +533,7 @@
         <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">as_ref</span>().<span class="ident">and_then</span>(<span class="ident">StdFile::id</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">execute</span><span class="op">&lt;</span><span class="ident">W</span>: <span class="ident">FileOp</span><span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">writer</span>: <span class="ident">W</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">W::Output</span> {
+    <span class="kw">fn</span> <span class="ident">execute</span><span class="op">&lt;</span><span class="ident">W</span>: <span class="ident">FileOp</span><span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">writer</span>: <span class="ident">W</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">W::Output</span> {
         <span class="ident">writer</span>.<span class="ident">execute</span>(<span class="self">self</span>.<span class="ident">file</span>.<span class="ident">as_mut</span>().<span class="ident">unwrap</span>())
     }
 

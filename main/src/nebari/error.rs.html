@@ -189,11 +189,21 @@
 <span id="189">189</span>
 <span id="190">190</span>
 <span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
 </pre><pre class="rust">
-<span class="kw">use</span> <span class="ident">std::fmt::Display</span>;
+<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">convert::Infallible</span>, <span class="ident">fmt::Display</span>};
 
 <span class="kw">use</span> <span class="ident">backtrace::Backtrace</span>;
 <span class="kw">use</span> <span class="ident">thiserror::Error</span>;
+
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::AbortError</span>;
 
 <span class="doccomment">/// An error from Nebari as well as an associated backtrace.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
@@ -242,6 +252,12 @@
             <span class="ident">kind</span>,
             <span class="ident">backtrace</span>: <span class="ident">Backtrace::new</span>(),
         }
+    }
+}
+
+<span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">Infallible</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Error</span> {
+    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">ae</span>: <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">Infallible</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="ident">ae</span>.<span class="ident">infallible</span>()
     }
 }
 

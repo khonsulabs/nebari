@@ -364,7 +364,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     ) -> Result<(), Error> {
         self.tree
             .modify(Modification {
-                transaction_id: self.transaction_id,
+                transaction_id: Some(self.transaction_id),
                 keys: vec![key.into()],
                 operation: Operation::Set(value.into()),
             })
@@ -378,7 +378,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
         key: impl Into<Buffer<'static>>,
         value: impl Into<Buffer<'static>>,
     ) -> Result<Option<Buffer<'static>>, Error> {
-        self.tree.replace(key, value, self.transaction_id)
+        self.tree.replace(key, value, Some(self.transaction_id))
     }
 
     /// Returns the current value of `key`. This will return updated information
@@ -389,7 +389,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
 
     /// Removes `key` and returns the existing value, if present.
     pub fn remove(&mut self, key: &[u8]) -> Result<Option<Buffer<'static>>, Error> {
-        self.tree.remove(key, self.transaction_id)
+        self.tree.remove(key, Some(self.transaction_id))
     }
 
     /// Compares the value of `key` against `old`. If the values match, key will
@@ -402,7 +402,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
         new: Option<Buffer<'_>>,
     ) -> Result<(), CompareAndSwapError> {
         self.tree
-            .compare_and_swap(key, old, new, self.transaction_id)
+            .compare_and_swap(key, old, new, Some(self.transaction_id))
     }
 
     /// Retrieves the values of `keys`. If any keys are not found, they will be
@@ -992,7 +992,7 @@ mod tests {
         tree.set(b"test", b"value").unwrap();
         let result = tree.get(b"test").unwrap().expect("key not found");
 
-        assert_eq!(result.as_slice(), b"value");
+        assert_eq!(result, b"value");
     }
 
     #[test]
@@ -1032,18 +1032,18 @@ mod tests {
             .get(b"test")
             .unwrap()
             .expect("key not found");
-        assert_eq!(result.as_slice(), b"updated value");
+        assert_eq!(result, b"updated value");
 
         // Ensure that existing read-access doesn't see the new value
         let result = tree.get(b"test").unwrap().expect("key not found");
-        assert_eq!(result.as_slice(), b"value");
+        assert_eq!(result, b"value");
 
         // Commit the transaction
         transaction.commit().unwrap();
 
         // Ensure that the reader now sees the new value
         let result = tree.get(b"test").unwrap().expect("key not found");
-        assert_eq!(result.as_slice(), b"updated value");
+        assert_eq!(result, b"updated value");
     }
 
     #[test]
@@ -1071,7 +1071,7 @@ mod tests {
 
         // Ensure that the reader still sees the old value
         let result = tree.get(b"test").unwrap().expect("key not found");
-        assert_eq!(result.as_slice(), b"value");
+        assert_eq!(result, b"value");
 
         // Begin a new transaction
         let mut transaction = roots
@@ -1084,7 +1084,7 @@ mod tests {
             .get(b"test")
             .unwrap()
             .expect("key not found");
-        assert_eq!(result.as_slice(), b"value");
+        assert_eq!(result, b"value");
     }
 
     #[test]

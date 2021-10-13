@@ -39,7 +39,7 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
-    convert::{Infallible, TryFrom},
+    convert::TryFrom,
     fmt::{Debug, Display},
     fs::OpenOptions,
     hash::BuildHasher,
@@ -314,7 +314,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     /// Pushes a key/value pair. Replaces any previous value if set.
     pub fn push(
         &mut self,
-        transaction_id: u64,
+        transaction_id: Option<u64>,
         key: Buffer<'static>,
         value: Buffer<'static>,
     ) -> Result<(), Error> {
@@ -350,7 +350,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         key: &[u8],
         old: Option<&Buffer<'_>>,
         mut new: Option<Buffer<'_>>,
-        transaction_id: u64,
+        transaction_id: Option<u64>,
     ) -> Result<(), CompareAndSwapError> {
         let mut result = Ok(());
         self.modify(Modification {
@@ -375,7 +375,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     pub fn remove(
         &mut self,
         key: &[u8],
-        transaction_id: u64,
+        transaction_id: Option<u64>,
     ) -> Result<Option<Buffer<'static>>, Error> {
         let mut existing_value = None;
         self.modify(Modification {
@@ -395,7 +395,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         &mut self,
         key: impl Into<Buffer<'static>>,
         value: impl Into<Buffer<'static>>,
-        transaction_id: u64,
+        transaction_id: Option<u64>,
     ) -> Result<Option<Buffer<'static>>, Error> {
         let mut existing_value = None;
         let mut value = Some(value.into());
@@ -466,7 +466,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         in_transaction: bool,
     ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
         let mut results = Vec::new();
-        match self.scan::<Infallible, _, _, _>(
+        self.scan(
             range,
             true,
             in_transaction,
@@ -475,11 +475,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                 results.push((key, value));
                 Ok(())
             },
-        ) {
-            Ok(_) => Ok(results),
-            Err(AbortError::Other(_)) => unreachable!(),
-            Err(AbortError::Nebari(error)) => Err(error),
-        }
+        )?;
+        Ok(results)
     }
 
     /// Scans the tree for keys that are contained within `range`. If `forwards`
@@ -806,7 +803,7 @@ impl<'a, 'm, Root: root::Root, File: ManagedFile> FileOp<File> for TreeModifier<
         );
 
         let modification = self.modification.take().unwrap();
-        let is_transactional = modification.transaction_id != 0;
+        let is_transactional = modification.transaction_id.is_some();
         let max_order = active_state.max_order;
 
         // Execute the modification
@@ -1519,7 +1516,7 @@ impl U64Bounds {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::{collections::HashSet, convert::Infallible};
 
     use nanorand::{Pcg64, Rng};
     use tempfile::NamedTempFile;
@@ -1610,7 +1607,7 @@ mod tests {
             let mut tree =
                 TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
                     .unwrap();
-            tree.push(0, id_buffer.clone(), Buffer::from(b"hello world"))
+            tree.push(None, id_buffer.clone(), Buffer::from(b"hello world"))
                 .unwrap();
 
             // This shouldn't have to scan the file, as the data fits in memory.
@@ -1649,7 +1646,7 @@ mod tests {
                 TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
                     .unwrap();
             tree.modify(Modification {
-                transaction_id: 0,
+                transaction_id: None,
                 keys: vec![id_buffer.clone()],
                 operation: Operation::Remove,
             })
@@ -1802,7 +1799,7 @@ mod tests {
         let mut tree = TreeFile::<R, F>::write(file_path, state, &context, None).unwrap();
         for (_index, id) in ids.enumerate() {
             let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
-            tree.push(0, id_buffer.clone(), Buffer::from(b"hello world"))
+            tree.push(None, id_buffer.clone(), Buffer::from(b"hello world"))
                 .unwrap();
         }
     }
@@ -1837,7 +1834,7 @@ mod tests {
                 .collect::<Vec<_>>();
             ids.sort_unstable();
             let modification = Modification {
-                transaction_id: 0,
+                transaction_id: None,
                 keys: ids
                     .iter()
                     .map(|id| Buffer::from(id.to_be_bytes().to_vec()))
@@ -1872,7 +1869,8 @@ mod tests {
         let mut ids = Vec::new();
         for id in 0..3_u32.pow(4) {
             let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
-            tree.push(0, id_buffer.clone(), id_buffer.clone()).unwrap();
+            tree.push(None, id_buffer.clone(), id_buffer.clone())
+                .unwrap();
             ids.push(id_buffer);
         }
 
@@ -1971,11 +1969,11 @@ mod tests {
                 .unwrap();
 
         // Store three versions of the same key.
-        tree.push(0, Buffer::from(b"a"), Buffer::from(b"0"))
+        tree.push(None, Buffer::from(b"a"), Buffer::from(b"0"))
             .unwrap();
-        tree.push(0, Buffer::from(b"a"), Buffer::from(b"1"))
+        tree.push(None, Buffer::from(b"a"), Buffer::from(b"1"))
             .unwrap();
-        tree.push(0, Buffer::from(b"a"), Buffer::from(b"2"))
+        tree.push(None, Buffer::from(b"a"), Buffer::from(b"2"))
             .unwrap();
 
         // Retrieve the sequences
@@ -1998,8 +1996,8 @@ mod tests {
         assert_eq!(sequences[1].0.last_sequence, Some(sequences[0].0.sequence));
         assert_eq!(sequences[2].0.last_sequence, Some(sequences[1].0.sequence));
 
-        assert_eq!(sequences[0].1.as_slice(), b"0");
-        assert_eq!(sequences[1].1.as_slice(), b"1");
-        assert_eq!(sequences[2].1.as_slice(), b"2");
+        assert_eq!(sequences[0].1, b"0");
+        assert_eq!(sequences[1].1, b"1");
+        assert_eq!(sequences[2].1, b"2");
     }
 }

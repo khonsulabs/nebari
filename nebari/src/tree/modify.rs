@@ -10,7 +10,7 @@ use crate::{error::Error, Buffer, ErrorKind};
 #[derive(Debug)]
 pub struct Modification<'a, T> {
     /// The transaction ID to store with this change.
-    pub transaction_id: u64,
+    pub transaction_id: Option<u64>,
     /// The keys to operate upon.
     pub keys: Vec<Buffer<'a>>,
     /// The operation to perform on the keys.

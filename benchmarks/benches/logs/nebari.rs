@@ -86,7 +86,7 @@ impl<B: NebariBenchmark> SimpleBench for InsertLogs<B> {
         // measured, and in BonsaiDb, the storage format is going to be `pot`.
         let batch = self.state.next().unwrap();
         self.tree.modify(Modification {
-            transaction_id: 0,
+            transaction_id: None,
             keys: batch
                 .iter()
                 .map(|e| Buffer::from(e.id.to_be_bytes()))
@@ -130,7 +130,7 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
 
         config.for_each_database_chunk(1_000_000, |chunk| {
             tree.modify(Modification {
-                transaction_id: 0,
+                transaction_id: None,
                 keys: chunk
                     .iter()
                     .map(|e| Buffer::from(e.id.to_be_bytes()))
@@ -230,7 +230,7 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
 
         config.for_each_database_chunk(1_000_000, |chunk| {
             tree.modify(Modification {
-                transaction_id: 0,
+                transaction_id: None,
                 keys: chunk
                     .iter()
                     .map(|e| Buffer::from(e.id.to_be_bytes()))

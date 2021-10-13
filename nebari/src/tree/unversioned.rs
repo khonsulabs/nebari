@@ -181,7 +181,8 @@ impl Root for UnversionedTreeRoot {
 
         self.modify_id_root(modification, writer, max_order)?;
 
-        if transaction_id != 0 {
+        // Only update the transaction id if a new one was specified.
+        if let Some(transaction_id) = transaction_id {
             self.transaction_id = Some(transaction_id);
         }
 

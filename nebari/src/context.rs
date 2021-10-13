@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{io::FileManager, ChunkCache, Vault};
 
 /// A shared environment for database operations.
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Context<M: FileManager> {
     /// The file manager for the [`ManagedFile`](crate::io::ManagedFile) implementor.
     pub file_manager: M,

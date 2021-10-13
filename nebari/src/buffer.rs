@@ -51,6 +51,18 @@ impl<'a, 'b> PartialEq<Buffer<'b>> for Buffer<'a> {
     }
 }
 
+impl<'a> PartialEq<[u8]> for Buffer<'a> {
+    fn eq(&self, other: &[u8]) -> bool {
+        self.as_slice().cmp(other) == Ordering::Equal
+    }
+}
+
+impl<'a, 'b, const N: usize> PartialEq<&'b [u8; N]> for Buffer<'a> {
+    fn eq(&self, other: &&'b [u8; N]) -> bool {
+        self.as_slice().cmp(*other) == Ordering::Equal
+    }
+}
+
 impl<'a> Ord for Buffer<'a> {
     fn cmp(&self, other: &Self) -> Ordering {
         if Arc::ptr_eq(&self.buffer, &other.buffer) {

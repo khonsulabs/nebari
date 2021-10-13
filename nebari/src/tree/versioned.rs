@@ -326,7 +326,8 @@ impl Root for VersionedTreeRoot {
 
         self.modify_sequence_root(sequence_modifications, writer, max_order)?;
 
-        if transaction_id != 0 {
+        // Only update the transaction id if a new one was specified.
+        if let Some(transaction_id) = transaction_id {
             self.transaction_id = transaction_id;
         }
 
@@ -462,7 +463,7 @@ impl Root for VersionedTreeRoot {
         }
 
         let mut modification = Modification {
-            transaction_id: self.transaction_id,
+            transaction_id: Some(self.transaction_id),
             keys,
             operation: Operation::SetEach(indexes),
         };

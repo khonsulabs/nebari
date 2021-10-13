@@ -130,14 +130,20 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     ) -> Result<(), Error>;
 }
 
+/// A named tree with a specific root type.
 pub struct TreeRoot<R: Root, File: ManagedFile> {
+    /// The name of the tree.
     pub name: Cow<'static, str>,
     _phantom: PhantomData<(R, File)>,
 }
 
+/// A named tree that can be used in a transaction.
 pub trait AnyTreeRoot<File: ManagedFile> {
+    /// The name of the tree.
     fn name(&self) -> &str;
+    /// The default state for the underlying root type.
     fn default_state(&self) -> Box<dyn AnyTreeState>;
+    /// Begins a transaction on this tree.
     fn begin_transaction(
         &self,
         transaction_id: u64,

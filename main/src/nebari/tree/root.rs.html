@@ -176,6 +176,12 @@
 <span id="176">176</span>
 <span id="177">177</span>
 <span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">borrow::Cow</span>,
@@ -309,14 +315,20 @@
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>;
 }
 
+<span class="doccomment">/// A named tree with a specific root type.</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">TreeRoot</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">Root</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// The name of the tree.</span>
     <span class="kw">pub</span> <span class="ident">name</span>: <span class="ident">Cow</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span>, <span class="ident">str</span><span class="op">&gt;</span>,
     <span class="ident">_phantom</span>: <span class="ident">PhantomData</span><span class="op">&lt;</span>(<span class="ident">R</span>, <span class="ident">File</span>)<span class="op">&gt;</span>,
 }
 
+<span class="doccomment">/// A named tree that can be used in a transaction.</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">AnyTreeRoot</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// The name of the tree.</span>
     <span class="kw">fn</span> <span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">str</span>;
+    <span class="doccomment">/// The default state for the underlying root type.</span>
     <span class="kw">fn</span> <span class="ident">default_state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTreeState</span><span class="op">&gt;</span>;
+    <span class="doccomment">/// Begins a transaction on this tree.</span>
     <span class="kw">fn</span> <span class="ident">begin_transaction</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">transaction_id</span>: <span class="ident">u64</span>,

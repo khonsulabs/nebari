@@ -498,6 +498,17 @@ impl<File: ManagedFile> Config<File> {
             _file: PhantomData,
         }
     }
+    /// Returns a default configuration to open a database located at `path`.
+    pub fn default_for<P: AsRef<Path>>(path: P) -> Self {
+        Self {
+            path: path.as_ref().to_path_buf(),
+            vault: None,
+            cache: Some(ChunkCache::new(2000, 65536)),
+            thread_pool: Some(ThreadPool::default()),
+            file_manager: None,
+            _file: PhantomData,
+        }
+    }
 
     /// Sets the vault to use for this database.
     pub fn vault<V: Vault>(mut self, vault: V) -> Self {

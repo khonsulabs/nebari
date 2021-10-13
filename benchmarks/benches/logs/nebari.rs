@@ -2,9 +2,7 @@ use std::marker::PhantomData;
 
 use nebari::{
     io::{fs::StdFile, FileManager, ManagedFile, OpenableFile},
-    tree::{
-        Modification, Operation, Root, State, TreeFile, UnversionedTreeRoot, VersionedTreeRoot,
-    },
+    tree::{Modification, Operation, State, TreeFile},
     Buffer, ChunkCache, Context,
 };
 use tempfile::TempDir;
@@ -12,7 +10,7 @@ use tempfile::TempDir;
 use super::{InsertConfig, LogEntry, LogEntryBatchGenerator, ReadConfig, ReadState};
 use crate::{
     logs::{ScanConfig, ScanState},
-    BenchConfig, SimpleBench,
+    BenchConfig, NebariBenchmark, SimpleBench,
 };
 
 pub struct InsertLogs<B: NebariBenchmark> {
@@ -21,27 +19,6 @@ pub struct InsertLogs<B: NebariBenchmark> {
     state: LogEntryBatchGenerator,
     _bench: PhantomData<B>,
 }
-
-pub trait NebariBenchmark {
-    const BACKEND: &'static str;
-    type Root: Root;
-}
-
-pub struct VersionedBenchmark;
-pub struct UnversionedBenchmark;
-
-impl NebariBenchmark for VersionedBenchmark {
-    const BACKEND: &'static str = "nebari-versioned";
-
-    type Root = VersionedTreeRoot;
-}
-
-impl NebariBenchmark for UnversionedBenchmark {
-    const BACKEND: &'static str = "nebari";
-
-    type Root = UnversionedTreeRoot;
-}
-
 impl<B: NebariBenchmark> SimpleBench for InsertLogs<B> {
     type GroupState = ();
     type Config = InsertConfig;

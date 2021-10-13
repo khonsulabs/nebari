@@ -95,8 +95,8 @@ pub use self::{
 /// The number of bytes in each page on-disk.
 // The memory used by PagedWriter is PAGE_SIZE * PAGED_WRITER_BATCH_COUNT. E.g,
 // 4096 * 4 = 16kb
-pub const PAGE_SIZE: usize = 4096;
-const PAGED_WRITER_BATCH_COUNT: usize = 4;
+pub const PAGE_SIZE: usize = 256;
+const PAGED_WRITER_BATCH_COUNT: usize = 64;
 
 const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_BZIP2);
 

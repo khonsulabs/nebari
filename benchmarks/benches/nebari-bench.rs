@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+mod blobs;
 mod logs;
 
 pub trait SimpleBench: Sized {
@@ -91,9 +92,36 @@ pub trait BenchConfig: Display {
     fn throughput(&self) -> Throughput;
 }
 
-use criterion::{
-    criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Throughput,
-};
+pub trait NebariBenchmark {
+    const BACKEND: &'static str;
+    type Root: Root;
+}
 
-criterion_group!(benches, logs::benches);
+pub struct VersionedBenchmark;
+pub struct UnversionedBenchmark;
+
+impl NebariBenchmark for VersionedBenchmark {
+    const BACKEND: &'static str = "nebari-versioned";
+
+    type Root = VersionedTreeRoot;
+}
+
+impl NebariBenchmark for UnversionedBenchmark {
+    const BACKEND: &'static str = "nebari";
+
+    type Root = UnversionedTreeRoot;
+}
+
+use criterion::{
+    criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
+    Throughput,
+};
+use nebari::tree::{Root, UnversionedTreeRoot, VersionedTreeRoot};
+
+fn all_benches(c: &mut Criterion) {
+    blobs::benches(c);
+    logs::benches(c);
+}
+
+criterion_group!(benches, all_benches);
 criterion_main!(benches);

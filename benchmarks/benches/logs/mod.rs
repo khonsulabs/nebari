@@ -4,10 +4,7 @@ use criterion::{Criterion, Throughput};
 use nanorand::{Pcg64, Rng};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    logs::nebari::{UnversionedBenchmark, VersionedBenchmark},
-    BenchConfig, SimpleBench,
-};
+use crate::{BenchConfig, SimpleBench, UnversionedBenchmark, VersionedBenchmark};
 
 #[cfg(feature = "couchdb")]
 mod couchdb;

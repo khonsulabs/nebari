@@ -21,9 +21,16 @@ for [`BonsaiDb`](https://dev.bonsaidb.io/). It is loosely inspired by
 Inserting a key-value pair in an on-disk tree with full revision history:
 
 ```rust
-# let database_file = tempfile::tempdir().unwrap();
-use nebari::{Config, io::fs::StdFile, tree::{VersionedTreeRoot, Root}};
-let roots = Config::<StdFile>::default_for(database_file.path()).open().unwrap();
+use nebari::{
+    io::fs::StdFile,
+    tree::{Root, VersionedTreeRoot},
+    Config,
+};
+
+let database_folder = tempfile::tempdir().unwrap();
+let roots = Config::<StdFile>::default_for(database_folder.path())
+    .open()
+    .unwrap();
 let tree = roots.tree(VersionedTreeRoot::tree("a-tree")).unwrap();
 tree.set("hello", "world").unwrap();
 ```
@@ -32,15 +39,23 @@ For more examples, check out [`nebari/examples/`](./nebari/examples/).
 
 ## Features
 
-Nebari exposes multiple levels of functionality. The lowest level functionality is the [`TreeFile`](https://nebari.bonsaidb.io/main/nebari/tree/struct.TreeFile.html). A `TreeFile` is a key-value store that uses an append-only file format for its implementation.
+Nebari exposes multiple levels of functionality. The lowest level functionality
+is the
+[`TreeFile`](https://nebari.bonsaidb.io/main/nebari/tree/struct.TreeFile.html).
+A `TreeFile` is a key-value store that uses an append-only file format for its
+implementation.
 
-Using `TreeFile`s and a transaction log, [`Roots`](https://nebari.bonsaidb.io/main/nebari/struct.Roots.html) enables ACID-compliant, multi-tree transactions.
+Using `TreeFile`s and a transaction log,
+[`Roots`](https://nebari.bonsaidb.io/main/nebari/struct.Roots.html) enables
+ACID-compliant, multi-tree transactions.
 
 Each tree supports:
 
 - **Key-value storage**: Keys can be any arbitrary byte sequence up to 65,535
-  bytes long. For efficiency, keys should be kept to smaller lengths. Values can be up to 4 gigabytes (2^32 bytes) in size.
-- **Flexible query options**: Fetch records one key at a time, multiple keys at once, or ranges of keys.
+  bytes long. For efficiency, keys should be kept to smaller lengths. Values can
+  be up to 4 gigabytes (2^32 bytes) in size.
+- **Flexible query options**: Fetch records one key at a time, multiple keys at
+  once, or ranges of keys.
 - **Powerful multi-key operations**: Internally, all functions that alter the
   data in a tree use
   [`TreeFile::modify()`](https://nebari.bonsaidb.io/main/nebari/tree/struct.TreeFile.html#method.modify)
@@ -51,11 +66,19 @@ Each tree supports:
   bring your own encryption, compression, or other functionality to this format.
   Each independently-addressible chunk of data that is written to the file
   passes through the vault.
-- **Optional full revision history**. If you don't want to lose old revisions of data, you can use a [`VersionedTreeRoot`](https://nebari.bonsaidb.io/main/nebari/tree/struct.VersionedTreeRoot.html) to store information that [will allow querying old revisions](https://github.com/khonsulabs/nebari/issues/10). Or, if you want to avoid the extra IO, use the [`UnversionedTreeRoot`](https://nebari.bonsaidb.io/main/nebari/tree/struct.UnversionedTreeRoot.html) which only stores the information needed to retrieve the latest data in the file.
+- **Optional full revision history**. If you don't want to lose old revisions of
+  data, you can use a
+  [`VersionedTreeRoot`](https://nebari.bonsaidb.io/main/nebari/tree/struct.VersionedTreeRoot.html)
+  to store information that allows scanning old revision information. Or, if you
+  want to avoid the extra IO, use the
+  [`UnversionedTreeRoot`](https://nebari.bonsaidb.io/main/nebari/tree/struct.UnversionedTreeRoot.html)
+  which only stores the information needed to retrieve the latest data in the
+  file.
 - **[ACID](https://en.wikipedia.org/wiki/ACID)-compliance**:
   - **Atomicity**: Every operation on a `TreeFile` is done atomically.
     [`Operation::CompareSwap`](https://nebari.bonsaidb.io/main/nebari/tree/enum.Operation.html#variant.CompareSwap)
-    can be used to perform atomic operations that require evaluating the currently stored value.
+    can be used to perform atomic operations that require evaluating the
+    currently stored value.
   - **Consistency**: Atomic locking operations are used when publishing a new
     transaction state. This ensures that readers can never operate on a partially
     updated state.
@@ -79,12 +102,18 @@ Each tree supports:
 
 ### Why use an append-only file format?
 
-[@ecton](https://github.com/ecton) wasn't a database engineer before starting this project, and depending on your viewpoint may still not be considered a database engineer. Implementing ACID-compliance is not something that should be attempted lightly.
+[@ecton](https://github.com/ecton) wasn't a database engineer before starting
+this project, and depending on your viewpoint may still not be considered a
+database engineer. Implementing ACID-compliance is not something that should be
+attempted lightly.
 
-Creating ACID-compliance with append-only formats is much easier to achieve, however, as long as you can guarantee two things:
+Creating ACID-compliance with append-only formats is much easier to achieve,
+however, as long as you can guarantee two things:
 
-- When opening a previously existing file, can you identify where the last valid write occurred?
-- When writing the file, do not report that a transaction has succeeded until the file is fully flushed to disk.
+- When opening a previously existing file, can you identify where the last valid
+  write occurred?
+- When writing the file, do not report that a transaction has succeeded until
+  the file is fully flushed to disk.
 
 The B-Tree implementation in Nebari is designed to offer those exact guarantees.
 
@@ -94,9 +123,8 @@ contents, skipping over entries that are no longer alive. This process can
 happen without blocking the file from being operated on, but it does
 introduce IO overhead during the operation.
 
-Nebari [will provide](https://github.com/khonsulabs/nebari/issues/3) the APIs
-necessary to perform compaction, but may delegate scheduling and automation to
-users of the library and `BonsaiDb`.
+Nebari provides APIs that perform compaction, but currently delegates scheduling
+and automation to consumers of this library.
 
 ## Open-source Licenses
 

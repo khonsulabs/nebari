@@ -304,6 +304,7 @@
 <span id="304">304</span>
 <span id="305">305</span>
 <span id="306">306</span>
+<span id="307">307</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
@@ -332,7 +333,7 @@
         <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">NodeInclusion</span>, <span class="ident">ScanArgs</span>},
         <span class="ident">copy_chunk</span>, <span class="ident">dynamic_order</span>,
         <span class="ident">versioned::ChangeResult</span>,
-        <span class="ident">PageHeader</span>, <span class="ident">Root</span>,
+        <span class="ident">BTreeNode</span>, <span class="ident">PageHeader</span>, <span class="ident">Root</span>,
     },
     <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">ErrorKind</span>, <span class="ident">Vault</span>,
 };
@@ -398,10 +399,11 @@
                 <span class="kw-2">&amp;</span><span class="kw-2">mut</span> (),
                 <span class="ident">writer</span>,
             )<span class="question-mark">?</span> {
-                <span class="ident">ChangeResult::Absorb</span>
-                <span class="op">|</span> <span class="ident">ChangeResult::Changed</span>
-                <span class="op">|</span> <span class="ident">ChangeResult::Unchanged</span>
-                <span class="op">|</span> <span class="ident">ChangeResult::Remove</span> <span class="op">=</span><span class="op">&gt;</span> {}
+                <span class="ident">ChangeResult::Absorb</span> <span class="op">|</span> <span class="ident">ChangeResult::Changed</span> <span class="op">|</span> <span class="ident">ChangeResult::Unchanged</span> <span class="op">=</span><span class="op">&gt;</span> {}
+                <span class="ident">ChangeResult::Remove</span> <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">node</span> <span class="op">=</span> <span class="ident">BTreeNode::Leaf</span>(<span class="macro">vec!</span>[]);
+                    <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">dirty</span> <span class="op">=</span> <span class="bool-val">true</span>;
+                }
                 <span class="ident">ChangeResult::Split</span> <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">split_root</span>();
                 }

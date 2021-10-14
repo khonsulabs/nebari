@@ -1,6 +1,6 @@
 use std::{
     any::Any,
-    borrow::Cow,
+    borrow::{Borrow, Cow},
     collections::HashMap,
     convert::Infallible,
     fmt::{Debug, Display},
@@ -155,13 +155,16 @@ impl<File: ManagedFile> Roots<File> {
             .clone()
     }
 
-    fn tree_states(&self, trees: &[impl AnyTreeRoot<File>]) -> Vec<Box<dyn AnyTreeState>> {
+    fn tree_states<R: Borrow<T>, T: AnyTreeRoot<File> + ?Sized>(
+        &self,
+        trees: &[R],
+    ) -> Vec<Box<dyn AnyTreeState>> {
         let mut tree_states = self.data.tree_states.lock();
         let mut output = Vec::with_capacity(trees.len());
         for tree in trees {
             let state = tree_states
-                .entry(tree.name().to_string())
-                .or_insert_with(|| tree.default_state())
+                .entry(tree.borrow().name().to_string())
+                .or_insert_with(|| tree.borrow().default_state())
                 .cloned();
             output.push(state);
         }
@@ -177,25 +180,25 @@ impl<File: ManagedFile> Roots<File> {
     /// - [`InvalidTreeName`](ErrorKind::InvalidTreeName): A tree name contained
     ///   an invalid character. For a full list of valid characters, see the
     ///   documentation on [`InvalidTreeName`](ErrorKind::InvalidTreeName).
-    pub fn transaction<T: AnyTreeRoot<File>>(
+    pub fn transaction<R: Borrow<T>, T: AnyTreeRoot<File> + ?Sized>(
         &self,
-        trees: &[T],
+        trees: &[R],
     ) -> Result<ExecutingTransaction<File>, Error> {
         for tree in trees {
-            check_name(tree.name()).map(|_| tree.name().as_bytes())?;
+            check_name(tree.borrow().name()).map(|_| tree.borrow().name().as_bytes())?;
         }
         let transaction = self
             .data
             .transactions
-            .new_transaction(trees.iter().map(|t| t.name().as_bytes()));
+            .new_transaction(trees.iter().map(|t| t.borrow().name().as_bytes()));
         let states = self.tree_states(trees);
         let trees = trees
             .iter()
             .zip(states.into_iter())
             .map(|(tree, state)| {
-                tree.begin_transaction(
+                tree.borrow().begin_transaction(
                     transaction.id,
-                    &self.tree_path(tree.name()),
+                    &self.tree_path(tree.borrow().name()),
                     state.as_ref(),
                     self.context(),
                     Some(&self.data.transactions),

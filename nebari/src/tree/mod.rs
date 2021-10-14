@@ -1493,17 +1493,8 @@ mod tests {
         };
         let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
         {
-            let file = context.file_manager.append(file_path).unwrap();
-            let state = if ids.len() > 1 {
-                let state = State::default();
-                TreeFile::<R, F>::initialize_state(&state, file_path, file.id(), context, None)
-                    .unwrap();
-                state
-            } else {
-                State::initialized(file.id(), max_order)
-            };
             let mut tree =
-                TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
+                TreeFile::<R, F>::write(file_path, State::new(None, max_order), context, None)
                     .unwrap();
             tree.push(None, id_buffer.clone(), Buffer::from(b"hello world"))
                 .unwrap();
@@ -1515,13 +1506,8 @@ mod tests {
 
         // Try loading the file up and retrieving the data.
         {
-            let state = State::default();
-            let file = context.file_manager.append(file_path).unwrap();
-            TreeFile::<R, F>::initialize_state(&state, file_path, file.id(), context, None)
-                .unwrap();
-
             let mut tree =
-                TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
+                TreeFile::<R, F>::write(file_path, State::new(None, max_order), context, None)
                     .unwrap();
             let value = tree.get(&id_buffer, false).unwrap();
             assert_eq!(&*value.unwrap(), b"hello world");
@@ -1653,6 +1639,15 @@ mod tests {
         for id in ids {
             remove_one_record::<R, StdFile>(&context, &file_path, id, Some(ORDER));
         }
+
+        // Test being able to add a record again
+        insert_one_record::<R, StdFile>(
+            &context,
+            &file_path,
+            &mut HashSet::default(),
+            &mut rng,
+            Some(ORDER),
+        );
     }
 
     #[test]

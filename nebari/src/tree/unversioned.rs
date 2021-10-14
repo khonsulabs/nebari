@@ -25,7 +25,7 @@ use crate::{
         btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
         copy_chunk, dynamic_order,
         versioned::ChangeResult,
-        PageHeader, Root,
+        BTreeNode, PageHeader, Root,
     },
     Buffer, ChunkCache, ErrorKind, Vault,
 };
@@ -91,10 +91,11 @@ impl UnversionedTreeRoot {
                 &mut (),
                 writer,
             )? {
-                ChangeResult::Absorb
-                | ChangeResult::Changed
-                | ChangeResult::Unchanged
-                | ChangeResult::Remove => {}
+                ChangeResult::Absorb | ChangeResult::Changed | ChangeResult::Unchanged => {}
+                ChangeResult::Remove => {
+                    self.by_id_root.node = BTreeNode::Leaf(vec![]);
+                    self.by_id_root.dirty = true;
+                }
                 ChangeResult::Split => {
                     self.by_id_root.split_root();
                 }

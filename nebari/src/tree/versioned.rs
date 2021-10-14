@@ -27,7 +27,7 @@ use crate::{
         copy_chunk, dynamic_order,
         key_entry::KeyEntry,
         modify::Operation,
-        Interior, PageHeader, Root,
+        BTreeNode, Interior, PageHeader, Root,
     },
     Buffer, ChunkCache, ErrorKind, Vault,
 };
@@ -191,10 +191,11 @@ impl VersionedTreeRoot {
                 changes,
                 writer,
             )? {
-                ChangeResult::Absorb
-                | ChangeResult::Remove
-                | ChangeResult::Changed
-                | ChangeResult::Unchanged => {}
+                ChangeResult::Absorb | ChangeResult::Changed | ChangeResult::Unchanged => {}
+                ChangeResult::Remove => {
+                    self.by_id_root.node = BTreeNode::Leaf(vec![]);
+                    self.by_id_root.dirty = true;
+                }
                 ChangeResult::Split => {
                     self.by_id_root.split_root();
                 }

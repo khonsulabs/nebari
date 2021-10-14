@@ -35,7 +35,7 @@ let tree = roots.tree(VersionedTreeRoot::tree("a-tree")).unwrap();
 tree.set("hello", "world").unwrap();
 ```
 
-For more examples, check out [`nebari/examples/`](./nebari/examples/).
+For more examples, check out [`nebari/examples/`](https://github.com/khonsulabs/nebari/tree/main/nebari/examples/).
 
 ## Features
 

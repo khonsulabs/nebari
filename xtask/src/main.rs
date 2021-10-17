@@ -1,4 +1,3 @@
-use chrono::Utc;
 use devx_cmd::read;
 use khonsu_tools::{
     anyhow,
@@ -6,6 +5,7 @@ use khonsu_tools::{
 };
 use structopt::StructOpt;
 use sysinfo::{RefreshKind, System, SystemExt};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 #[derive(StructOpt, Debug)]
 pub enum Commands {
@@ -32,11 +32,11 @@ impl code_coverage::Config for CoverageConfig {}
 
 fn generate_benchmark_overview() -> anyhow::Result<()> {
     let overview = std::fs::read_to_string("benchmarks/overview.html")?;
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     let git_rev = read!("git", "rev-parse", "HEAD")?;
     let git_rev = git_rev.trim();
 
-    let overview = overview.replace("TIMESTAMP", &now.to_rfc2822());
+    let overview = overview.replace("TIMESTAMP", &now.format(&Rfc3339).unwrap());
     let overview = overview.replace("GITREV", git_rev);
     let environment = match std::env::var("ENVIRONMENT") {
         Ok(environment) => environment,

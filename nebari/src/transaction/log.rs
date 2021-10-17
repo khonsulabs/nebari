@@ -311,8 +311,20 @@ fn fetch_entry<File: ManagedFile>(
     let mut lower_id = None;
     let mut lower_location = None;
     loop {
-        let guessed_location = guess_page(id, lower_location, lower_id, upper_location, upper_id);
-        debug_assert_ne!(guessed_location, upper_location);
+        let guessed_location = if let Some(page) =
+            guess_page(id, lower_location, lower_id, upper_location, upper_id)
+        {
+            page
+        } else {
+            return Ok(ScanResult::NotFound {
+                nearest_position: upper_location,
+            });
+        };
+        if guessed_location == upper_location {
+            return Ok(ScanResult::NotFound {
+                nearest_position: upper_location,
+            });
+        }
 
         // load the transaction at this location
         #[allow(clippy::cast_possible_wrap)]
@@ -588,7 +600,7 @@ fn guess_page(
     lower_id: Option<u64>,
     upper_location: u64,
     upper_id: u64,
-) -> u64 {
+) -> Option<u64> {
     debug_assert_ne!(looking_for, upper_id);
     let total_pages = upper_location / PAGE_SIZE as u64;
 
@@ -600,18 +612,20 @@ fn guess_page(
         let delta_estimated_pages = (delta_from_current as f64 * local_avg_per_page).floor() as u64;
         let guess = lower_location + delta_estimated_pages.max(1) * PAGE_SIZE as u64;
         // If our estimate is that the location is beyond or equal to the upper, we'll guess the page before it.
-        if guess >= upper_location {
+        Some(if guess >= upper_location {
             upper_location - PAGE_SIZE as u64
         } else {
             guess
-        }
-    } else {
+        })
+    } else if upper_id > looking_for {
         // Go backwards from upper
-        let avg_per_page = upper_id as f64 / total_pages as f64;
-        let id_delta = upper_id - looking_for;
+        let avg_per_page = dbg!(upper_id) as f64 / dbg!(total_pages) as f64;
+        let id_delta = upper_id - dbg!(looking_for);
         let delta_estimated_pages = (id_delta as f64 * avg_per_page).ceil() as u64;
-        let delta_bytes = delta_estimated_pages * PAGE_SIZE as u64;
-        upper_location.saturating_sub(delta_bytes)
+        let delta_bytes = delta_estimated_pages.saturating_mul(PAGE_SIZE as u64);
+        Some(upper_location.saturating_sub(delta_bytes))
+    } else {
+        None
     }
 }
 

@@ -23,4 +23,10 @@ impl<M: FileManager> Context<M> {
     pub fn cache(&self) -> Option<&ChunkCache> {
         self.cache.as_ref()
     }
+
+    /// Replaces the vault currently set with `vault`.
+    pub fn with_vault(mut self, vault: Arc<dyn Vault>) -> Self {
+        self.vault = Some(vault);
+        self
+    }
 }

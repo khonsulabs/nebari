@@ -5,6 +5,7 @@ use std::{
     marker::PhantomData,
     ops::RangeBounds,
     path::Path,
+    sync::Arc,
 };
 
 use crate::{
@@ -35,6 +36,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     fn tree<File: ManagedFile>(name: impl Into<Cow<'static, str>>) -> TreeRoot<Self, File> {
         TreeRoot {
             name: name.into(),
+            vault: None,
             _phantom: PhantomData,
         }
     }
@@ -134,7 +136,18 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
 pub struct TreeRoot<R: Root, File: ManagedFile> {
     /// The name of the tree.
     pub name: Cow<'static, str>,
+    /// The vault to use when opening the tree. If not set, the `Context` will
+    /// provide the vault.
+    pub vault: Option<Arc<dyn Vault>>,
     _phantom: PhantomData<(R, File)>,
+}
+
+impl<R: Root, File: ManagedFile> TreeRoot<R, File> {
+    /// Replaces the vault currenty set with `vault`.
+    pub fn with_vault<V: Vault>(mut self, vault: V) -> Self {
+        self.vault = Some(Arc::new(vault));
+        self
+    }
 }
 
 /// A named tree that can be used in a transaction.
@@ -158,9 +171,11 @@ impl<R: Root, File: ManagedFile> AnyTreeRoot<File> for TreeRoot<R, File> {
     fn name(&self) -> &str {
         &self.name
     }
+
     fn default_state(&self) -> Box<dyn AnyTreeState> {
         Box::new(State::<R>::default())
     }
+
     fn begin_transaction(
         &self,
         transaction_id: u64,
@@ -169,10 +184,14 @@ impl<R: Root, File: ManagedFile> AnyTreeRoot<File> for TreeRoot<R, File> {
         context: &Context<File::Manager>,
         transactions: Option<&TransactionManager<File::Manager>>,
     ) -> Result<Box<dyn AnyTransactionTree<File>>, Error> {
+        let context = self.vault.as_ref().map_or_else(
+            || Cow::Borrowed(context),
+            |vault| Cow::Owned(context.clone().with_vault(vault.clone())),
+        );
         let tree = TreeFile::write(
             file_path,
             state.as_any().downcast_ref::<State<R>>().unwrap().clone(),
-            context,
+            &context,
             transactions,
         )?;
 

@@ -111,6 +111,7 @@ impl<File: ManagedFile> Roots<File> {
         Ok(Tree {
             roots: self.clone(),
             state,
+            vault: root.vault,
             name: root.name,
         })
     }
@@ -556,6 +557,7 @@ impl<File: ManagedFile> Config<File> {
 pub struct Tree<Root: tree::Root, File: ManagedFile> {
     roots: Roots<File>,
     state: State<Root>,
+    vault: Option<Arc<dyn Vault>>,
     name: Cow<'static, str>,
 }
 
@@ -564,6 +566,7 @@ impl<Root: tree::Root, File: ManagedFile> Clone for Tree<Root, File> {
         Self {
             roots: self.roots.clone(),
             state: self.state.clone(),
+            vault: self.vault.clone(),
             name: self.name.clone(),
         }
     }
@@ -596,21 +599,38 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         key: impl Into<Buffer<'static>>,
         value: impl Into<Buffer<'static>>,
     ) -> Result<(), Error> {
-        let mut transaction = self.roots.transaction(&[Root::tree(self.name.clone())])?;
+        let mut transaction = self.begin_transaction()?;
         transaction.tree::<Root>(0).unwrap().set(key, value)?;
         transaction.commit()
+    }
+
+    fn begin_transaction(&self) -> Result<ExecutingTransaction<File>, Error> {
+        let mut root = Root::tree(self.name.clone());
+        if let Some(vault) = &self.vault {
+            root.vault = Some(vault.clone());
+        }
+        self.roots.transaction(&[root])
+    }
+
+    fn open_for_read(&self) -> Result<TreeFile<Root, File>, Error> {
+        let context = self.vault.as_ref().map_or_else(
+            || Cow::Borrowed(self.roots.context()),
+            |vault| Cow::Owned(self.roots.context().clone().with_vault(vault.clone())),
+        );
+
+        TreeFile::<Root, File>::read(
+            self.path(),
+            self.state.clone(),
+            &context,
+            Some(self.roots.transactions()),
+        )
     }
 
     /// Retrieves the current value of `key`, if present. Does not reflect any
     /// changes in pending transactions.
     pub fn get(&self, key: &[u8]) -> Result<Option<Buffer<'static>>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = TreeFile::<Root, File>::read(
-                self.path(),
-                self.state.clone(),
-                self.roots.context(),
-                Some(self.roots.transactions()),
-            )?;
+            let mut tree = self.open_for_read()?;
 
             tree.get(key, false)
         })
@@ -619,7 +639,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// Removes `key` and returns the existing value, if present. This is executed within its own transaction.
     #[allow(clippy::missing_panics_doc)]
     pub fn remove(&self, key: &[u8]) -> Result<Option<Buffer<'static>>, Error> {
-        let mut transaction = self.roots.transaction(&[Root::tree(self.name.clone())])?;
+        let mut transaction = self.begin_transaction()?;
         let existing_value = transaction.tree::<Root>(0).unwrap().remove(key)?;
         transaction.commit()?;
         Ok(existing_value)
@@ -635,7 +655,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         old: Option<&Buffer<'_>>,
         new: Option<Buffer<'_>>,
     ) -> Result<(), CompareAndSwapError> {
-        let mut transaction = self.roots.transaction(&[Root::tree(self.name.clone())])?;
+        let mut transaction = self.begin_transaction()?;
         transaction
             .tree::<Root>(0)
             .unwrap()
@@ -651,12 +671,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         keys: &[&[u8]],
     ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = TreeFile::<Root, File>::read(
-                self.path(),
-                self.state.clone(),
-                self.roots.context(),
-                Some(self.roots.transactions()),
-            )?;
+            let mut tree = self.open_for_read()?;
 
             tree.get_multiple(keys, false)
         })
@@ -668,12 +683,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         range: Range,
     ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = TreeFile::<Root, File>::read(
-                self.path(),
-                self.state.clone(),
-                self.roots.context(),
-                Some(self.roots.transactions()),
-            )?;
+            let mut tree = self.open_for_read()?;
 
             tree.get_range(range.clone(), false)
         })
@@ -704,12 +714,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         CallerError: Display + Debug,
     {
         catch_compaction_and_retry_abortable(move || {
-            let mut tree = TreeFile::<Root, File>::read(
-                self.path(),
-                self.state.clone(),
-                self.roots.context(),
-                Some(self.roots.transactions()),
-            )?;
+            let mut tree = self.open_for_read()?;
 
             tree.scan(
                 range.clone(),
@@ -725,12 +730,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn last_key(&self) -> Result<Option<Buffer<'static>>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = TreeFile::<Root, File>::read(
-                self.path(),
-                self.state.clone(),
-                self.roots.context(),
-                Some(self.roots.transactions()),
-            )?;
+            let mut tree = self.open_for_read()?;
 
             tree.last_key(false)
         })
@@ -740,12 +740,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn last(&self) -> Result<Option<(Buffer<'static>, Buffer<'static>)>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = TreeFile::<Root, File>::read(
-                self.path(),
-                self.state.clone(),
-                self.roots.context(),
-                Some(self.roots.transactions()),
-            )?;
+            let mut tree = self.open_for_read()?;
 
             tree.last(false)
         })
@@ -758,12 +753,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// See [`TreeFile::compact()`](crate::tree::TreeFile::compact) for more
     /// information.
     pub fn compact(&self) -> Result<(), Error> {
-        let tree = TreeFile::<Root, File>::read(
-            self.path(),
-            self.state.clone(),
-            self.roots.context(),
-            Some(self.roots.transactions()),
-        )?;
+        let tree = self.open_for_read()?;
         tree.compact(
             &self.roots.context().file_manager,
             Some(TransactableCompaction {
@@ -994,6 +984,7 @@ mod tests {
     use super::*;
     use crate::{
         io::{fs::StdFile, memory::MemoryFile, ManagedFile},
+        test_util::RotatorVault,
         tree::{Root, UnversionedTreeRoot},
     };
 
@@ -1163,5 +1154,61 @@ mod tests {
         assert!(check_name("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-.").is_ok());
         assert!(check_name("=").is_err());
         assert!(check_name("_transactions").is_err());
+    }
+
+    #[test]
+    fn context_encryption_tests() {
+        let tempdir = tempdir().unwrap();
+
+        // Encrypt a tree using default encryption via the context
+        {
+            let roots = Config::<StdFile>::new(tempdir.path())
+                .vault(RotatorVault::new(13))
+                .open()
+                .unwrap();
+            let tree = roots.tree(VersionedTreeRoot::tree("test")).unwrap();
+            tree.set(b"test", b"value").unwrap();
+            let other_tree = roots
+                .tree(VersionedTreeRoot::tree("test-otherkey").with_vault(RotatorVault::new(42)))
+                .unwrap();
+            other_tree.set(b"test", b"other").unwrap();
+        }
+        // Try to access the tree with the vault again.
+        {
+            let roots = Config::<StdFile>::new(tempdir.path())
+                .vault(RotatorVault::new(13))
+                .open()
+                .unwrap();
+            let tree = roots.tree(VersionedTreeRoot::tree("test")).unwrap();
+            let value = tree.get(b"test").unwrap();
+            assert_eq!(value.as_deref(), Some(&b"value"[..]));
+
+            // Verify we can't read the other tree without the right vault
+            let bad_tree = roots
+                .tree(VersionedTreeRoot::tree("test-otherkey"))
+                .unwrap();
+            assert!(bad_tree.get(b"test").is_err());
+
+            // And test retrieving the other key with the correct vault
+            let tree = roots
+                .tree(VersionedTreeRoot::tree("test-otherkey").with_vault(RotatorVault::new(42)))
+                .unwrap();
+            let value = tree.get(b"test").unwrap();
+            assert_eq!(value.as_deref(), Some(&b"other"[..]));
+        }
+        {
+            let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
+            // Try to access roots without the vault.
+            let bad_tree = roots.tree(VersionedTreeRoot::tree("test")).unwrap();
+            assert!(bad_tree.get(b"test").is_err());
+
+            // Try to access roots with the vault specified. It will still fail
+            // because the tree can't be validated without reading the
+            // transaction log.
+            let bad_tree = roots
+                .tree(VersionedTreeRoot::tree("test").with_vault(RotatorVault::new(13)))
+                .unwrap();
+            assert!(bad_tree.get(b"test").is_err());
+        }
     }
 }

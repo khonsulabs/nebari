@@ -57,17 +57,17 @@ impl RotatorVault {
 
 impl Vault for RotatorVault {
     fn encrypt(&self, payload: &[u8]) -> Vec<u8> {
-        let mut output = Vec::with_capacity(payload.len() + 1);
-        output.push(self.rotation_amount);
+        println!("Encrypting with key: {}", self.rotation_amount);
+        let mut output = Vec::with_capacity(payload.len());
         output.extend(payload.iter().map(|c| c.wrapping_add(self.rotation_amount)));
         output
     }
 
     fn decrypt(&self, payload: &[u8]) -> Vec<u8> {
-        let rotation_amount = payload[0];
-        payload[1..]
+        println!("Decrypting with key: {}", self.rotation_amount);
+        payload
             .iter()
-            .map(|c| c.wrapping_sub(rotation_amount))
+            .map(|c| c.wrapping_sub(self.rotation_amount))
             .collect()
     }
 }

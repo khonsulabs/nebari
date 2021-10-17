@@ -1165,6 +1165,53 @@
 <span id="1165">1165</span>
 <span id="1166">1166</span>
 <span id="1167">1167</span>
+<span id="1168">1168</span>
+<span id="1169">1169</span>
+<span id="1170">1170</span>
+<span id="1171">1171</span>
+<span id="1172">1172</span>
+<span id="1173">1173</span>
+<span id="1174">1174</span>
+<span id="1175">1175</span>
+<span id="1176">1176</span>
+<span id="1177">1177</span>
+<span id="1178">1178</span>
+<span id="1179">1179</span>
+<span id="1180">1180</span>
+<span id="1181">1181</span>
+<span id="1182">1182</span>
+<span id="1183">1183</span>
+<span id="1184">1184</span>
+<span id="1185">1185</span>
+<span id="1186">1186</span>
+<span id="1187">1187</span>
+<span id="1188">1188</span>
+<span id="1189">1189</span>
+<span id="1190">1190</span>
+<span id="1191">1191</span>
+<span id="1192">1192</span>
+<span id="1193">1193</span>
+<span id="1194">1194</span>
+<span id="1195">1195</span>
+<span id="1196">1196</span>
+<span id="1197">1197</span>
+<span id="1198">1198</span>
+<span id="1199">1199</span>
+<span id="1200">1200</span>
+<span id="1201">1201</span>
+<span id="1202">1202</span>
+<span id="1203">1203</span>
+<span id="1204">1204</span>
+<span id="1205">1205</span>
+<span id="1206">1206</span>
+<span id="1207">1207</span>
+<span id="1208">1208</span>
+<span id="1209">1209</span>
+<span id="1210">1210</span>
+<span id="1211">1211</span>
+<span id="1212">1212</span>
+<span id="1213">1213</span>
+<span id="1214">1214</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">any::Any</span>,
@@ -1279,6 +1326,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">Tree</span> {
             <span class="ident">roots</span>: <span class="self">self</span>.<span class="ident">clone</span>(),
             <span class="ident">state</span>,
+            <span class="ident">vault</span>: <span class="ident">root</span>.<span class="ident">vault</span>,
             <span class="ident">name</span>: <span class="ident">root</span>.<span class="ident">name</span>,
         })
     }
@@ -1724,6 +1772,7 @@
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Tree</span><span class="op">&lt;</span><span class="ident">Root</span>: <span class="ident">tree::Root</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> {
     <span class="ident">roots</span>: <span class="ident">Roots</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span>,
     <span class="ident">state</span>: <span class="ident">State</span><span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>,
+    <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">name</span>: <span class="ident">Cow</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span>, <span class="ident">str</span><span class="op">&gt;</span>,
 }
 
@@ -1732,6 +1781,7 @@
         <span class="self">Self</span> {
             <span class="ident">roots</span>: <span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">clone</span>(),
             <span class="ident">state</span>: <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">clone</span>(),
+            <span class="ident">vault</span>: <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">clone</span>(),
             <span class="ident">name</span>: <span class="self">self</span>.<span class="ident">name</span>.<span class="ident">clone</span>(),
         }
     }
@@ -1764,21 +1814,38 @@
         <span class="ident">key</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">value</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">Root::tree</span>(<span class="self">self</span>.<span class="ident">name</span>.<span class="ident">clone</span>())])<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
         <span class="ident">transaction</span>.<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>(<span class="number">0</span>).<span class="ident">unwrap</span>().<span class="ident">set</span>(<span class="ident">key</span>, <span class="ident">value</span>)<span class="question-mark">?</span>;
         <span class="ident">transaction</span>.<span class="ident">commit</span>()
+    }
+
+    <span class="kw">fn</span> <span class="ident">begin_transaction</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">ExecutingTransaction</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">root</span> <span class="op">=</span> <span class="ident">Root::tree</span>(<span class="self">self</span>.<span class="ident">name</span>.<span class="ident">clone</span>());
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">vault</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">vault</span> {
+            <span class="ident">root</span>.<span class="ident">vault</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">vault</span>.<span class="ident">clone</span>());
+        }
+        <span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">root</span>])
+    }
+
+    <span class="kw">fn</span> <span class="ident">open_for_read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">TreeFile</span><span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">context</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">as_ref</span>().<span class="ident">map_or_else</span>(
+            <span class="op">|</span><span class="op">|</span> <span class="ident">Cow::Borrowed</span>(<span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">context</span>()),
+            <span class="op">|</span><span class="ident">vault</span><span class="op">|</span> <span class="ident">Cow::Owned</span>(<span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">context</span>().<span class="ident">clone</span>().<span class="ident">with_vault</span>(<span class="ident">vault</span>.<span class="ident">clone</span>())),
+        );
+
+        <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="ident">::read</span>(
+            <span class="self">self</span>.<span class="ident">path</span>(),
+            <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">clone</span>(),
+            <span class="kw-2">&amp;</span><span class="ident">context</span>,
+            <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">transactions</span>()),
+        )
     }
 
     <span class="doccomment">/// Retrieves the current value of `key`, if present. Does not reflect any</span>
     <span class="doccomment">/// changes in pending transactions.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">catch_compaction_and_retry</span>(<span class="op">|</span><span class="op">|</span> {
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="ident">::read</span>(
-                <span class="self">self</span>.<span class="ident">path</span>(),
-                <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">clone</span>(),
-                <span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">context</span>(),
-                <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">transactions</span>()),
-            )<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">open_for_read</span>()<span class="question-mark">?</span>;
 
             <span class="ident">tree</span>.<span class="ident">get</span>(<span class="ident">key</span>, <span class="bool-val">false</span>)
         })
@@ -1787,7 +1854,7 @@
     <span class="doccomment">/// Removes `key` and returns the existing value, if present. This is executed within its own transaction.</span>
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::missing_panics_doc</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">Root::tree</span>(<span class="self">self</span>.<span class="ident">name</span>.<span class="ident">clone</span>())])<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">existing_value</span> <span class="op">=</span> <span class="ident">transaction</span>.<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>(<span class="number">0</span>).<span class="ident">unwrap</span>().<span class="ident">remove</span>(<span class="ident">key</span>)<span class="question-mark">?</span>;
         <span class="ident">transaction</span>.<span class="ident">commit</span>()<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">existing_value</span>)
@@ -1803,7 +1870,7 @@
         <span class="ident">old</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">new</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">CompareAndSwapError</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">Root::tree</span>(<span class="self">self</span>.<span class="ident">name</span>.<span class="ident">clone</span>())])<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
         <span class="ident">transaction</span>
             .<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>(<span class="number">0</span>)
             .<span class="ident">unwrap</span>()
@@ -1819,12 +1886,7 @@
         <span class="ident">keys</span>: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>[<span class="ident">u8</span>]],
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">catch_compaction_and_retry</span>(<span class="op">|</span><span class="op">|</span> {
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="ident">::read</span>(
-                <span class="self">self</span>.<span class="ident">path</span>(),
-                <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">clone</span>(),
-                <span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">context</span>(),
-                <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">transactions</span>()),
-            )<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">open_for_read</span>()<span class="question-mark">?</span>;
 
             <span class="ident">tree</span>.<span class="ident">get_multiple</span>(<span class="ident">keys</span>, <span class="bool-val">false</span>)
         })
@@ -1836,12 +1898,7 @@
         <span class="ident">range</span>: <span class="ident">Range</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">catch_compaction_and_retry</span>(<span class="op">|</span><span class="op">|</span> {
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="ident">::read</span>(
-                <span class="self">self</span>.<span class="ident">path</span>(),
-                <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">clone</span>(),
-                <span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">context</span>(),
-                <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">transactions</span>()),
-            )<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">open_for_read</span>()<span class="question-mark">?</span>;
 
             <span class="ident">tree</span>.<span class="ident">get_range</span>(<span class="ident">range</span>.<span class="ident">clone</span>(), <span class="bool-val">false</span>)
         })
@@ -1872,12 +1929,7 @@
         <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
     {
         <span class="ident">catch_compaction_and_retry_abortable</span>(<span class="kw">move</span> <span class="op">|</span><span class="op">|</span> {
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="ident">::read</span>(
-                <span class="self">self</span>.<span class="ident">path</span>(),
-                <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">clone</span>(),
-                <span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">context</span>(),
-                <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">transactions</span>()),
-            )<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">open_for_read</span>()<span class="question-mark">?</span>;
 
             <span class="ident">tree</span>.<span class="ident">scan</span>(
                 <span class="ident">range</span>.<span class="ident">clone</span>(),
@@ -1893,12 +1945,7 @@
     <span class="attribute">#[<span class="ident">cfg_attr</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>, <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>)))]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">last_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">catch_compaction_and_retry</span>(<span class="op">|</span><span class="op">|</span> {
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="ident">::read</span>(
-                <span class="self">self</span>.<span class="ident">path</span>(),
-                <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">clone</span>(),
-                <span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">context</span>(),
-                <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">transactions</span>()),
-            )<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">open_for_read</span>()<span class="question-mark">?</span>;
 
             <span class="ident">tree</span>.<span class="ident">last_key</span>(<span class="bool-val">false</span>)
         })
@@ -1908,12 +1955,7 @@
     <span class="attribute">#[<span class="ident">cfg_attr</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>, <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>)))]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">last</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">catch_compaction_and_retry</span>(<span class="op">|</span><span class="op">|</span> {
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="ident">::read</span>(
-                <span class="self">self</span>.<span class="ident">path</span>(),
-                <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">clone</span>(),
-                <span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">context</span>(),
-                <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">transactions</span>()),
-            )<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">open_for_read</span>()<span class="question-mark">?</span>;
 
             <span class="ident">tree</span>.<span class="ident">last</span>(<span class="bool-val">false</span>)
         })
@@ -1926,12 +1968,7 @@
     <span class="doccomment">/// See [`TreeFile::compact()`](crate::tree::TreeFile::compact) for more</span>
     <span class="doccomment">/// information.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">compact</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="ident">::read</span>(
-            <span class="self">self</span>.<span class="ident">path</span>(),
-            <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">clone</span>(),
-            <span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">context</span>(),
-            <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">transactions</span>()),
-        )<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">open_for_read</span>()<span class="question-mark">?</span>;
         <span class="ident">tree</span>.<span class="ident">compact</span>(
             <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">context</span>().<span class="ident">file_manager</span>,
             <span class="prelude-val">Some</span>(<span class="ident">TransactableCompaction</span> {
@@ -2162,6 +2199,7 @@
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="kw">crate</span>::{
         <span class="ident">io</span>::{<span class="ident">fs::StdFile</span>, <span class="ident">memory::MemoryFile</span>, <span class="ident">ManagedFile</span>},
+        <span class="ident">test_util::RotatorVault</span>,
         <span class="ident">tree</span>::{<span class="ident">Root</span>, <span class="ident">UnversionedTreeRoot</span>},
     };
 
@@ -2331,6 +2369,62 @@
         <span class="macro">assert!</span>(<span class="ident">check_name</span>(<span class="string">&quot;abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-.&quot;</span>).<span class="ident">is_ok</span>());
         <span class="macro">assert!</span>(<span class="ident">check_name</span>(<span class="string">&quot;=&quot;</span>).<span class="ident">is_err</span>());
         <span class="macro">assert!</span>(<span class="ident">check_name</span>(<span class="string">&quot;_transactions&quot;</span>).<span class="ident">is_err</span>());
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">context_encryption_tests</span>() {
+        <span class="kw">let</span> <span class="ident">tempdir</span> <span class="op">=</span> <span class="ident">tempdir</span>().<span class="ident">unwrap</span>();
+
+        <span class="comment">// Encrypt a tree using default encryption via the context</span>
+        {
+            <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>())
+                .<span class="ident">vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">13</span>))
+                .<span class="ident">open</span>()
+                .<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
+            <span class="ident">tree</span>.<span class="ident">set</span>(<span class="string">b&quot;test&quot;</span>, <span class="string">b&quot;value&quot;</span>).<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">other_tree</span> <span class="op">=</span> <span class="ident">roots</span>
+                .<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test-otherkey&quot;</span>).<span class="ident">with_vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">42</span>)))
+                .<span class="ident">unwrap</span>();
+            <span class="ident">other_tree</span>.<span class="ident">set</span>(<span class="string">b&quot;test&quot;</span>, <span class="string">b&quot;other&quot;</span>).<span class="ident">unwrap</span>();
+        }
+        <span class="comment">// Try to access the tree with the vault again.</span>
+        {
+            <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>())
+                .<span class="ident">vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">13</span>))
+                .<span class="ident">open</span>()
+                .<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">value</span> <span class="op">=</span> <span class="ident">tree</span>.<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>).<span class="ident">unwrap</span>();
+            <span class="macro">assert_eq!</span>(<span class="ident">value</span>.<span class="ident">as_deref</span>(), <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="string">b&quot;value&quot;</span>[..]));
+
+            <span class="comment">// Verify we can&#39;t read the other tree without the right vault</span>
+            <span class="kw">let</span> <span class="ident">bad_tree</span> <span class="op">=</span> <span class="ident">roots</span>
+                .<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test-otherkey&quot;</span>))
+                .<span class="ident">unwrap</span>();
+            <span class="macro">assert!</span>(<span class="ident">bad_tree</span>.<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>).<span class="ident">is_err</span>());
+
+            <span class="comment">// And test retrieving the other key with the correct vault</span>
+            <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>
+                .<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test-otherkey&quot;</span>).<span class="ident">with_vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">42</span>)))
+                .<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">value</span> <span class="op">=</span> <span class="ident">tree</span>.<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>).<span class="ident">unwrap</span>();
+            <span class="macro">assert_eq!</span>(<span class="ident">value</span>.<span class="ident">as_deref</span>(), <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="string">b&quot;other&quot;</span>[..]));
+        }
+        {
+            <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>()).<span class="ident">open</span>().<span class="ident">unwrap</span>();
+            <span class="comment">// Try to access roots without the vault.</span>
+            <span class="kw">let</span> <span class="ident">bad_tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
+            <span class="macro">assert!</span>(<span class="ident">bad_tree</span>.<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>).<span class="ident">is_err</span>());
+
+            <span class="comment">// Try to access roots with the vault specified. It will still fail</span>
+            <span class="comment">// because the tree can&#39;t be validated without reading the</span>
+            <span class="comment">// transaction log.</span>
+            <span class="kw">let</span> <span class="ident">bad_tree</span> <span class="op">=</span> <span class="ident">roots</span>
+                .<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test&quot;</span>).<span class="ident">with_vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">13</span>)))
+                .<span class="ident">unwrap</span>();
+            <span class="macro">assert!</span>(<span class="ident">bad_tree</span>.<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>).<span class="ident">is_err</span>());
+        }
     }
 }
 </pre></div>

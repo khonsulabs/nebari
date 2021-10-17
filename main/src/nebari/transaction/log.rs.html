@@ -825,6 +825,20 @@
 <span id="825">825</span>
 <span id="826">826</span>
 <span id="827">827</span>
+<span id="828">828</span>
+<span id="829">829</span>
+<span id="830">830</span>
+<span id="831">831</span>
+<span id="832">832</span>
+<span id="833">833</span>
+<span id="834">834</span>
+<span id="835">835</span>
+<span id="836">836</span>
+<span id="837">837</span>
+<span id="838">838</span>
+<span id="839">839</span>
+<span id="840">840</span>
+<span id="841">841</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">borrow::Cow</span>,
@@ -1139,8 +1153,20 @@
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">lower_id</span> <span class="op">=</span> <span class="prelude-val">None</span>;
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">lower_location</span> <span class="op">=</span> <span class="prelude-val">None</span>;
     <span class="kw">loop</span> {
-        <span class="kw">let</span> <span class="ident">guessed_location</span> <span class="op">=</span> <span class="ident">guess_page</span>(<span class="ident">id</span>, <span class="ident">lower_location</span>, <span class="ident">lower_id</span>, <span class="ident">upper_location</span>, <span class="ident">upper_id</span>);
-        <span class="macro">debug_assert_ne!</span>(<span class="ident">guessed_location</span>, <span class="ident">upper_location</span>);
+        <span class="kw">let</span> <span class="ident">guessed_location</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">page</span>) <span class="op">=</span>
+            <span class="ident">guess_page</span>(<span class="ident">id</span>, <span class="ident">lower_location</span>, <span class="ident">lower_id</span>, <span class="ident">upper_location</span>, <span class="ident">upper_id</span>)
+        {
+            <span class="ident">page</span>
+        } <span class="kw">else</span> {
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">ScanResult::NotFound</span> {
+                <span class="ident">nearest_position</span>: <span class="ident">upper_location</span>,
+            });
+        };
+        <span class="kw">if</span> <span class="ident">guessed_location</span> <span class="op">=</span><span class="op">=</span> <span class="ident">upper_location</span> {
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">ScanResult::NotFound</span> {
+                <span class="ident">nearest_position</span>: <span class="ident">upper_location</span>,
+            });
+        }
 
         <span class="comment">// load the transaction at this location</span>
         <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::cast_possible_wrap</span>)]</span>
@@ -1416,7 +1442,7 @@
     <span class="ident">lower_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
     <span class="ident">upper_location</span>: <span class="ident">u64</span>,
     <span class="ident">upper_id</span>: <span class="ident">u64</span>,
-) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> {
     <span class="macro">debug_assert_ne!</span>(<span class="ident">looking_for</span>, <span class="ident">upper_id</span>);
     <span class="kw">let</span> <span class="ident">total_pages</span> <span class="op">=</span> <span class="ident">upper_location</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span> <span class="kw">as</span> <span class="ident">u64</span>;
 
@@ -1428,18 +1454,20 @@
         <span class="kw">let</span> <span class="ident">delta_estimated_pages</span> <span class="op">=</span> (<span class="ident">delta_from_current</span> <span class="kw">as</span> <span class="ident">f64</span> <span class="op">*</span> <span class="ident">local_avg_per_page</span>).<span class="ident">floor</span>() <span class="kw">as</span> <span class="ident">u64</span>;
         <span class="kw">let</span> <span class="ident">guess</span> <span class="op">=</span> <span class="ident">lower_location</span> <span class="op">+</span> <span class="ident">delta_estimated_pages</span>.<span class="ident">max</span>(<span class="number">1</span>) <span class="op">*</span> <span class="ident">PAGE_SIZE</span> <span class="kw">as</span> <span class="ident">u64</span>;
         <span class="comment">// If our estimate is that the location is beyond or equal to the upper, we&#39;ll guess the page before it.</span>
-        <span class="kw">if</span> <span class="ident">guess</span> <span class="op">&gt;</span><span class="op">=</span> <span class="ident">upper_location</span> {
+        <span class="prelude-val">Some</span>(<span class="kw">if</span> <span class="ident">guess</span> <span class="op">&gt;</span><span class="op">=</span> <span class="ident">upper_location</span> {
             <span class="ident">upper_location</span> <span class="op">-</span> <span class="ident">PAGE_SIZE</span> <span class="kw">as</span> <span class="ident">u64</span>
         } <span class="kw">else</span> {
             <span class="ident">guess</span>
-        }
-    } <span class="kw">else</span> {
+        })
+    } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">upper_id</span> <span class="op">&gt;</span> <span class="ident">looking_for</span> {
         <span class="comment">// Go backwards from upper</span>
-        <span class="kw">let</span> <span class="ident">avg_per_page</span> <span class="op">=</span> <span class="ident">upper_id</span> <span class="kw">as</span> <span class="ident">f64</span> <span class="op">/</span> <span class="ident">total_pages</span> <span class="kw">as</span> <span class="ident">f64</span>;
-        <span class="kw">let</span> <span class="ident">id_delta</span> <span class="op">=</span> <span class="ident">upper_id</span> <span class="op">-</span> <span class="ident">looking_for</span>;
+        <span class="kw">let</span> <span class="ident">avg_per_page</span> <span class="op">=</span> <span class="macro">dbg!</span>(<span class="ident">upper_id</span>) <span class="kw">as</span> <span class="ident">f64</span> <span class="op">/</span> <span class="macro">dbg!</span>(<span class="ident">total_pages</span>) <span class="kw">as</span> <span class="ident">f64</span>;
+        <span class="kw">let</span> <span class="ident">id_delta</span> <span class="op">=</span> <span class="ident">upper_id</span> <span class="op">-</span> <span class="macro">dbg!</span>(<span class="ident">looking_for</span>);
         <span class="kw">let</span> <span class="ident">delta_estimated_pages</span> <span class="op">=</span> (<span class="ident">id_delta</span> <span class="kw">as</span> <span class="ident">f64</span> <span class="op">*</span> <span class="ident">avg_per_page</span>).<span class="ident">ceil</span>() <span class="kw">as</span> <span class="ident">u64</span>;
-        <span class="kw">let</span> <span class="ident">delta_bytes</span> <span class="op">=</span> <span class="ident">delta_estimated_pages</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span> <span class="kw">as</span> <span class="ident">u64</span>;
-        <span class="ident">upper_location</span>.<span class="ident">saturating_sub</span>(<span class="ident">delta_bytes</span>)
+        <span class="kw">let</span> <span class="ident">delta_bytes</span> <span class="op">=</span> <span class="ident">delta_estimated_pages</span>.<span class="ident">saturating_mul</span>(<span class="ident">PAGE_SIZE</span> <span class="kw">as</span> <span class="ident">u64</span>);
+        <span class="prelude-val">Some</span>(<span class="ident">upper_location</span>.<span class="ident">saturating_sub</span>(<span class="ident">delta_bytes</span>))
+    } <span class="kw">else</span> {
+        <span class="prelude-val">None</span>
     }
 }
 

@@ -25,4 +25,4 @@ jobs:
           ref: ${{ matrix.branch }}
       - name: Audit
         run: |
-          cargo audit -D warnings
+          cargo audit -D warnings --ignore RUSTSEC-2020-0159

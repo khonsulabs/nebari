@@ -3,7 +3,7 @@
 
 use nebari::{
     io::{fs::StdFile, memory::MemoryFile, ManagedFile},
-    tree::{KeyEvaluation, State, TreeFile, UnversionedTreeRoot, VersionedTreeRoot},
+    tree::{KeyEvaluation, State, TreeFile, Unversioned, Versioned},
     Buffer, Context, Error,
 };
 
@@ -14,7 +14,7 @@ fn main() -> Result<(), Error> {
     // tree roots control whether full revision information is stored.
     //
     // To begin, let's open up a file without versioning on the filesystem:
-    let mut unversioned_tree = TreeFile::<UnversionedTreeRoot, StdFile>::write(
+    let mut unversioned_tree = TreeFile::<Unversioned, StdFile>::write(
         "unversioned-tree.nebari",
         State::default(),
         &Context::default(),
@@ -27,7 +27,7 @@ fn main() -> Result<(), Error> {
     // Or we could do the same thing, but this time using a memory-backed file.
     // Note: this isn't recommended to be used in production, but it can be
     // helpful in CI environments.
-    let mut unversioned_memory_tree = TreeFile::<UnversionedTreeRoot, MemoryFile>::write(
+    let mut unversioned_memory_tree = TreeFile::<Unversioned, MemoryFile>::write(
         "unversioned-tree.nebari",
         State::default(),
         &Context::default(),
@@ -36,7 +36,7 @@ fn main() -> Result<(), Error> {
     tree_basics(&mut unversioned_memory_tree)?;
 
     // We can also use the VersionedTreeRoot to be able to view full revision history in a tree.
-    let mut versioned_tree = TreeFile::<VersionedTreeRoot, StdFile>::write(
+    let mut versioned_tree = TreeFile::<Versioned, StdFile>::write(
         "versioned-tree.nebari",
         State::default(),
         &Context::default(),
@@ -76,8 +76,9 @@ fn tree_basics<Root: nebari::tree::Root, File: ManagedFile>(
         ..,
         true,
         false,
-        &mut |_key| KeyEvaluation::ReadData,
-        &mut |key, value| {
+        &mut |_, _, _| true,
+        &mut |_key, _index| KeyEvaluation::ReadData,
+        &mut |key, _index, value| {
             println!("Found key {:?} with value {:?}", key, value);
             Ok(())
         },

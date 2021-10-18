@@ -1,6 +1,6 @@
 use nebari::{
     io::fs::StdFile,
-    tree::{Root, VersionedTreeRoot},
+    tree::{Root, Versioned},
     Error,
 };
 
@@ -14,22 +14,19 @@ fn main() -> Result<(), Error> {
 
     // Each tree contains a unique set of keys and values, and can be written
     // using a versioned or unversioned tree root.
-    let tree_one = roots.tree(VersionedTreeRoot::tree("one"))?;
+    let tree_one = roots.tree(Versioned::tree("one"))?;
     tree_one.set("hello", "world")?;
-    let tree_two = roots.tree(VersionedTreeRoot::tree("two"))?;
+    let tree_two = roots.tree(Versioned::tree("two"))?;
     assert!(tree_two.get("hello".as_bytes())?.is_none());
 
     // Each operation on a Tree is executed within an ACID-compliant
     // transaction. If you want to execute multiple operations in a single
     // transaction, you can do that as well:
-    let mut transaction = roots.transaction(&[
-        VersionedTreeRoot::tree("one"),
-        VersionedTreeRoot::tree("two"),
-    ])?;
+    let mut transaction = roots.transaction(&[Versioned::tree("one"), Versioned::tree("two")])?;
 
     // This API isn't as ergonomic as it should be. The trees are accessible in
     // the same order in which they're specified in the transaction call:
-    let tx_tree_one = transaction.tree::<VersionedTreeRoot>(0).unwrap();
+    let tx_tree_one = transaction.tree::<Versioned>(0).unwrap();
     tx_tree_one.set("hello", "everyone")?;
 
     // The operation above is not visible to trees outside of the transaction:
@@ -38,7 +35,7 @@ fn main() -> Result<(), Error> {
         Some("world".as_bytes())
     );
 
-    let tx_tree_two = transaction.tree::<VersionedTreeRoot>(1).unwrap();
+    let tx_tree_two = transaction.tree::<Versioned>(1).unwrap();
     tx_tree_two.set("another tree", "another value")?;
 
     // If you drop the transaction before calling commit, the transaction will be rolled back.

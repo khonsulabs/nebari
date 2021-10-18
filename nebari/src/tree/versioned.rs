@@ -27,18 +27,24 @@ use crate::{
         copy_chunk, dynamic_order,
         key_entry::KeyEntry,
         modify::Operation,
-        BTreeNode, Interior, PageHeader, Root,
+        BTreeNode, Interior, PageHeader, Reducer, Root,
     },
     Buffer, ChunkCache, ErrorKind, Vault,
 };
 
 const UNINITIALIZED_SEQUENCE: u64 = 0;
 
+/// An versioned tree with no additional indexed data.
+pub type Versioned = VersionedTreeRoot<()>;
+
 /// A versioned B-Tree root. This tree root internally uses two btrees, one to
 /// keep track of all writes using a unique "sequence" ID, and one that keeps
 /// track of all key-value pairs.
-#[derive(Clone, Default, Debug)]
-pub struct VersionedTreeRoot {
+#[derive(Clone, Debug)]
+pub struct VersionedTreeRoot<EmbeddedIndex>
+where
+    EmbeddedIndex: super::EmbeddedIndex,
+{
     /// The transaction ID of the tree root. If this transaction ID isn't
     /// present in the transaction log, this root should not be trusted.
     pub transaction_id: u64,
@@ -47,9 +53,21 @@ pub struct VersionedTreeRoot {
     /// The by-sequence B-Tree.
     pub by_sequence_root: BTreeEntry<BySequenceIndex, BySequenceStats>,
     /// The by-id B-Tree.
-    pub by_id_root: BTreeEntry<VersionedByIdIndex, ByIdStats>,
+    pub by_id_root: BTreeEntry<VersionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedIndex>>,
 }
-
+impl<EmbeddedIndex> Default for VersionedTreeRoot<EmbeddedIndex>
+where
+    EmbeddedIndex: super::EmbeddedIndex + Reducer<EmbeddedIndex> + Clone + Debug + 'static,
+{
+    fn default() -> Self {
+        Self {
+            transaction_id: 0,
+            sequence: UNINITIALIZED_SEQUENCE,
+            by_sequence_root: BTreeEntry::default(),
+            by_id_root: BTreeEntry::default(),
+        }
+    }
+}
 #[derive(Debug)]
 pub enum ChangeResult {
     Unchanged,
@@ -65,7 +83,10 @@ pub enum Children<Index, ReducedIndex> {
     Interiors(Vec<Interior<Index, ReducedIndex>>),
 }
 
-impl VersionedTreeRoot {
+impl<EmbeddedIndex> VersionedTreeRoot<EmbeddedIndex>
+where
+    EmbeddedIndex: super::EmbeddedIndex + Reducer<EmbeddedIndex> + Clone + Debug + 'static,
+{
     fn modify_sequence_root<File: ManagedFile>(
         &mut self,
         mut modification: Modification<'_, BySequenceIndex>,
@@ -142,7 +163,7 @@ impl VersionedTreeRoot {
                     minimum_children: by_id_minimum_children,
                     indexer: |key: &Buffer<'_>,
                               value: Option<&Buffer<'static>>,
-                              existing_index: Option<&VersionedByIdIndex>,
+                              existing_index: Option<&VersionedByIdIndex<EmbeddedIndex>>,
                               changes: &mut EntryChanges,
                               writer: &mut PagedWriter<'_, File>| {
                         let (position, value_size) = if let Some(value) = value {
@@ -154,6 +175,7 @@ impl VersionedTreeRoot {
                         } else {
                             (0, 0)
                         };
+                        let embedded = EmbeddedIndex::index(key, value);
                         changes.current_sequence = changes
                             .current_sequence
                             .checked_add(1)
@@ -172,6 +194,7 @@ impl VersionedTreeRoot {
                             sequence_id: changes.current_sequence,
                             position,
                             value_length: value_size,
+                            embedded,
                         }))
                     },
                     loader: |index, writer| {
@@ -208,9 +231,13 @@ impl VersionedTreeRoot {
     }
 }
 
-impl Root for VersionedTreeRoot {
+impl<EmbeddedIndex> Root for VersionedTreeRoot<EmbeddedIndex>
+where
+    EmbeddedIndex: super::EmbeddedIndex + Reducer<EmbeddedIndex> + Clone + Debug + 'static,
+{
     const HEADER: PageHeader = PageHeader::VersionedHeader;
-    type Index = VersionedByIdIndex;
+    type Index = VersionedByIdIndex<EmbeddedIndex>;
+    type ReducedIndex = ByIdStats<EmbeddedIndex>;
 
     fn initialized(&self) -> bool {
         self.sequence != UNINITIALIZED_SEQUENCE
@@ -385,18 +412,27 @@ impl Root for VersionedTreeRoot {
         'keys,
         CallerError: Display + Debug,
         File: ManagedFile,
+        NodeEvaluator,
         KeyRangeBounds,
         KeyEvaluator,
         ScanDataCallback,
     >(
         &self,
         range: &KeyRangeBounds,
-        args: &mut ScanArgs<Self::Index, CallerError, KeyEvaluator, ScanDataCallback>,
+        args: &mut ScanArgs<
+            Self::Index,
+            Self::ReducedIndex,
+            CallerError,
+            NodeEvaluator,
+            KeyEvaluator,
+            ScanDataCallback,
+        >,
         file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
     where
+        NodeEvaluator: FnMut(&Buffer<'static>, &Self::ReducedIndex, usize) -> bool,
         KeyEvaluator: FnMut(&Buffer<'static>, &Self::Index) -> KeyEvaluation,
         KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
         ScanDataCallback: FnMut(
@@ -405,7 +441,7 @@ impl Root for VersionedTreeRoot {
             Buffer<'static>,
         ) -> Result<(), AbortError<CallerError>>,
     {
-        self.by_id_root.scan(range, args, file, vault, cache)
+        self.by_id_root.scan(range, args, file, vault, cache, 0)
     }
 
     fn copy_data_to<File: ManagedFile>(
@@ -432,7 +468,12 @@ impl Root for VersionedTreeRoot {
             writer,
             vault,
             &mut scratch,
-            &mut |key, index: &mut VersionedByIdIndex, from_file, copied_chunks, to_file, vault| {
+            &mut |key,
+                  index: &mut VersionedByIdIndex<EmbeddedIndex>,
+                  from_file,
+                  copied_chunks,
+                  to_file,
+                  vault| {
                 let new_position =
                     copy_chunk(index.position, from_file, copied_chunks, to_file, vault)?;
 

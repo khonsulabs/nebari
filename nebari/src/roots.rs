@@ -24,8 +24,9 @@ use crate::{
     io::{FileManager, ManagedFile},
     transaction::{LogEntry, TransactionHandle, TransactionManager},
     tree::{
-        self, root::AnyTreeRoot, state::AnyTreeState, KeyEvaluation, KeySequence, Modification,
-        Operation, State, TransactableCompaction, TreeFile, TreeRoot, VersionedTreeRoot,
+        self, root::AnyTreeRoot, state::AnyTreeState, EmbeddedIndex, KeyEvaluation, KeySequence,
+        Modification, Operation, Reducer, State, TransactableCompaction, TreeFile, TreeRoot,
+        VersionedTreeRoot,
     },
     Buffer, ChunkCache, ErrorKind, Vault,
 };
@@ -350,7 +351,10 @@ impl<Root: tree::Root, File: ManagedFile> AnyTransactionTree<File> for Transacti
     }
 }
 
-impl<File: ManagedFile> TransactionTree<VersionedTreeRoot, File> {
+impl<File: ManagedFile, Index> TransactionTree<VersionedTreeRoot<Index>, File>
+where
+    Index: Clone + Reducer<Index> + EmbeddedIndex + Debug + 'static,
+{
     /// Returns the latest sequence id.
     pub fn current_sequence_id(&self) -> u64 {
         let state = self.tree.state.lock();
@@ -435,22 +439,33 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
         feature = "tracing",
         tracing::instrument(skip(self, key_evaluator, callback))
     )]
-    pub fn scan<'b, CallerError, Range, KeyEvaluator, DataCallback>(
+    pub fn scan<'b, CallerError, Range, NodeEvaluator, KeyEvaluator, DataCallback>(
         &mut self,
         range: Range,
         forwards: bool,
+        mut node_evaluator: NodeEvaluator,
         mut key_evaluator: KeyEvaluator,
         mut callback: DataCallback,
     ) -> Result<(), AbortError<CallerError>>
     where
         Range: RangeBounds<Buffer<'b>> + Debug + 'static,
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        DataCallback:
-            FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        NodeEvaluator: FnMut(&Buffer<'static>, &Root::ReducedIndex, usize) -> bool,
+        KeyEvaluator: FnMut(&Buffer<'static>, &Root::Index) -> KeyEvaluation,
+        DataCallback: FnMut(
+            Buffer<'static>,
+            &Root::Index,
+            Buffer<'static>,
+        ) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
-        self.tree
-            .scan(range, forwards, true, &mut key_evaluator, &mut callback)
+        self.tree.scan(
+            range,
+            forwards,
+            true,
+            &mut node_evaluator,
+            &mut key_evaluator,
+            &mut callback,
+        )
     }
 
     /// Returns the last  of the tree.
@@ -699,18 +714,23 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         feature = "tracing",
         tracing::instrument(skip(self, key_evaluator, callback))
     )]
-    pub fn scan<'range, CallerError, Range, KeyEvaluator, DataCallback>(
+    pub fn scan<'range, CallerError, Range, NodeEvaluator, KeyEvaluator, DataCallback>(
         &self,
         range: Range,
         forwards: bool,
+        mut node_evaluator: NodeEvaluator,
         mut key_evaluator: KeyEvaluator,
         mut callback: DataCallback,
     ) -> Result<(), AbortError<CallerError>>
     where
         Range: RangeBounds<Buffer<'range>> + Clone + Debug + 'static,
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        DataCallback:
-            FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        NodeEvaluator: FnMut(&Buffer<'static>, &Root::ReducedIndex, usize) -> bool,
+        KeyEvaluator: FnMut(&Buffer<'static>, &Root::Index) -> KeyEvaluation,
+        DataCallback: FnMut(
+            Buffer<'static>,
+            &Root::Index,
+            Buffer<'static>,
+        ) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
         catch_compaction_and_retry_abortable(move || {
@@ -720,6 +740,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
                 range.clone(),
                 forwards,
                 false,
+                &mut node_evaluator,
                 &mut key_evaluator,
                 &mut callback,
             )
@@ -765,7 +786,10 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     }
 }
 
-impl<File: ManagedFile> Tree<VersionedTreeRoot, File> {
+impl<File: ManagedFile, Index> Tree<VersionedTreeRoot<Index>, File>
+where
+    Index: EmbeddedIndex + Reducer<Index> + Clone + Debug + 'static,
+{
     /// Scans the tree for keys that are contained within `range`. If `forwards`
     /// is true, scanning starts at the lowest sort-order key and scans forward.
     /// Otherwise, scanning starts at the highest sort-order key and scans
@@ -791,7 +815,7 @@ impl<File: ManagedFile> Tree<VersionedTreeRoot, File> {
         CallerError: Display + Debug,
     {
         catch_compaction_and_retry_abortable(|| {
-            let mut tree = TreeFile::<VersionedTreeRoot, File>::read(
+            let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::read(
                 self.path(),
                 self.state.clone(),
                 self.roots.context(),
@@ -805,7 +829,7 @@ impl<File: ManagedFile> Tree<VersionedTreeRoot, File> {
 
 /// An error that could come from user code or Nebari.
 #[derive(thiserror::Error, Debug)]
-pub enum AbortError<CallerError: Display + Debug> {
+pub enum AbortError<CallerError: Display + Debug = Infallible> {
     /// An error unrelated to Nebari occurred.
     #[error("other error: {0}")]
     Other(CallerError),
@@ -985,14 +1009,14 @@ mod tests {
     use crate::{
         io::{fs::StdFile, memory::MemoryFile, ManagedFile},
         test_util::RotatorVault,
-        tree::{Root, UnversionedTreeRoot},
+        tree::{Root, Unversioned, Versioned},
     };
 
     fn basic_get_set<File: ManagedFile>() {
         let tempdir = tempdir().unwrap();
         let roots = Config::<File>::new(tempdir.path()).open().unwrap();
 
-        let tree = roots.tree(VersionedTreeRoot::tree("test")).unwrap();
+        let tree = roots.tree(Versioned::tree("test")).unwrap();
         tree.set(b"test", b"value").unwrap();
         let result = tree.get(b"test").unwrap().expect("key not found");
 
@@ -1014,24 +1038,22 @@ mod tests {
         let tempdir = tempdir().unwrap();
 
         let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
-        let tree = roots.tree(VersionedTreeRoot::tree("test")).unwrap();
+        let tree = roots.tree(Versioned::tree("test")).unwrap();
         tree.set(b"test", b"value").unwrap();
 
         // Begin a transaction
-        let mut transaction = roots
-            .transaction(&[VersionedTreeRoot::tree("test")])
-            .unwrap();
+        let mut transaction = roots.transaction(&[Versioned::tree("test")]).unwrap();
 
         // Replace the key with a new value.
         transaction
-            .tree::<VersionedTreeRoot>(0)
+            .tree::<Versioned>(0)
             .unwrap()
             .set(b"test", b"updated value")
             .unwrap();
 
         // Check that the transaction can read the new value
         let result = transaction
-            .tree::<VersionedTreeRoot>(0)
+            .tree::<Versioned>(0)
             .unwrap()
             .get(b"test")
             .unwrap()
@@ -1055,17 +1077,15 @@ mod tests {
         let tempdir = tempdir().unwrap();
 
         let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
-        let tree = roots.tree(VersionedTreeRoot::tree("test")).unwrap();
+        let tree = roots.tree(Versioned::tree("test")).unwrap();
         tree.set(b"test", b"value").unwrap();
 
         // Begin a transaction
-        let mut transaction = roots
-            .transaction(&[VersionedTreeRoot::tree("test")])
-            .unwrap();
+        let mut transaction = roots.transaction(&[Versioned::tree("test")]).unwrap();
 
         // Replace the key with a new value.
         transaction
-            .tree::<VersionedTreeRoot>(0)
+            .tree::<Versioned>(0)
             .unwrap()
             .set(b"test", b"updated value")
             .unwrap();
@@ -1078,12 +1098,10 @@ mod tests {
         assert_eq!(result, b"value");
 
         // Begin a new transaction
-        let mut transaction = roots
-            .transaction(&[VersionedTreeRoot::tree("test")])
-            .unwrap();
+        let mut transaction = roots.transaction(&[Versioned::tree("test")]).unwrap();
         // Check that the transaction has the original value
         let result = transaction
-            .tree::<VersionedTreeRoot>(0)
+            .tree::<Versioned>(0)
             .unwrap()
             .get(b"test")
             .unwrap()
@@ -1093,12 +1111,12 @@ mod tests {
 
     #[test]
     fn compact_test_versioned() {
-        compact_test::<VersionedTreeRoot>();
+        compact_test::<Versioned>();
     }
 
     #[test]
     fn compact_test_unversioned() {
-        compact_test::<UnversionedTreeRoot>();
+        compact_test::<Unversioned>();
     }
 
     fn compact_test<R: Root>() {
@@ -1166,10 +1184,10 @@ mod tests {
                 .vault(RotatorVault::new(13))
                 .open()
                 .unwrap();
-            let tree = roots.tree(VersionedTreeRoot::tree("test")).unwrap();
+            let tree = roots.tree(Versioned::tree("test")).unwrap();
             tree.set(b"test", b"value").unwrap();
             let other_tree = roots
-                .tree(VersionedTreeRoot::tree("test-otherkey").with_vault(RotatorVault::new(42)))
+                .tree(Versioned::tree("test-otherkey").with_vault(RotatorVault::new(42)))
                 .unwrap();
             other_tree.set(b"test", b"other").unwrap();
         }
@@ -1179,19 +1197,17 @@ mod tests {
                 .vault(RotatorVault::new(13))
                 .open()
                 .unwrap();
-            let tree = roots.tree(VersionedTreeRoot::tree("test")).unwrap();
+            let tree = roots.tree(Versioned::tree("test")).unwrap();
             let value = tree.get(b"test").unwrap();
             assert_eq!(value.as_deref(), Some(&b"value"[..]));
 
             // Verify we can't read the other tree without the right vault
-            let bad_tree = roots
-                .tree(VersionedTreeRoot::tree("test-otherkey"))
-                .unwrap();
+            let bad_tree = roots.tree(Versioned::tree("test-otherkey")).unwrap();
             assert!(bad_tree.get(b"test").is_err());
 
             // And test retrieving the other key with the correct vault
             let tree = roots
-                .tree(VersionedTreeRoot::tree("test-otherkey").with_vault(RotatorVault::new(42)))
+                .tree(Versioned::tree("test-otherkey").with_vault(RotatorVault::new(42)))
                 .unwrap();
             let value = tree.get(b"test").unwrap();
             assert_eq!(value.as_deref(), Some(&b"other"[..]));
@@ -1199,14 +1215,14 @@ mod tests {
         {
             let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
             // Try to access roots without the vault.
-            let bad_tree = roots.tree(VersionedTreeRoot::tree("test")).unwrap();
+            let bad_tree = roots.tree(Versioned::tree("test")).unwrap();
             assert!(bad_tree.get(b"test").is_err());
 
             // Try to access roots with the vault specified. It will still fail
             // because the tree can't be validated without reading the
             // transaction log.
             let bad_tree = roots
-                .tree(VersionedTreeRoot::tree("test").with_vault(RotatorVault::new(13)))
+                .tree(Versioned::tree("test").with_vault(RotatorVault::new(13)))
                 .unwrap();
             assert!(bad_tree.get(b"test").is_err());
         }

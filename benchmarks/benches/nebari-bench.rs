@@ -107,20 +107,20 @@ pub struct UnversionedBenchmark;
 impl NebariBenchmark for VersionedBenchmark {
     const BACKEND: &'static str = "nebari-versioned";
 
-    type Root = VersionedTreeRoot;
+    type Root = Versioned;
 }
 
 impl NebariBenchmark for UnversionedBenchmark {
     const BACKEND: &'static str = "nebari";
 
-    type Root = UnversionedTreeRoot;
+    type Root = Unversioned;
 }
 
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
     Throughput,
 };
-use nebari::tree::{Root, UnversionedTreeRoot, VersionedTreeRoot};
+use nebari::tree::{Root, Unversioned, Versioned};
 
 fn all_benches(c: &mut Criterion) {
     blobs::benches(c);

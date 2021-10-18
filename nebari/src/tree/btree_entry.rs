@@ -68,9 +68,6 @@ impl<Index, ReducedIndex> Default for BTreeEntry<Index, ReducedIndex> {
 /// stored value by calling [`Reducer::rereduce()`] with all the stored `Self`
 /// values.
 pub trait Reducer<Index> {
-    /// Returns the number of keys that this index and its children contain.
-    fn key_count(&self) -> u64;
-
     /// Reduces one or more indexes into a single reduced index.
     fn reduce(indexes: &[&Index]) -> Self;
 
@@ -79,10 +76,6 @@ pub trait Reducer<Index> {
 }
 
 impl<Index> Reducer<Index> for () {
-    fn key_count(&self) -> u64 {
-        0
-    }
-
     fn reduce(_indexes: &[&Index]) -> Self {}
 
     fn rereduce(_reductions: &[&Self]) -> Self {}
@@ -935,17 +928,27 @@ where
         CallerError: Display + Debug,
         File: ManagedFile,
         KeyRangeBounds,
+        NodeEvaluator,
         KeyEvaluator,
         ScanDataCallback,
     >(
         &self,
         range: &KeyRangeBounds,
-        args: &mut ScanArgs<Index, CallerError, KeyEvaluator, ScanDataCallback>,
+        args: &mut ScanArgs<
+            Index,
+            ReducedIndex,
+            CallerError,
+            NodeEvaluator,
+            KeyEvaluator,
+            ScanDataCallback,
+        >,
         file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
+        current_depth: usize,
     ) -> Result<bool, AbortError<CallerError>>
     where
+        NodeEvaluator: FnMut(&Buffer<'static>, &ReducedIndex, usize) -> bool,
         KeyEvaluator: FnMut(&Buffer<'static>, &Index) -> KeyEvaluation,
         KeyRangeBounds: RangeBounds<Buffer<'k>> + Debug,
         ScanDataCallback:
@@ -1022,13 +1025,17 @@ where
                         Bound::Unbounded => {}
                     }
 
-                    let keep_scanning = child.position.map_loaded_entry(
-                        file,
-                        vault,
-                        cache,
-                        Some(children.len()),
-                        |entry, file| entry.scan(range, args, file, vault, cache),
-                    )?;
+                    let keep_scanning =
+                        (args.node_evaluator)(&child.key, &child.stats, current_depth)
+                            && child.position.map_loaded_entry(
+                                file,
+                                vault,
+                                cache,
+                                Some(children.len()),
+                                |entry, file| {
+                                    entry.scan(range, args, file, vault, cache, current_depth + 1)
+                                },
+                            )?;
                     if !keep_scanning {
                         return Ok(false);
                     }
@@ -1321,28 +1328,49 @@ impl<'a, I> Iterator for DirectionalSliceIterator<'a, I> {
     }
 }
 
-pub struct ScanArgs<Index, CallerError: Display + Debug, KeyEvaluator, DataCallback>
-where
+pub struct ScanArgs<
+    Index,
+    ReducedIndex,
+    CallerError: Display + Debug,
+    NodeEvaluator,
+    KeyEvaluator,
+    DataCallback,
+> where
+    NodeEvaluator: FnMut(&Buffer<'static>, &ReducedIndex, usize) -> bool,
     KeyEvaluator: FnMut(&Buffer<'static>, &Index) -> KeyEvaluation,
     DataCallback:
         FnMut(Buffer<'static>, &Index, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
 {
     pub forwards: bool,
+    pub node_evaluator: NodeEvaluator,
     pub key_evaluator: KeyEvaluator,
     pub data_callback: DataCallback,
-    _phantom: PhantomData<(Index, CallerError)>,
+    _phantom: PhantomData<(Index, ReducedIndex, CallerError)>,
 }
 
-impl<Index, CallerError: Display + Debug, KeyEvaluator, DataCallback>
-    ScanArgs<Index, CallerError, KeyEvaluator, DataCallback>
+impl<
+        Index,
+        ReducedIndex,
+        CallerError: Display + Debug,
+        NodeEvaluator,
+        KeyEvaluator,
+        DataCallback,
+    > ScanArgs<Index, ReducedIndex, CallerError, NodeEvaluator, KeyEvaluator, DataCallback>
 where
+    NodeEvaluator: FnMut(&Buffer<'static>, &ReducedIndex, usize) -> bool,
     KeyEvaluator: FnMut(&Buffer<'static>, &Index) -> KeyEvaluation,
     DataCallback:
         FnMut(Buffer<'static>, &Index, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
 {
-    pub fn new(forwards: bool, key_evaluator: KeyEvaluator, data_callback: DataCallback) -> Self {
+    pub fn new(
+        forwards: bool,
+        node_evaluator: NodeEvaluator,
+        key_evaluator: KeyEvaluator,
+        data_callback: DataCallback,
+    ) -> Self {
         Self {
             forwards,
+            node_evaluator,
             key_evaluator,
             data_callback,
             _phantom: PhantomData,

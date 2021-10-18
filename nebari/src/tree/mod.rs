@@ -49,7 +49,7 @@ use std::{
     sync::Arc,
 };
 
-use byteorder::{BigEndian, ByteOrder};
+use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use crc::{Crc, CRC_32_BZIP2};
 use parking_lot::MutexGuard;
 
@@ -59,7 +59,7 @@ use crate::{
     io::{FileManager, FileOp, ManagedFile, OpenableFile},
     roots::AbortError,
     transaction::{TransactionHandle, TransactionManager},
-    tree::btree_entry::ScanArgs,
+    tree::{btree_entry::ScanArgs, serialization::BinarySerialization},
     Buffer, ChunkCache, CompareAndSwapError, Context, ErrorKind, Vault,
 };
 
@@ -77,7 +77,6 @@ mod versioned;
 
 pub(crate) const DEFAULT_MAX_ORDER: usize = 1000;
 
-use self::serialization::BinarySerialization;
 pub use self::{
     btree_entry::{BTreeEntry, BTreeNode, KeyOperation, Reducer},
     by_id::{ByIdStats, UnversionedByIdIndex, VersionedByIdIndex},
@@ -87,8 +86,8 @@ pub use self::{
     modify::{CompareSwap, CompareSwapFn, Modification, Operation},
     root::{AnyTreeRoot, Root, TreeRoot},
     state::{ActiveState, State},
-    unversioned::UnversionedTreeRoot,
-    versioned::{KeySequence, VersionedTreeRoot},
+    unversioned::{Unversioned, UnversionedTreeRoot},
+    versioned::{KeySequence, Versioned, VersionedTreeRoot},
 };
 
 /// The number of bytes in each page on-disk.
@@ -451,8 +450,9 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             range,
             true,
             in_transaction,
-            &mut |_| KeyEvaluation::ReadData,
-            &mut |key, value| {
+            &mut |_, _, _| true,
+            &mut |_, _| KeyEvaluation::ReadData,
+            &mut |key, _index, value| {
                 results.push((key, value));
                 Ok(())
             },
@@ -471,19 +471,24 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         feature = "tracing",
         tracing::instrument(skip(self, key_evaluator, callback))
     )]
-    pub fn scan<'range, CallerError, Range, KeyEvaluator, DataCallback>(
+    pub fn scan<'range, CallerError, Range, NodeEvaluator, KeyEvaluator, DataCallback>(
         &mut self,
         range: Range,
         forwards: bool,
         in_transaction: bool,
+        node_evaluator: &mut NodeEvaluator,
         key_evaluator: &mut KeyEvaluator,
-        callback: &mut DataCallback,
+        key_reader: &mut DataCallback,
     ) -> Result<(), AbortError<CallerError>>
     where
         Range: RangeBounds<Buffer<'range>> + Debug + 'static,
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        DataCallback:
-            FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        NodeEvaluator: FnMut(&Buffer<'static>, &Root::ReducedIndex, usize) -> bool,
+        KeyEvaluator: FnMut(&Buffer<'static>, &Root::Index) -> KeyEvaluation,
+        DataCallback: FnMut(
+            Buffer<'static>,
+            &Root::Index,
+            Buffer<'static>,
+        ) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
         self.file.execute(TreeScanner {
@@ -493,10 +498,9 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
             range,
-            key_reader: |key: Buffer<'static>, _: &Root::Index, value: Buffer<'static>| {
-                callback(key, value)
-            },
-            key_evaluator: |key: &Buffer<'static>, _: &Root::Index| key_evaluator(key),
+            node_evaluator,
+            key_reader,
+            key_evaluator,
             _phantom: PhantomData,
         })?;
         Ok(())
@@ -509,11 +513,12 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             ..,
             false,
             in_transaction,
-            &mut |key| {
+            &mut |_, _, _| true,
+            &mut |key, _index| {
                 result = Some(key.clone());
                 KeyEvaluation::Stop
             },
-            &mut |_key, _value| Ok(()),
+            &mut |_key, _index, _value| Ok(()),
         )?;
 
         Ok(result)
@@ -530,7 +535,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             ..,
             false,
             in_transaction,
-            &mut |_| {
+            &mut |_, _, _| true,
+            &mut |_, _| {
                 if key_requested {
                     KeyEvaluation::Stop
                 } else {
@@ -538,7 +544,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                     KeyEvaluation::ReadData
                 }
             },
-            &mut |key, value| {
+            &mut |key, _index, value| {
                 result = Some((key, value));
                 Ok(())
             },
@@ -585,7 +591,10 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     }
 }
 
-impl<File: ManagedFile> TreeFile<VersionedTreeRoot, File> {
+impl<File: ManagedFile, Index> TreeFile<VersionedTreeRoot<Index>, File>
+where
+    Index: EmbeddedIndex + Reducer<Index> + Clone + Debug + 'static,
+{
     /// Scans the tree for keys that are contained within `range`. If `forwards`
     /// is true, scanning starts at the lowest sort-order key and scans forward.
     /// Otherwise, scanning starts at the highest sort-order key and scans
@@ -948,10 +957,12 @@ struct TreeScanner<
     'keys,
     CallerError,
     Root: root::Root,
+    NodeEvaluator,
     KeyEvaluator,
     KeyReader,
     KeyRangeBounds,
 > where
+    NodeEvaluator: FnMut(&Buffer<'static>, &Root::ReducedIndex, usize) -> bool,
     KeyEvaluator: FnMut(&Buffer<'static>, &Root::Index) -> KeyEvaluation,
     KeyReader: FnMut(
         Buffer<'static>,
@@ -967,16 +978,36 @@ struct TreeScanner<
     vault: Option<&'a dyn Vault>,
     cache: Option<&'a ChunkCache>,
     range: KeyRangeBounds,
+    node_evaluator: NodeEvaluator,
     key_evaluator: KeyEvaluator,
     key_reader: KeyReader,
     _phantom: PhantomData<&'keys ()>,
 }
 
-impl<'a, 'keys, CallerError, Root: root::Root, KeyEvaluator, KeyReader, KeyRangeBounds, File>
-    FileOp<File>
-    for TreeScanner<'a, 'keys, CallerError, Root, KeyEvaluator, KeyReader, KeyRangeBounds>
+impl<
+        'a,
+        'keys,
+        CallerError,
+        Root: root::Root,
+        NodeEvaluator,
+        KeyEvaluator,
+        KeyReader,
+        KeyRangeBounds,
+        File,
+    > FileOp<File>
+    for TreeScanner<
+        'a,
+        'keys,
+        CallerError,
+        Root,
+        NodeEvaluator,
+        KeyEvaluator,
+        KeyReader,
+        KeyRangeBounds,
+    >
 where
     File: ManagedFile,
+    NodeEvaluator: FnMut(&Buffer<'static>, &Root::ReducedIndex, usize) -> bool,
     KeyEvaluator: FnMut(&Buffer<'static>, &Root::Index) -> KeyEvaluation,
     KeyReader: FnMut(
         Buffer<'static>,
@@ -996,7 +1027,12 @@ where
 
             state.root.scan(
                 &self.range,
-                &mut ScanArgs::new(self.forwards, &mut self.key_evaluator, &mut self.key_reader),
+                &mut ScanArgs::new(
+                    self.forwards,
+                    &mut self.node_evaluator,
+                    &mut self.key_evaluator,
+                    &mut self.key_reader,
+                ),
                 file,
                 self.vault,
                 self.cache,
@@ -1009,7 +1045,12 @@ where
 
             state.root.scan(
                 &self.range,
-                &mut ScanArgs::new(self.forwards, &mut self.key_evaluator, &mut self.key_reader),
+                &mut ScanArgs::new(
+                    self.forwards,
+                    &mut self.node_evaluator,
+                    &mut self.key_evaluator,
+                    &mut self.key_reader,
+                ),
                 file,
                 self.vault,
                 self.cache,
@@ -1017,16 +1058,24 @@ where
         }
     }
 }
-struct TreeSequenceScanner<'a, 'keys, KeyEvaluator, KeyRangeBounds, DataCallback, CallerError>
-where
+struct TreeSequenceScanner<
+    'a,
+    'keys,
+    KeyEvaluator,
+    KeyRangeBounds,
+    DataCallback,
+    CallerError,
+    Index,
+> where
     KeyEvaluator: FnMut(&Buffer<'static>, &BySequenceIndex) -> KeyEvaluation,
     KeyRangeBounds: RangeBounds<Buffer<'keys>>,
     DataCallback: FnMut(KeySequence, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
     CallerError: Display + Debug,
+    Index: EmbeddedIndex + Reducer<Index> + Clone + Debug + 'static,
 {
     forwards: bool,
     from_transaction: bool,
-    state: &'a State<VersionedTreeRoot>,
+    state: &'a State<VersionedTreeRoot<Index>>,
     vault: Option<&'a dyn Vault>,
     cache: Option<&'a ChunkCache>,
     range: KeyRangeBounds,
@@ -1035,14 +1084,23 @@ where
     _phantom: PhantomData<&'keys ()>,
 }
 
-impl<'a, 'keys, KeyEvaluator, KeyRangeBounds, File, DataCallback, CallerError> FileOp<File>
-    for TreeSequenceScanner<'a, 'keys, KeyEvaluator, KeyRangeBounds, DataCallback, CallerError>
+impl<'a, 'keys, KeyEvaluator, KeyRangeBounds, File, DataCallback, CallerError, Index> FileOp<File>
+    for TreeSequenceScanner<
+        'a,
+        'keys,
+        KeyEvaluator,
+        KeyRangeBounds,
+        DataCallback,
+        CallerError,
+        Index,
+    >
 where
     File: ManagedFile,
     KeyEvaluator: FnMut(&Buffer<'static>, &BySequenceIndex) -> KeyEvaluation,
     KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
     DataCallback: FnMut(KeySequence, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
     CallerError: Display + Debug,
+    Index: EmbeddedIndex + Reducer<Index> + Clone + Debug + 'static,
 {
     type Output = Result<(), AbortError<CallerError>>;
     fn execute(self, file: &mut File) -> Self::Output {
@@ -1080,10 +1138,16 @@ where
                 .by_sequence_root
                 .scan(
                     &range,
-                    &mut ScanArgs::new(forwards, &mut key_evaluator, mapped_data_callback),
+                    &mut ScanArgs::new(
+                        forwards,
+                        |_, _, _| true,
+                        &mut key_evaluator,
+                        mapped_data_callback,
+                    ),
                     file,
                     vault,
                     cache,
+                    0,
                 )
                 .map(|_| {})
         } else {
@@ -1097,10 +1161,16 @@ where
                 .by_sequence_root
                 .scan(
                     &range,
-                    &mut ScanArgs::new(forwards, &mut key_evaluator, mapped_data_callback),
+                    &mut ScanArgs::new(
+                        forwards,
+                        |_, _, _| true,
+                        &mut key_evaluator,
+                        mapped_data_callback,
+                    ),
                     file,
                     vault,
                     cache,
+                    0,
                 )
                 .map(|_| {})
         }
@@ -1412,6 +1482,40 @@ impl U64Bounds {
     }
 }
 
+/// An index that is embeddable within a tree.
+///
+/// An index is a computed value that is stored directly within the B-Tree
+/// structure. Because these are encoded directly onto the nodes, they should be
+/// kept shorter for better performance.
+pub trait EmbeddedIndex: Serializable + Send + Sync + Sized + 'static {
+    /// Index the key and value.
+    fn index(key: &Buffer<'_>, value: Option<&Buffer<'static>>) -> Self;
+}
+
+/// A type that can be serialized and deserialized.
+pub trait Serializable: Send + Sync + Sized + 'static {
+    /// Serializes into `writer` and returns the number of bytes written.
+    fn serialize_to<W: WriteBytesExt>(&self, writer: &mut W) -> Result<usize, Error>;
+    /// Deserializes from `reader`, and returns the deserialized instance.
+    /// Implementors should not expect for the reader to be fully consumed at
+    /// the end of this call.
+    fn deserialize_from<R: ReadBytesExt>(reader: &mut R) -> Result<Self, Error>;
+}
+
+impl EmbeddedIndex for () {
+    fn index(_key: &Buffer<'_>, _value: Option<&Buffer<'static>>) -> Self {}
+}
+
+impl Serializable for () {
+    fn serialize_to<W: WriteBytesExt>(&self, _writer: &mut W) -> Result<usize, Error> {
+        Ok(0)
+    }
+
+    fn deserialize_from<R: ReadBytesExt>(_reader: &mut R) -> Result<Self, Error> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{collections::HashSet, convert::Infallible};
@@ -1420,12 +1524,9 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use super::*;
-    use crate::{
-        io::{
-            fs::{StdFile, StdFileManager},
-            memory::{MemoryFile, MemoryFileManager},
-        },
-        tree::unversioned::UnversionedTreeRoot,
+    use crate::io::{
+        fs::{StdFile, StdFileManager},
+        memory::{MemoryFile, MemoryFileManager},
     };
 
     fn test_paged_write(offset: usize, length: usize) -> Result<(), Error> {
@@ -1572,7 +1673,7 @@ mod tests {
         let mut ids = HashSet::new();
         // Insert up to the limit of a LEAF, which is ORDER - 1.
         for _ in 0..ORDER - 1 {
-            insert_one_record::<VersionedTreeRoot, StdFile>(
+            insert_one_record::<Versioned, StdFile>(
                 &context,
                 &file_path,
                 &mut ids,
@@ -1583,7 +1684,7 @@ mod tests {
         println!("Successfully inserted up to ORDER - 1 nodes.");
 
         // The next record will split the node
-        insert_one_record::<VersionedTreeRoot, StdFile>(
+        insert_one_record::<Versioned, StdFile>(
             &context,
             &file_path,
             &mut ids,
@@ -1594,7 +1695,7 @@ mod tests {
 
         // Insert a lot more.
         for _ in 0..1_000 {
-            insert_one_record::<VersionedTreeRoot, StdFile>(
+            insert_one_record::<Versioned, StdFile>(
                 &context,
                 &file_path,
                 &mut ids,
@@ -1652,22 +1753,22 @@ mod tests {
 
     #[test]
     fn remove_versioned() {
-        remove::<VersionedTreeRoot>("versioned");
+        remove::<Versioned>("versioned");
     }
 
     #[test]
     fn remove_unversioned() {
-        remove::<UnversionedTreeRoot>("unversioned");
+        remove::<Unversioned>("unversioned");
     }
 
     #[test]
     fn spam_insert_std_versioned() {
-        spam_insert::<VersionedTreeRoot, StdFile>("std");
+        spam_insert::<Versioned, StdFile>("std");
     }
 
     #[test]
     fn spam_insert_std_unversioned() {
-        spam_insert::<UnversionedTreeRoot, StdFile>("std");
+        spam_insert::<Unversioned, StdFile>("std");
     }
 
     #[test]
@@ -1699,12 +1800,12 @@ mod tests {
 
     #[test]
     fn bulk_insert_versioned() {
-        bulk_insert::<VersionedTreeRoot, StdFile>("std-versioned");
+        bulk_insert::<Versioned, StdFile>("std-versioned");
     }
 
     #[test]
     fn bulk_insert_unversioned() {
-        bulk_insert::<UnversionedTreeRoot, StdFile>("std-unversioned");
+        bulk_insert::<Unversioned, StdFile>("std-unversioned");
     }
 
     fn bulk_insert<R: Root, F: ManagedFile>(name: &str) {
@@ -1756,8 +1857,7 @@ mod tests {
         let state = State::default();
         // let file = context.file_manager.append("test").unwrap();
         let mut tree =
-            TreeFile::<VersionedTreeRoot, MemoryFile>::write("test", state, &context, None)
-                .unwrap();
+            TreeFile::<Versioned, MemoryFile>::write("test", state, &context, None).unwrap();
         // Create enough records to go 4 levels deep.
         let mut ids = Vec::new();
         for id in 0..3_u32.pow(4) {
@@ -1840,12 +1940,12 @@ mod tests {
 
     #[test]
     fn compact_versioned() {
-        compact::<VersionedTreeRoot>("versioned");
+        compact::<Versioned>("versioned");
     }
 
     #[test]
     fn compact_unversioned() {
-        compact::<UnversionedTreeRoot>("unversioned");
+        compact::<Unversioned>("unversioned");
     }
 
     #[test]
@@ -1858,8 +1958,7 @@ mod tests {
         let state = State::default();
         let tempfile = NamedTempFile::new().unwrap();
         let mut tree =
-            TreeFile::<VersionedTreeRoot, StdFile>::write(tempfile.path(), state, &context, None)
-                .unwrap();
+            TreeFile::<Versioned, StdFile>::write(tempfile.path(), state, &context, None).unwrap();
 
         // Store three versions of the same key.
         tree.push(None, Buffer::from(b"a"), Buffer::from(b"0"))

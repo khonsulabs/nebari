@@ -23,7 +23,7 @@ Inserting a key-value pair in an on-disk tree with full revision history:
 ```rust
 use nebari::{
     io::fs::StdFile,
-    tree::{Root, VersionedTreeRoot},
+    tree::{Root, Versioned},
     Config,
 };
 
@@ -31,7 +31,7 @@ let database_folder = tempfile::tempdir().unwrap();
 let roots = Config::<StdFile>::default_for(database_folder.path())
     .open()
     .unwrap();
-let tree = roots.tree(VersionedTreeRoot::tree("a-tree")).unwrap();
+let tree = roots.tree(Versioned::tree("a-tree")).unwrap();
 tree.set("hello", "world").unwrap();
 ```
 

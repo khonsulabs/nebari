@@ -26,7 +26,9 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     const HEADER: PageHeader;
 
     /// The primary index type contained within this root.
-    type Index;
+    type Index: Clone + Debug + 'static;
+    /// The primary index type contained within this root.
+    type ReducedIndex: Clone + Debug + 'static;
 
     /// Returns the number of values contained in this tree, not including
     /// deleted records.
@@ -100,18 +102,27 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
         'keys,
         CallerError: Display + Debug,
         File: ManagedFile,
+        NodeEvaluator,
         KeyRangeBounds,
         KeyEvaluator,
         ScanDataCallback,
     >(
         &self,
         range: &KeyRangeBounds,
-        args: &mut ScanArgs<Self::Index, CallerError, KeyEvaluator, ScanDataCallback>,
+        args: &mut ScanArgs<
+            Self::Index,
+            Self::ReducedIndex,
+            CallerError,
+            NodeEvaluator,
+            KeyEvaluator,
+            ScanDataCallback,
+        >,
         file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
     where
+        NodeEvaluator: FnMut(&Buffer<'static>, &Self::ReducedIndex, usize) -> bool,
         KeyEvaluator: FnMut(&Buffer<'static>, &Self::Index) -> KeyEvaluation,
         KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
         ScanDataCallback: FnMut(

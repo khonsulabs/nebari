@@ -105,10 +105,6 @@ impl BinarySerialization for BySequenceStats {
 }
 
 impl<'a> Reducer<BySequenceIndex> for BySequenceStats {
-    fn key_count(&self) -> u64 {
-        self.total_sequences
-    }
-
     fn reduce(values: &[&BySequenceIndex]) -> Self {
         Self {
             total_sequences: values.len() as u64,

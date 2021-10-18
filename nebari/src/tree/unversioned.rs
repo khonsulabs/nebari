@@ -25,24 +25,45 @@ use crate::{
         btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
         copy_chunk, dynamic_order,
         versioned::ChangeResult,
-        BTreeNode, PageHeader, Root,
+        BTreeNode, PageHeader, Reducer, Root,
     },
     Buffer, ChunkCache, ErrorKind, Vault,
 };
 
+/// An unversioned tree with no additional indexed data.
+pub type Unversioned = UnversionedTreeRoot<()>;
+
 /// A versioned B-Tree root. This tree root internally uses two btrees, one to
 /// keep track of all writes using a unique "sequence" ID, and one that keeps
 /// track of all key-value pairs.
-#[derive(Clone, Default, Debug)]
-pub struct UnversionedTreeRoot {
+#[derive(Clone, Debug)]
+pub struct UnversionedTreeRoot<Index>
+where
+    Index: Clone + super::EmbeddedIndex + Reducer<Index> + Debug + 'static,
+{
     /// The transaction ID of the tree root. If this transaction ID isn't
     /// present in the transaction log, this root should not be trusted.
     pub transaction_id: Option<u64>,
     /// The by-id B-Tree.
-    pub by_id_root: BTreeEntry<UnversionedByIdIndex, ByIdStats>,
+    pub by_id_root: BTreeEntry<UnversionedByIdIndex<Index>, ByIdStats<Index>>,
 }
 
-impl UnversionedTreeRoot {
+impl<Index> Default for UnversionedTreeRoot<Index>
+where
+    Index: Clone + Reducer<Index> + super::EmbeddedIndex + Debug + 'static,
+{
+    fn default() -> Self {
+        Self {
+            transaction_id: None,
+            by_id_root: BTreeEntry::default(),
+        }
+    }
+}
+
+impl<Index> UnversionedTreeRoot<Index>
+where
+    Index: Clone + Reducer<Index> + super::EmbeddedIndex + Debug + 'static,
+{
     fn modify_id_root<'a, 'w, File: ManagedFile>(
         &'a mut self,
         mut modification: Modification<'_, Buffer<'static>>,
@@ -63,7 +84,7 @@ impl UnversionedTreeRoot {
                 &ModificationContext {
                     current_order: by_id_order,
                     minimum_children,
-                    indexer: |_key: &Buffer<'_>,
+                    indexer: |key: &Buffer<'_>,
                               value: Option<&Buffer<'static>>,
                               _existing_index,
                               _changes,
@@ -76,6 +97,7 @@ impl UnversionedTreeRoot {
                             Ok(KeyOperation::Set(UnversionedByIdIndex {
                                 value_length,
                                 position,
+                                embedded: Index::index(key, Some(value)),
                             }))
                         } else {
                             Ok(KeyOperation::Remove)
@@ -106,9 +128,13 @@ impl UnversionedTreeRoot {
     }
 }
 
-impl Root for UnversionedTreeRoot {
+impl<EmbeddedIndex> Root for UnversionedTreeRoot<EmbeddedIndex>
+where
+    EmbeddedIndex: Clone + super::EmbeddedIndex + Reducer<EmbeddedIndex> + Debug + 'static,
+{
     const HEADER: PageHeader = PageHeader::UnversionedHeader;
-    type Index = UnversionedByIdIndex;
+    type Index = UnversionedByIdIndex<EmbeddedIndex>;
+    type ReducedIndex = ByIdStats<EmbeddedIndex>;
 
     fn count(&self) -> u64 {
         self.by_id_root.stats().alive_keys
@@ -240,18 +266,27 @@ impl Root for UnversionedTreeRoot {
         'keys,
         CallerError: Display + Debug,
         File: ManagedFile,
+        NodeEvaluator,
         KeyRangeBounds,
         KeyEvaluator,
         DataCallback,
     >(
         &self,
         range: &KeyRangeBounds,
-        args: &mut ScanArgs<Self::Index, CallerError, KeyEvaluator, DataCallback>,
+        args: &mut ScanArgs<
+            Self::Index,
+            Self::ReducedIndex,
+            CallerError,
+            NodeEvaluator,
+            KeyEvaluator,
+            DataCallback,
+        >,
         file: &mut File,
         vault: Option<&dyn Vault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
     where
+        NodeEvaluator: FnMut(&Buffer<'static>, &Self::ReducedIndex, usize) -> bool,
         KeyEvaluator: FnMut(&Buffer<'static>, &Self::Index) -> KeyEvaluation,
         KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
         DataCallback: FnMut(
@@ -260,7 +295,7 @@ impl Root for UnversionedTreeRoot {
             Buffer<'static>,
         ) -> Result<(), AbortError<CallerError>>,
     {
-        self.by_id_root.scan(range, args, file, vault, cache)
+        self.by_id_root.scan(range, args, file, vault, cache, 0)
     }
 
     fn copy_data_to<File: ManagedFile>(
@@ -284,7 +319,7 @@ impl Root for UnversionedTreeRoot {
             vault,
             &mut scratch,
             &mut |_key,
-                  index: &mut UnversionedByIdIndex,
+                  index: &mut UnversionedByIdIndex<EmbeddedIndex>,
                   from_file,
                   copied_chunks,
                   to_file,

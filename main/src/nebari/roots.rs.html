@@ -1212,6 +1212,22 @@
 <span id="1212">1212</span>
 <span id="1213">1213</span>
 <span id="1214">1214</span>
+<span id="1215">1215</span>
+<span id="1216">1216</span>
+<span id="1217">1217</span>
+<span id="1218">1218</span>
+<span id="1219">1219</span>
+<span id="1220">1220</span>
+<span id="1221">1221</span>
+<span id="1222">1222</span>
+<span id="1223">1223</span>
+<span id="1224">1224</span>
+<span id="1225">1225</span>
+<span id="1226">1226</span>
+<span id="1227">1227</span>
+<span id="1228">1228</span>
+<span id="1229">1229</span>
+<span id="1230">1230</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">any::Any</span>,
@@ -1239,8 +1255,9 @@
     <span class="ident">io</span>::{<span class="ident">FileManager</span>, <span class="ident">ManagedFile</span>},
     <span class="ident">transaction</span>::{<span class="ident">LogEntry</span>, <span class="ident">TransactionHandle</span>, <span class="ident">TransactionManager</span>},
     <span class="ident">tree</span>::{
-        <span class="self">self</span>, <span class="ident">root::AnyTreeRoot</span>, <span class="ident">state::AnyTreeState</span>, <span class="ident">KeyEvaluation</span>, <span class="ident">KeySequence</span>, <span class="ident">Modification</span>,
-        <span class="ident">Operation</span>, <span class="ident">State</span>, <span class="ident">TransactableCompaction</span>, <span class="ident">TreeFile</span>, <span class="ident">TreeRoot</span>, <span class="ident">VersionedTreeRoot</span>,
+        <span class="self">self</span>, <span class="ident">root::AnyTreeRoot</span>, <span class="ident">state::AnyTreeState</span>, <span class="ident">EmbeddedIndex</span>, <span class="ident">KeyEvaluation</span>, <span class="ident">KeySequence</span>,
+        <span class="ident">Modification</span>, <span class="ident">Operation</span>, <span class="ident">Reducer</span>, <span class="ident">State</span>, <span class="ident">TransactableCompaction</span>, <span class="ident">TreeFile</span>, <span class="ident">TreeRoot</span>,
+        <span class="ident">VersionedTreeRoot</span>,
     },
     <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">ErrorKind</span>, <span class="ident">Vault</span>,
 };
@@ -1565,7 +1582,10 @@
     }
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">TransactionTree</span><span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span>, <span class="ident">File</span><span class="op">&gt;</span> {
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span>, <span class="ident">Index</span><span class="op">&gt;</span> <span class="ident">TransactionTree</span><span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span><span class="op">&lt;</span><span class="ident">Index</span><span class="op">&gt;</span>, <span class="ident">File</span><span class="op">&gt;</span>
+<span class="kw">where</span>
+    <span class="ident">Index</span>: <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">Index</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">EmbeddedIndex</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
+{
     <span class="doccomment">/// Returns the latest sequence id.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">current_sequence_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
         <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">tree</span>.<span class="ident">state</span>.<span class="ident">lock</span>();
@@ -1648,24 +1668,35 @@
     <span class="doccomment">/// found.</span>
     <span class="attribute">#[<span class="ident">cfg_attr</span>(
         <span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>,
-        <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>, <span class="ident">key_evaluator</span>, <span class="ident">callback</span>))
+        <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>, <span class="ident">node_evaluator</span>, <span class="ident">key_evaluator</span>, <span class="ident">callback</span>))
     )]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">scan</span><span class="op">&lt;</span><span class="lifetime">&#39;b</span>, <span class="ident">CallerError</span>, <span class="ident">Range</span>, <span class="ident">KeyEvaluator</span>, <span class="ident">DataCallback</span><span class="op">&gt;</span>(
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">scan</span><span class="op">&lt;</span><span class="lifetime">&#39;b</span>, <span class="ident">CallerError</span>, <span class="ident">Range</span>, <span class="ident">NodeEvaluator</span>, <span class="ident">KeyEvaluator</span>, <span class="ident">DataCallback</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">range</span>: <span class="ident">Range</span>,
         <span class="ident">forwards</span>: <span class="ident">bool</span>,
+        <span class="kw-2">mut</span> <span class="ident">node_evaluator</span>: <span class="ident">NodeEvaluator</span>,
         <span class="kw-2">mut</span> <span class="ident">key_evaluator</span>: <span class="ident">KeyEvaluator</span>,
         <span class="kw-2">mut</span> <span class="ident">callback</span>: <span class="ident">DataCallback</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
     <span class="kw">where</span>
         <span class="ident">Range</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;b</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
-        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KeyEvaluation</span>,
-        <span class="ident">DataCallback</span>:
-            <span class="ident">FnMut</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">NodeEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::ReducedIndex</span>, <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>,
+        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KeyEvaluation</span>,
+        <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(
+            <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
+            <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>,
+            <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
+        ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
     {
-        <span class="self">self</span>.<span class="ident">tree</span>
-            .<span class="ident">scan</span>(<span class="ident">range</span>, <span class="ident">forwards</span>, <span class="bool-val">true</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">key_evaluator</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">callback</span>)
+        <span class="self">self</span>.<span class="ident">tree</span>.<span class="ident">scan</span>(
+            <span class="ident">range</span>,
+            <span class="ident">forwards</span>,
+            <span class="bool-val">true</span>,
+            <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">node_evaluator</span>,
+            <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">key_evaluator</span>,
+            <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">callback</span>,
+        )
     }
 
     <span class="doccomment">/// Returns the last  of the tree.</span>
@@ -1912,20 +1943,25 @@
     <span class="doccomment">/// found.</span>
     <span class="attribute">#[<span class="ident">cfg_attr</span>(
         <span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>,
-        <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>, <span class="ident">key_evaluator</span>, <span class="ident">callback</span>))
+        <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>, <span class="ident">node_evaluator</span>, <span class="ident">key_evaluator</span>, <span class="ident">callback</span>))
     )]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">scan</span><span class="op">&lt;</span><span class="lifetime">&#39;range</span>, <span class="ident">CallerError</span>, <span class="ident">Range</span>, <span class="ident">KeyEvaluator</span>, <span class="ident">DataCallback</span><span class="op">&gt;</span>(
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">scan</span><span class="op">&lt;</span><span class="lifetime">&#39;range</span>, <span class="ident">CallerError</span>, <span class="ident">Range</span>, <span class="ident">NodeEvaluator</span>, <span class="ident">KeyEvaluator</span>, <span class="ident">DataCallback</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">range</span>: <span class="ident">Range</span>,
         <span class="ident">forwards</span>: <span class="ident">bool</span>,
+        <span class="kw-2">mut</span> <span class="ident">node_evaluator</span>: <span class="ident">NodeEvaluator</span>,
         <span class="kw-2">mut</span> <span class="ident">key_evaluator</span>: <span class="ident">KeyEvaluator</span>,
         <span class="kw-2">mut</span> <span class="ident">callback</span>: <span class="ident">DataCallback</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
     <span class="kw">where</span>
         <span class="ident">Range</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;range</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
-        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KeyEvaluation</span>,
-        <span class="ident">DataCallback</span>:
-            <span class="ident">FnMut</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">NodeEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::ReducedIndex</span>, <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>,
+        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KeyEvaluation</span>,
+        <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(
+            <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
+            <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>,
+            <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
+        ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
     {
         <span class="ident">catch_compaction_and_retry_abortable</span>(<span class="kw">move</span> <span class="op">|</span><span class="op">|</span> {
@@ -1935,6 +1971,7 @@
                 <span class="ident">range</span>.<span class="ident">clone</span>(),
                 <span class="ident">forwards</span>,
                 <span class="bool-val">false</span>,
+                <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">node_evaluator</span>,
                 <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">key_evaluator</span>,
                 <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">callback</span>,
             )
@@ -1980,7 +2017,10 @@
     }
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">Tree</span><span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span>, <span class="ident">File</span><span class="op">&gt;</span> {
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span>, <span class="ident">Index</span><span class="op">&gt;</span> <span class="ident">Tree</span><span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span><span class="op">&lt;</span><span class="ident">Index</span><span class="op">&gt;</span>, <span class="ident">File</span><span class="op">&gt;</span>
+<span class="kw">where</span>
+    <span class="ident">Index</span>: <span class="ident">EmbeddedIndex</span> <span class="op">+</span> <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">Index</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
+{
     <span class="doccomment">/// Scans the tree for keys that are contained within `range`. If `forwards`</span>
     <span class="doccomment">/// is true, scanning starts at the lowest sort-order key and scans forward.</span>
     <span class="doccomment">/// Otherwise, scanning starts at the highest sort-order key and scans</span>
@@ -2006,7 +2046,7 @@
         <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
     {
         <span class="ident">catch_compaction_and_retry_abortable</span>(<span class="op">|</span><span class="op">|</span> {
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="ident">::read</span>(
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">TreeFile</span>::<span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span><span class="op">&lt;</span><span class="ident">Index</span><span class="op">&gt;</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="ident">::read</span>(
                 <span class="self">self</span>.<span class="ident">path</span>(),
                 <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">clone</span>(),
                 <span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">context</span>(),
@@ -2020,7 +2060,7 @@
 
 <span class="doccomment">/// An error that could come from user code or Nebari.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">thiserror::Error</span>, <span class="ident">Debug</span>)]</span>
-<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span><span class="op">&gt;</span> {
+<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">=</span> <span class="ident">Infallible</span><span class="op">&gt;</span> {
     <span class="doccomment">/// An error unrelated to Nebari occurred.</span>
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;other error: {0}&quot;</span>)]</span>
     <span class="ident">Other</span>(<span class="ident">CallerError</span>),
@@ -2200,14 +2240,14 @@
     <span class="kw">use</span> <span class="kw">crate</span>::{
         <span class="ident">io</span>::{<span class="ident">fs::StdFile</span>, <span class="ident">memory::MemoryFile</span>, <span class="ident">ManagedFile</span>},
         <span class="ident">test_util::RotatorVault</span>,
-        <span class="ident">tree</span>::{<span class="ident">Root</span>, <span class="ident">UnversionedTreeRoot</span>},
+        <span class="ident">tree</span>::{<span class="ident">Root</span>, <span class="ident">Unversioned</span>, <span class="ident">Versioned</span>},
     };
 
     <span class="kw">fn</span> <span class="ident">basic_get_set</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>() {
         <span class="kw">let</span> <span class="ident">tempdir</span> <span class="op">=</span> <span class="ident">tempdir</span>().<span class="ident">unwrap</span>();
         <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>()).<span class="ident">open</span>().<span class="ident">unwrap</span>();
 
-        <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
         <span class="ident">tree</span>.<span class="ident">set</span>(<span class="string">b&quot;test&quot;</span>, <span class="string">b&quot;value&quot;</span>).<span class="ident">unwrap</span>();
         <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">tree</span>.<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>).<span class="ident">unwrap</span>().<span class="ident">expect</span>(<span class="string">&quot;key not found&quot;</span>);
 
@@ -2229,24 +2269,22 @@
         <span class="kw">let</span> <span class="ident">tempdir</span> <span class="op">=</span> <span class="ident">tempdir</span>().<span class="ident">unwrap</span>();
 
         <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>()).<span class="ident">open</span>().<span class="ident">unwrap</span>();
-        <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
         <span class="ident">tree</span>.<span class="ident">set</span>(<span class="string">b&quot;test&quot;</span>, <span class="string">b&quot;value&quot;</span>).<span class="ident">unwrap</span>();
 
         <span class="comment">// Begin a transaction</span>
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">roots</span>
-            .<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test&quot;</span>)])
-            .<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)]).<span class="ident">unwrap</span>();
 
         <span class="comment">// Replace the key with a new value.</span>
         <span class="ident">transaction</span>
-            .<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span><span class="op">&gt;</span>(<span class="number">0</span>)
+            .<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Versioned</span><span class="op">&gt;</span>(<span class="number">0</span>)
             .<span class="ident">unwrap</span>()
             .<span class="ident">set</span>(<span class="string">b&quot;test&quot;</span>, <span class="string">b&quot;updated value&quot;</span>)
             .<span class="ident">unwrap</span>();
 
         <span class="comment">// Check that the transaction can read the new value</span>
         <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">transaction</span>
-            .<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span><span class="op">&gt;</span>(<span class="number">0</span>)
+            .<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Versioned</span><span class="op">&gt;</span>(<span class="number">0</span>)
             .<span class="ident">unwrap</span>()
             .<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>)
             .<span class="ident">unwrap</span>()
@@ -2270,17 +2308,15 @@
         <span class="kw">let</span> <span class="ident">tempdir</span> <span class="op">=</span> <span class="ident">tempdir</span>().<span class="ident">unwrap</span>();
 
         <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>()).<span class="ident">open</span>().<span class="ident">unwrap</span>();
-        <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
         <span class="ident">tree</span>.<span class="ident">set</span>(<span class="string">b&quot;test&quot;</span>, <span class="string">b&quot;value&quot;</span>).<span class="ident">unwrap</span>();
 
         <span class="comment">// Begin a transaction</span>
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">roots</span>
-            .<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test&quot;</span>)])
-            .<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)]).<span class="ident">unwrap</span>();
 
         <span class="comment">// Replace the key with a new value.</span>
         <span class="ident">transaction</span>
-            .<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span><span class="op">&gt;</span>(<span class="number">0</span>)
+            .<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Versioned</span><span class="op">&gt;</span>(<span class="number">0</span>)
             .<span class="ident">unwrap</span>()
             .<span class="ident">set</span>(<span class="string">b&quot;test&quot;</span>, <span class="string">b&quot;updated value&quot;</span>)
             .<span class="ident">unwrap</span>();
@@ -2293,12 +2329,10 @@
         <span class="macro">assert_eq!</span>(<span class="ident">result</span>, <span class="string">b&quot;value&quot;</span>);
 
         <span class="comment">// Begin a new transaction</span>
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">roots</span>
-            .<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test&quot;</span>)])
-            .<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)]).<span class="ident">unwrap</span>();
         <span class="comment">// Check that the transaction has the original value</span>
         <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">transaction</span>
-            .<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span><span class="op">&gt;</span>(<span class="number">0</span>)
+            .<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Versioned</span><span class="op">&gt;</span>(<span class="number">0</span>)
             .<span class="ident">unwrap</span>()
             .<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>)
             .<span class="ident">unwrap</span>()
@@ -2308,12 +2342,12 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">compact_test_versioned</span>() {
-        <span class="ident">compact_test</span>::<span class="op">&lt;</span><span class="ident">VersionedTreeRoot</span><span class="op">&gt;</span>();
+        <span class="ident">compact_test</span>::<span class="op">&lt;</span><span class="ident">Versioned</span><span class="op">&gt;</span>();
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">compact_test_unversioned</span>() {
-        <span class="ident">compact_test</span>::<span class="op">&lt;</span><span class="ident">UnversionedTreeRoot</span><span class="op">&gt;</span>();
+        <span class="ident">compact_test</span>::<span class="op">&lt;</span><span class="ident">Unversioned</span><span class="op">&gt;</span>();
     }
 
     <span class="kw">fn</span> <span class="ident">compact_test</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">Root</span><span class="op">&gt;</span>() {
@@ -2381,10 +2415,10 @@
                 .<span class="ident">vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">13</span>))
                 .<span class="ident">open</span>()
                 .<span class="ident">unwrap</span>();
-            <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
             <span class="ident">tree</span>.<span class="ident">set</span>(<span class="string">b&quot;test&quot;</span>, <span class="string">b&quot;value&quot;</span>).<span class="ident">unwrap</span>();
             <span class="kw">let</span> <span class="ident">other_tree</span> <span class="op">=</span> <span class="ident">roots</span>
-                .<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test-otherkey&quot;</span>).<span class="ident">with_vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">42</span>)))
+                .<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;test-otherkey&quot;</span>).<span class="ident">with_vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">42</span>)))
                 .<span class="ident">unwrap</span>();
             <span class="ident">other_tree</span>.<span class="ident">set</span>(<span class="string">b&quot;test&quot;</span>, <span class="string">b&quot;other&quot;</span>).<span class="ident">unwrap</span>();
         }
@@ -2394,19 +2428,17 @@
                 .<span class="ident">vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">13</span>))
                 .<span class="ident">open</span>()
                 .<span class="ident">unwrap</span>();
-            <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
             <span class="kw">let</span> <span class="ident">value</span> <span class="op">=</span> <span class="ident">tree</span>.<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>).<span class="ident">unwrap</span>();
             <span class="macro">assert_eq!</span>(<span class="ident">value</span>.<span class="ident">as_deref</span>(), <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="string">b&quot;value&quot;</span>[..]));
 
             <span class="comment">// Verify we can&#39;t read the other tree without the right vault</span>
-            <span class="kw">let</span> <span class="ident">bad_tree</span> <span class="op">=</span> <span class="ident">roots</span>
-                .<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test-otherkey&quot;</span>))
-                .<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">bad_tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;test-otherkey&quot;</span>)).<span class="ident">unwrap</span>();
             <span class="macro">assert!</span>(<span class="ident">bad_tree</span>.<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>).<span class="ident">is_err</span>());
 
             <span class="comment">// And test retrieving the other key with the correct vault</span>
             <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>
-                .<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test-otherkey&quot;</span>).<span class="ident">with_vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">42</span>)))
+                .<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;test-otherkey&quot;</span>).<span class="ident">with_vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">42</span>)))
                 .<span class="ident">unwrap</span>();
             <span class="kw">let</span> <span class="ident">value</span> <span class="op">=</span> <span class="ident">tree</span>.<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>).<span class="ident">unwrap</span>();
             <span class="macro">assert_eq!</span>(<span class="ident">value</span>.<span class="ident">as_deref</span>(), <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="string">b&quot;other&quot;</span>[..]));
@@ -2414,14 +2446,14 @@
         {
             <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>()).<span class="ident">open</span>().<span class="ident">unwrap</span>();
             <span class="comment">// Try to access roots without the vault.</span>
-            <span class="kw">let</span> <span class="ident">bad_tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">bad_tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
             <span class="macro">assert!</span>(<span class="ident">bad_tree</span>.<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>).<span class="ident">is_err</span>());
 
             <span class="comment">// Try to access roots with the vault specified. It will still fail</span>
             <span class="comment">// because the tree can&#39;t be validated without reading the</span>
             <span class="comment">// transaction log.</span>
             <span class="kw">let</span> <span class="ident">bad_tree</span> <span class="op">=</span> <span class="ident">roots</span>
-                .<span class="ident">tree</span>(<span class="ident">VersionedTreeRoot::tree</span>(<span class="string">&quot;test&quot;</span>).<span class="ident">with_vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">13</span>)))
+                .<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>).<span class="ident">with_vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">13</span>)))
                 .<span class="ident">unwrap</span>();
             <span class="macro">assert!</span>(<span class="ident">bad_tree</span>.<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>).<span class="ident">is_err</span>());
         }

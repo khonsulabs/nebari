@@ -212,6 +212,17 @@
 <span id="212">212</span>
 <span id="213">213</span>
 <span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">borrow::Cow</span>,
@@ -232,6 +243,7 @@
         <span class="ident">btree_entry::ScanArgs</span>, <span class="ident">state::AnyTreeState</span>, <span class="ident">KeyEvaluation</span>, <span class="ident">Modification</span>, <span class="ident">PageHeader</span>,
         <span class="ident">PagedWriter</span>, <span class="ident">State</span>, <span class="ident">TreeFile</span>,
     },
+    <span class="ident">vault::AnyVault</span>,
     <span class="ident">AbortError</span>, <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">Context</span>, <span class="ident">TransactionTree</span>, <span class="ident">Vault</span>,
 };
 
@@ -301,7 +313,7 @@
         <span class="ident">key_evaluator</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">KeyEvaluator</span>,
         <span class="ident">key_reader</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">KeyReader</span>,
         <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>,
-        <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span>,
+        <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
         <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>
     <span class="kw">where</span>
@@ -333,7 +345,7 @@
             <span class="ident">ScanDataCallback</span>,
         <span class="op">&gt;</span>,
         <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>,
-        <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span>,
+        <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
         <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
     <span class="kw">where</span>
@@ -354,7 +366,7 @@
         <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>,
         <span class="ident">copied_chunks</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
-        <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span>,
+        <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>;
 }
 
@@ -364,7 +376,7 @@
     <span class="kw">pub</span> <span class="ident">name</span>: <span class="ident">Cow</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span>, <span class="ident">str</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The vault to use when opening the tree. If not set, the `Context` will</span>
     <span class="doccomment">/// provide the vault.</span>
-    <span class="kw">pub</span> <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">_phantom</span>: <span class="ident">PhantomData</span><span class="op">&lt;</span>(<span class="ident">R</span>, <span class="ident">File</span>)<span class="op">&gt;</span>,
 }
 
@@ -373,6 +385,16 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_vault</span><span class="op">&lt;</span><span class="ident">V</span>: <span class="ident">Vault</span><span class="op">&gt;</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">vault</span>: <span class="ident">V</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="self">self</span>.<span class="ident">vault</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">Arc::new</span>(<span class="ident">vault</span>));
         <span class="self">self</span>
+    }
+}
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">Root</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">Clone</span> <span class="kw">for</span> <span class="ident">TreeRoot</span><span class="op">&lt;</span><span class="ident">R</span>, <span class="ident">File</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">clone</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="self">Self</span> {
+            <span class="ident">name</span>: <span class="self">self</span>.<span class="ident">name</span>.<span class="ident">clone</span>(),
+            <span class="ident">vault</span>: <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">clone</span>(),
+            <span class="ident">_phantom</span>: <span class="ident">PhantomData</span>,
+        }
     }
 }
 
@@ -412,7 +434,7 @@
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">context</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">as_ref</span>().<span class="ident">map_or_else</span>(
             <span class="op">|</span><span class="op">|</span> <span class="ident">Cow::Borrowed</span>(<span class="ident">context</span>),
-            <span class="op">|</span><span class="ident">vault</span><span class="op">|</span> <span class="ident">Cow::Owned</span>(<span class="ident">context</span>.<span class="ident">clone</span>().<span class="ident">with_vault</span>(<span class="ident">vault</span>.<span class="ident">clone</span>())),
+            <span class="op">|</span><span class="ident">vault</span><span class="op">|</span> <span class="ident">Cow::Owned</span>(<span class="ident">context</span>.<span class="ident">clone</span>().<span class="ident">with_any_vault</span>(<span class="ident">vault</span>.<span class="ident">clone</span>())),
         );
         <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">TreeFile::write</span>(
             <span class="ident">file_path</span>,

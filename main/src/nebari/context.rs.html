@@ -30,10 +30,21 @@
 <span id="30">30</span>
 <span id="31">31</span>
 <span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std::sync::Arc</span>;
 
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">io::FileManager</span>, <span class="ident">ChunkCache</span>, <span class="ident">Vault</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">io::FileManager</span>, <span class="ident">vault::AnyVault</span>, <span class="ident">ChunkCache</span>, <span class="ident">Vault</span>};
 
 <span class="doccomment">/// A shared environment for database operations.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>, <span class="ident">Debug</span>, <span class="ident">Clone</span>)]</span>
@@ -41,14 +52,14 @@
     <span class="doccomment">/// The file manager for the [`ManagedFile`](crate::io::ManagedFile) implementor.</span>
     <span class="kw">pub</span> <span class="ident">file_manager</span>: <span class="ident">M</span>,
     <span class="doccomment">/// The optional vault in use.</span>
-    <span class="kw">pub</span> <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The optional chunk cache to use.</span>
-    <span class="kw">pub</span> <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">M</span>: <span class="ident">FileManager</span><span class="op">&gt;</span> <span class="ident">Context</span><span class="op">&lt;</span><span class="ident">M</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Returns the vault as a dynamic reference.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">vault</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">vault</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">as_deref</span>()
     }
 
@@ -57,8 +68,19 @@
         <span class="self">self</span>.<span class="ident">cache</span>.<span class="ident">as_ref</span>()
     }
 
+    <span class="doccomment">/// Replaces the cache currently set with `cache`.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_cache</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">cache</span>: <span class="ident">ChunkCache</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="self">self</span>.<span class="ident">cache</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">cache</span>);
+        <span class="self">self</span>
+    }
+
     <span class="doccomment">/// Replaces the vault currently set with `vault`.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_vault</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">vault</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_vault</span><span class="op">&lt;</span><span class="ident">V</span>: <span class="ident">Vault</span><span class="op">&gt;</span>(<span class="self">self</span>, <span class="ident">vault</span>: <span class="ident">V</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="self">self</span>.<span class="ident">with_any_vault</span>(<span class="ident">Arc::new</span>(<span class="ident">vault</span>))
+    }
+
+    <span class="doccomment">/// Replaces the vault currently set with `vault`.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_any_vault</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">vault</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="self">self</span>.<span class="ident">vault</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">vault</span>);
         <span class="self">self</span>
     }

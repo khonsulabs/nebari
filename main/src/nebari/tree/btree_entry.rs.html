@@ -1377,6 +1377,7 @@
 <span id="1377">1377</span>
 <span id="1378">1378</span>
 <span id="1379">1379</span>
+<span id="1380">1380</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
@@ -1401,7 +1402,8 @@
     <span class="ident">error::Error</span>,
     <span class="ident">io::ManagedFile</span>,
     <span class="ident">tree</span>::{<span class="ident">key_entry::ValueIndex</span>, <span class="ident">read_chunk</span>, <span class="ident">versioned::Children</span>, <span class="ident">KeyEvaluation</span>},
-    <span class="ident">AbortError</span>, <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">ErrorKind</span>, <span class="ident">Vault</span>,
+    <span class="ident">vault::AnyVault</span>,
+    <span class="ident">AbortError</span>, <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">ErrorKind</span>,
 };
 
 <span class="doccomment">/// A B-Tree entry that stores a list of key-`Index` pairs.</span>
@@ -2323,7 +2325,7 @@
             <span class="ident">ScanDataCallback</span>,
         <span class="op">&gt;</span>,
         <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>,
-        <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span>,
+        <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
         <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
         <span class="ident">current_depth</span>: <span class="ident">usize</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
@@ -2436,7 +2438,7 @@
         <span class="ident">key_evaluator</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">KeyEvaluator</span>,
         <span class="ident">key_reader</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">KeyReader</span>,
         <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>,
-        <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span>,
+        <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
         <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span>
     <span class="kw">where</span>
@@ -2523,7 +2525,7 @@
         <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>,
         <span class="ident">copied_chunks</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
-        <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span>,
+        <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
         <span class="ident">scratch</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">index_callback</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Callback</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span>
@@ -2535,7 +2537,7 @@
             <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>,
             <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">u64</span><span class="op">&gt;</span>,
             <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
-            <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Vault</span><span class="op">&gt;</span>,
+            <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
         ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span>,
     {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">any_changes</span> <span class="op">=</span> <span class="bool-val">false</span>;

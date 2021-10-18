@@ -469,7 +469,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     /// same order as the keys are scanned.
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(skip(self, key_evaluator, callback))
+        tracing::instrument(skip(self, node_evaluator, key_evaluator, key_reader))
     )]
     pub fn scan<'range, CallerError, Range, NodeEvaluator, KeyEvaluator, DataCallback>(
         &mut self,

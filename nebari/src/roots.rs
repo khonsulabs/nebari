@@ -437,7 +437,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     /// found.
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(skip(self, key_evaluator, callback))
+        tracing::instrument(skip(self, node_evaluator, key_evaluator, callback))
     )]
     pub fn scan<'b, CallerError, Range, NodeEvaluator, KeyEvaluator, DataCallback>(
         &mut self,
@@ -712,7 +712,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// found.
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(skip(self, key_evaluator, callback))
+        tracing::instrument(skip(self, node_evaluator, key_evaluator, callback))
     )]
     pub fn scan<'range, CallerError, Range, NodeEvaluator, KeyEvaluator, DataCallback>(
         &self,

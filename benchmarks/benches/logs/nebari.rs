@@ -141,30 +141,10 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
         config: &Self::Config,
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
-        let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
-        let context = Context {
-            file_manager: manager,
-            vault: None,
-            cache: Some(ChunkCache::new(2000, 160_384)),
-        };
+        let context = Context::default().with_cache(ChunkCache::new(2000, 160_384));
         let file_path = group_state.path().join("tree");
-        let file = context.file_manager.append(&file_path).unwrap();
-        let state = State::default();
-        TreeFile::<B::Root, StdFile>::initialize_state(
-            &state,
-            &file_path,
-            file.id(),
-            &context,
-            None,
-        )
-        .unwrap();
-        let tree = TreeFile::<B::Root, StdFile>::new(
-            file,
-            state,
-            context.vault.clone(),
-            context.cache.clone(),
-        )
-        .unwrap();
+        let tree = TreeFile::<B::Root, StdFile>::read(&file_path, State::default(), &context, None)
+            .unwrap();
         let state = config.initialize(config_group_state);
         Ok(Self { tree, state })
     }
@@ -252,30 +232,10 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
         config: &Self::Config,
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
-        let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
-        let context = Context {
-            file_manager: manager,
-            vault: None,
-            cache: Some(ChunkCache::new(2000, 160_384)),
-        };
+        let context = Context::default().with_cache(ChunkCache::new(2000, 160_384));
         let file_path = group_state.path().join("tree");
-        let file = context.file_manager.append(&file_path).unwrap();
-        let state = State::default();
-        TreeFile::<B::Root, StdFile>::initialize_state(
-            &state,
-            &file_path,
-            file.id(),
-            &context,
-            None,
-        )
-        .unwrap();
-        let tree = TreeFile::<B::Root, StdFile>::new(
-            file,
-            state,
-            context.vault.clone(),
-            context.cache.clone(),
-        )
-        .unwrap();
+        let tree = TreeFile::<B::Root, StdFile>::read(&file_path, State::default(), &context, None)
+            .unwrap();
         let state = config.initialize(config_group_state);
         Ok(Self { tree, state })
     }

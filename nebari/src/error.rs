@@ -150,7 +150,13 @@ pub enum ErrorKind {
     /// be completed. Reopen the file and try again.
     #[error("the file has been compacted. reopen the file and try again")]
     TreeCompacted,
+    /// An error ocurred in the vault.
+    #[error("a vault error occurred: {0}")]
+    Vault(Box<dyn SendSyncError>),
 }
+
+pub trait SendSyncError: std::error::Error + Send + Sync + 'static {}
+impl<T> SendSyncError for T where T: std::error::Error + Send + Sync + 'static {}
 
 impl ErrorKind {
     /// Returns a new [`Error::Message`] instance with the message provided.

@@ -3,7 +3,7 @@ use std::{collections::HashMap, convert::TryFrom};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{serialization::BinarySerialization, PagedWriter};
-use crate::{error::Error, io::ManagedFile, Buffer, ErrorKind, Vault};
+use crate::{error::Error, io::ManagedFile, vault::AnyVault, Buffer, ErrorKind};
 
 /// An entry for a key. Stores a single index value for a single key.
 #[derive(Debug, Clone)]
@@ -26,7 +26,7 @@ impl<Index: ValueIndex + BinarySerialization> KeyEntry<Index> {
         file: &mut File,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, File>,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
         index_callback: &mut Callback,
     ) -> Result<bool, Error>
     where
@@ -37,7 +37,7 @@ impl<Index: ValueIndex + BinarySerialization> KeyEntry<Index> {
             &mut File,
             &mut HashMap<u64, u64>,
             &mut PagedWriter<'_, File>,
-            Option<&dyn Vault>,
+            Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,
     {
         index_callback(

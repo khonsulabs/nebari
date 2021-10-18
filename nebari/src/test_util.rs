@@ -1,4 +1,5 @@
 use std::{
+    convert::Infallible,
     io::ErrorKind,
     ops::Deref,
     path::{Path, PathBuf},
@@ -56,18 +57,19 @@ impl RotatorVault {
 }
 
 impl Vault for RotatorVault {
-    fn encrypt(&self, payload: &[u8]) -> Vec<u8> {
+    type Error = Infallible;
+    fn encrypt(&self, payload: &[u8]) -> Result<Vec<u8>, Infallible> {
         println!("Encrypting with key: {}", self.rotation_amount);
         let mut output = Vec::with_capacity(payload.len());
         output.extend(payload.iter().map(|c| c.wrapping_add(self.rotation_amount)));
-        output
+        Ok(output)
     }
 
-    fn decrypt(&self, payload: &[u8]) -> Vec<u8> {
+    fn decrypt(&self, payload: &[u8]) -> Result<Vec<u8>, Infallible> {
         println!("Decrypting with key: {}", self.rotation_amount);
-        payload
+        Ok(payload
             .iter()
             .map(|c| c.wrapping_sub(self.rotation_amount))
-            .collect()
+            .collect())
     }
 }

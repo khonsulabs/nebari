@@ -29,7 +29,8 @@ use crate::{
         modify::Operation,
         BTreeNode, Interior, PageHeader, Reducer, Root,
     },
-    Buffer, ChunkCache, ErrorKind, Vault,
+    vault::AnyVault,
+    Buffer, ChunkCache, ErrorKind,
 };
 
 const UNINITIALIZED_SEQUENCE: u64 = 0;
@@ -368,7 +369,7 @@ where
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
         file: &mut File,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
     where
@@ -428,7 +429,7 @@ where
             ScanDataCallback,
         >,
         file: &mut File,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
     where
@@ -450,7 +451,7 @@ where
         file: &mut File,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, File>,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error> {
         // Copy all of the data using the ID root.
         let mut sequence_indexes = Vec::with_capacity(

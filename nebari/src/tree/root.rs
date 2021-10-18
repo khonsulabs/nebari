@@ -17,6 +17,7 @@ use crate::{
         btree_entry::ScanArgs, state::AnyTreeState, KeyEvaluation, Modification, PageHeader,
         PagedWriter, State, TreeFile,
     },
+    vault::AnyVault,
     AbortError, Buffer, ChunkCache, Context, TransactionTree, Vault,
 };
 
@@ -86,7 +87,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
         file: &mut File,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
     where
@@ -118,7 +119,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
             ScanDataCallback,
         >,
         file: &mut File,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
     where
@@ -139,7 +140,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
         file: &mut File,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, File>,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error>;
 }
 
@@ -149,7 +150,7 @@ pub struct TreeRoot<R: Root, File: ManagedFile> {
     pub name: Cow<'static, str>,
     /// The vault to use when opening the tree. If not set, the `Context` will
     /// provide the vault.
-    pub vault: Option<Arc<dyn Vault>>,
+    pub vault: Option<Arc<dyn AnyVault>>,
     _phantom: PhantomData<(R, File)>,
 }
 
@@ -158,6 +159,16 @@ impl<R: Root, File: ManagedFile> TreeRoot<R, File> {
     pub fn with_vault<V: Vault>(mut self, vault: V) -> Self {
         self.vault = Some(Arc::new(vault));
         self
+    }
+}
+
+impl<R: Root, File: ManagedFile> Clone for TreeRoot<R, File> {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            vault: self.vault.clone(),
+            _phantom: PhantomData,
+        }
     }
 }
 
@@ -197,7 +208,7 @@ impl<R: Root, File: ManagedFile> AnyTreeRoot<File> for TreeRoot<R, File> {
     ) -> Result<Box<dyn AnyTransactionTree<File>>, Error> {
         let context = self.vault.as_ref().map_or_else(
             || Cow::Borrowed(context),
-            |vault| Cow::Owned(context.clone().with_vault(vault.clone())),
+            |vault| Cow::Owned(context.clone().with_any_vault(vault.clone())),
         );
         let tree = TreeFile::write(
             file_path,

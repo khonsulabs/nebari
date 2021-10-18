@@ -24,7 +24,7 @@
 //! ## Chunks
 //!
 //! Each time a value, B-Tree node, or header is written, it is written as a
-//! chunk. If a [`Vault`] is in-use, each chunk will be pre-processed by the
+//! chunk. If a [`Vault`](crate::Vault) is in-use, each chunk will be pre-processed by the
 //! vault before a `CRC-32-BZIP2` checksum is calculated. A chunk is limited to
 //! 4 gigabytes of data (2^32).
 //!
@@ -60,7 +60,8 @@ use crate::{
     roots::AbortError,
     transaction::{TransactionHandle, TransactionManager},
     tree::{btree_entry::ScanArgs, serialization::BinarySerialization},
-    Buffer, ChunkCache, CompareAndSwapError, Context, ErrorKind, Vault,
+    vault::AnyVault,
+    Buffer, ChunkCache, CompareAndSwapError, Context, ErrorKind,
 };
 
 mod btree_entry;
@@ -130,7 +131,7 @@ pub struct TreeFile<Root: root::Root, File: ManagedFile> {
     pub(crate) file: <File::Manager as FileManager>::FileHandle,
     /// The state of the file.
     pub state: State<Root>,
-    vault: Option<Arc<dyn Vault>>,
+    vault: Option<Arc<dyn AnyVault>>,
     cache: Option<ChunkCache>,
     scratch: Vec<u8>,
 }
@@ -156,7 +157,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     pub fn new(
         file: <File::Manager as FileManager>::FileHandle,
         state: State<Root>,
-        vault: Option<Arc<dyn Vault>>,
+        vault: Option<Arc<dyn AnyVault>>,
         cache: Option<ChunkCache>,
     ) -> Result<Self, Error> {
         Ok(Self {
@@ -652,7 +653,7 @@ pub struct TransactableCompaction<'a, Manager: FileManager> {
 
 struct TreeCompactor<'a, Root: root::Root, Manager: FileManager> {
     state: &'a State<Root>,
-    vault: Option<&'a dyn Vault>,
+    vault: Option<&'a dyn AnyVault>,
     transactions: Option<TransactableCompaction<'a, Manager>>,
     scratch: &'a mut Vec<u8>,
 }
@@ -732,7 +733,7 @@ impl<'a, Root: root::Root> TreeCompactionFinisher<'a, Root> {
 
 struct TreeWriter<'a, Root: root::Root> {
     state: &'a State<Root>,
-    vault: Option<&'a dyn Vault>,
+    vault: Option<&'a dyn AnyVault>,
     cache: Option<&'a ChunkCache>,
     scratch: &'a mut Vec<u8>,
 }
@@ -769,7 +770,7 @@ impl<'a, Root: root::Root, File: ManagedFile> FileOp<File> for TreeWriter<'a, Ro
 
 struct TreeModifier<'a, 'm, Root: root::Root> {
     state: &'a State<Root>,
-    vault: Option<&'a dyn Vault>,
+    vault: Option<&'a dyn AnyVault>,
     cache: Option<&'a ChunkCache>,
     modification: Option<Modification<'m, Buffer<'static>>>,
     scratch: &'a mut Vec<u8>,
@@ -825,7 +826,7 @@ impl<'a, 'm, Root: root::Root, File: ManagedFile> FileOp<File> for TreeModifier<
 #[allow(clippy::shadow_unrelated)] // It is related, but clippy can't tell.
 fn save_tree<Root: root::Root, File: ManagedFile>(
     active_state: &mut ActiveState<Root>,
-    vault: Option<&dyn Vault>,
+    vault: Option<&dyn AnyVault>,
     cache: Option<&ChunkCache>,
     mut data_block: PagedWriter<'_, File>,
     scratch: &mut Vec<u8>,
@@ -902,7 +903,7 @@ struct TreeGetter<
 > {
     from_transaction: bool,
     state: &'a State<Root>,
-    vault: Option<&'a dyn Vault>,
+    vault: Option<&'a dyn AnyVault>,
     cache: Option<&'a ChunkCache>,
     keys: Keys,
     key_evaluator: KeyEvaluator,
@@ -975,7 +976,7 @@ struct TreeScanner<
     forwards: bool,
     from_transaction: bool,
     state: &'a State<Root>,
-    vault: Option<&'a dyn Vault>,
+    vault: Option<&'a dyn AnyVault>,
     cache: Option<&'a ChunkCache>,
     range: KeyRangeBounds,
     node_evaluator: NodeEvaluator,
@@ -1076,7 +1077,7 @@ struct TreeSequenceScanner<
     forwards: bool,
     from_transaction: bool,
     state: &'a State<VersionedTreeRoot<Index>>,
-    vault: Option<&'a dyn Vault>,
+    vault: Option<&'a dyn AnyVault>,
     cache: Option<&'a ChunkCache>,
     range: KeyRangeBounds,
     key_evaluator: KeyEvaluator,
@@ -1180,7 +1181,7 @@ where
 /// Writes data in pages, allowing for quick scanning through the file.
 pub struct PagedWriter<'a, File: ManagedFile> {
     file: &'a mut File,
-    vault: Option<&'a dyn Vault>,
+    vault: Option<&'a dyn AnyVault>,
     cache: Option<&'a ChunkCache>,
     position: u64,
     offset: usize,
@@ -1207,7 +1208,7 @@ impl<'a, File: ManagedFile> PagedWriter<'a, File> {
     fn new(
         header: Option<PageHeader>,
         file: &'a mut File,
-        vault: Option<&'a dyn Vault>,
+        vault: Option<&'a dyn AnyVault>,
         cache: Option<&'a ChunkCache>,
         position: u64,
     ) -> Result<PagedWriter<'a, File>, Error> {
@@ -1285,9 +1286,9 @@ impl<'a, File: ManagedFile> PagedWriter<'a, File> {
     #[allow(clippy::cast_possible_truncation)]
     fn write_chunk(&mut self, contents: &[u8], cache: bool) -> Result<u64, Error> {
         let possibly_encrypted = self.vault.as_ref().map_or_else(
-            || Cow::Borrowed(contents),
-            |vault| Cow::Owned(vault.encrypt(contents)),
-        );
+            || Ok(Cow::Borrowed(contents)),
+            |vault| vault.encrypt(contents).map(Cow::Owned),
+        )?;
         let length =
             u32::try_from(possibly_encrypted.len()).map_err(|_| ErrorKind::ValueTooLarge)?;
         let crc = CRC32.checksum(&possibly_encrypted);
@@ -1330,7 +1331,7 @@ fn read_chunk<File: ManagedFile>(
     position: u64,
     validate_crc: bool,
     file: &mut File,
-    vault: Option<&dyn Vault>,
+    vault: Option<&dyn AnyVault>,
     cache: Option<&ChunkCache>,
 ) -> Result<CacheEntry, Error> {
     if let (Some(cache), Some(file_id)) = (cache, file.id()) {
@@ -1361,7 +1362,7 @@ fn read_chunk<File: ManagedFile>(
     }
 
     let decrypted = Buffer::from(match vault {
-        Some(vault) => vault.decrypt(&scratch),
+        Some(vault) => vault.decrypt(&scratch)?,
         None => scratch,
     });
 
@@ -1377,7 +1378,7 @@ pub(crate) fn copy_chunk<File: ManagedFile, Hasher: BuildHasher>(
     from_file: &mut File,
     copied_chunks: &mut std::collections::HashMap<u64, u64, Hasher>,
     to_file: &mut PagedWriter<'_, File>,
-    vault: Option<&dyn crate::Vault>,
+    vault: Option<&dyn AnyVault>,
 ) -> Result<u64, Error> {
     if original_position == 0 {
         Ok(0)

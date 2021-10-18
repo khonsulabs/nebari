@@ -21,7 +21,8 @@ use crate::{
     error::Error,
     io::ManagedFile,
     tree::{key_entry::ValueIndex, read_chunk, versioned::Children, KeyEvaluation},
-    AbortError, Buffer, ChunkCache, ErrorKind, Vault,
+    vault::AnyVault,
+    AbortError, Buffer, ChunkCache, ErrorKind,
 };
 
 /// A B-Tree entry that stores a list of key-`Index` pairs.
@@ -943,7 +944,7 @@ where
             ScanDataCallback,
         >,
         file: &mut File,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
         current_depth: usize,
     ) -> Result<bool, AbortError<CallerError>>
@@ -1056,7 +1057,7 @@ where
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
         file: &mut File,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, Error>
     where
@@ -1143,7 +1144,7 @@ where
         file: &mut File,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, File>,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
         scratch: &mut Vec<u8>,
         index_callback: &mut Callback,
     ) -> Result<bool, Error>
@@ -1155,7 +1156,7 @@ where
             &mut File,
             &mut HashMap<u64, u64>,
             &mut PagedWriter<'_, File>,
-            Option<&dyn Vault>,
+            Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,
     {
         let mut any_changes = false;

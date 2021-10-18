@@ -27,7 +27,8 @@ use crate::{
         versioned::ChangeResult,
         BTreeNode, PageHeader, Reducer, Root,
     },
-    Buffer, ChunkCache, ErrorKind, Vault,
+    vault::AnyVault,
+    Buffer, ChunkCache, ErrorKind,
 };
 
 /// An unversioned tree with no additional indexed data.
@@ -222,7 +223,7 @@ where
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
         file: &mut File,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
     where
@@ -282,7 +283,7 @@ where
             DataCallback,
         >,
         file: &mut File,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
     where
@@ -304,7 +305,7 @@ where
         file: &mut File,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, File>,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error> {
         let mut scratch = Vec::new();
         self.by_id_root.copy_data_to(

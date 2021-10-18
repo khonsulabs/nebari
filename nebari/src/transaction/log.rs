@@ -16,14 +16,15 @@ use super::{State, TransactionHandle};
 use crate::{
     error::Error,
     io::{FileManager, FileOp, ManagedFile, OpenableFile},
-    Buffer, Context, ErrorKind, Vault,
+    vault::AnyVault,
+    Buffer, Context, ErrorKind,
 };
 
 const PAGE_SIZE: usize = 1024;
 
 /// A transaction log that records changes for one or more trees.
 pub struct TransactionLog<File: ManagedFile> {
-    vault: Option<Arc<dyn Vault>>,
+    vault: Option<Arc<dyn AnyVault>>,
     state: State,
     log: <File::Manager as FileManager>::FileHandle,
 }
@@ -170,7 +171,7 @@ impl<File: ManagedFile> TransactionLog<File> {
 struct StateInitializer<'a, F> {
     state: &'a State,
     log_length: u64,
-    vault: Option<&'a dyn Vault>,
+    vault: Option<&'a dyn AnyVault>,
     _file: PhantomData<F>,
 }
 
@@ -215,7 +216,7 @@ fn scan_for_transaction<File: ManagedFile>(
     scratch_buffer: &mut Vec<u8>,
     mut block_start: u64,
     scan_forward: bool,
-    vault: Option<&dyn Vault>,
+    vault: Option<&dyn AnyVault>,
 ) -> Result<ScanResult, Error> {
     if scratch_buffer.len() < 4 {
         scratch_buffer.resize(4, 0);
@@ -256,7 +257,7 @@ fn scan_for_transaction<File: ManagedFile>(
                 log.read_exact(scratch_buffer)?;
                 let payload = &scratch_buffer[0..length];
                 let decrypted = match &vault {
-                    Some(vault) => Cow::Owned(vault.decrypt(payload)),
+                    Some(vault) => Cow::Owned(vault.decrypt(payload)?),
                     None => Cow::Borrowed(payload),
                 };
                 let entry = LogEntry::deserialize(&decrypted)
@@ -277,7 +278,7 @@ fn scan_for_transaction<File: ManagedFile>(
 pub(crate) struct EntryFetcher<'a> {
     pub state: &'a State,
     pub id: u64,
-    pub vault: Option<&'a dyn Vault>,
+    pub vault: Option<&'a dyn AnyVault>,
 }
 
 impl<'a, File: ManagedFile> FileOp<File> for EntryFetcher<'a> {
@@ -293,7 +294,7 @@ fn fetch_entry<File: ManagedFile>(
     scratch_buffer: &mut Vec<u8>,
     state: &State,
     id: u64,
-    vault: Option<&dyn Vault>,
+    vault: Option<&dyn AnyVault>,
 ) -> Result<ScanResult, Error> {
     if id == 0 {
         return Ok(ScanResult::NotFound {
@@ -364,7 +365,7 @@ fn fetch_entry<File: ManagedFile>(
 pub struct EntryScanner<'a, Range: RangeBounds<u64>, Callback: FnMut(LogEntry<'static>) -> bool> {
     pub state: &'a State,
     pub ids: Range,
-    pub vault: Option<&'a dyn Vault>,
+    pub vault: Option<&'a dyn AnyVault>,
     pub callback: Callback,
 }
 
@@ -424,7 +425,7 @@ const fn next_page_start(position: u64) -> u64 {
 struct LogWriter<File> {
     state: State,
     transactions: Vec<LogEntry<'static>>,
-    vault: Option<Arc<dyn Vault>>,
+    vault: Option<Arc<dyn AnyVault>>,
     _file: PhantomData<File>,
 }
 
@@ -438,7 +439,7 @@ impl<File: ManagedFile> FileOp<File> for LogWriter<File> {
             completed_transactions.push((transaction.id, Some(*log_position)));
             let mut bytes = transaction.serialize()?;
             if let Some(vault) = &self.vault {
-                bytes = vault.encrypt(&bytes);
+                bytes = vault.encrypt(&bytes)?;
             }
             // Write out the transaction in pages.
             let total_length = bytes.len() + 3;
@@ -619,8 +620,8 @@ fn guess_page(
         })
     } else if upper_id > looking_for {
         // Go backwards from upper
-        let avg_per_page = dbg!(upper_id) as f64 / dbg!(total_pages) as f64;
-        let id_delta = upper_id - dbg!(looking_for);
+        let avg_per_page = upper_id as f64 / total_pages as f64;
+        let id_delta = upper_id - looking_for;
         let delta_estimated_pages = (id_delta as f64 * avg_per_page).ceil() as u64;
         let delta_bytes = delta_estimated_pages.saturating_mul(PAGE_SIZE as u64);
         Some(upper_location.saturating_sub(delta_bytes))
@@ -660,7 +661,7 @@ mod tests {
 
     fn log_file_tests<File: ManagedFile>(
         file_name: &str,
-        vault: Option<Arc<dyn Vault>>,
+        vault: Option<Arc<dyn AnyVault>>,
         cache: Option<ChunkCache>,
     ) {
         let temp_dir = crate::test_util::TestDirectory::new(file_name);
@@ -787,7 +788,7 @@ mod tests {
 
     fn log_manager_tests<File: ManagedFile>(
         file_name: &str,
-        vault: Option<Arc<dyn Vault>>,
+        vault: Option<Arc<dyn AnyVault>>,
         cache: Option<ChunkCache>,
     ) {
         let temp_dir = crate::test_util::TestDirectory::new(file_name);

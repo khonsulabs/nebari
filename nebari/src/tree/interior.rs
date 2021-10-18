@@ -15,7 +15,8 @@ use crate::{
     error::Error,
     io::ManagedFile,
     tree::{btree_entry::NodeInclusion, key_entry::ValueIndex},
-    AbortError, Buffer, ChunkCache, ErrorKind, Vault,
+    vault::AnyVault,
+    AbortError, Buffer, ChunkCache, ErrorKind,
 };
 
 /// An interior B-Tree node. Does not contain values directly, and instead
@@ -76,7 +77,7 @@ impl<
         &mut self,
         file: &mut File,
         validate_crc: bool,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
         current_order: Option<usize>,
     ) -> Result<(), Error> {
@@ -148,7 +149,7 @@ impl<
     >(
         &self,
         file: &mut File,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
         current_order: Option<usize>,
         callback: Cb,
@@ -190,7 +191,7 @@ impl<
         file: &mut File,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, File>,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
         scratch: &mut Vec<u8>,
         index_callback: &mut Callback,
     ) -> Result<bool, Error>
@@ -202,7 +203,7 @@ impl<
             &mut File,
             &mut HashMap<u64, u64>,
             &mut PagedWriter<'_, File>,
-            Option<&dyn Vault>,
+            Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,
     {
         self.position.load(file, true, vault, None, None)?;

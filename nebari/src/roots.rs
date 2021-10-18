@@ -28,7 +28,8 @@ use crate::{
         Modification, Operation, Reducer, State, TransactableCompaction, TreeFile, TreeRoot,
         VersionedTreeRoot,
     },
-    Buffer, ChunkCache, ErrorKind, Vault,
+    vault::AnyVault,
+    Buffer, ChunkCache, ErrorKind,
 };
 
 /// A multi-tree transactional B-Tree database.
@@ -497,7 +498,7 @@ pub enum CompareAndSwapError {
 #[must_use]
 pub struct Config<File: ManagedFile> {
     path: PathBuf,
-    vault: Option<Arc<dyn Vault>>,
+    vault: Option<Arc<dyn AnyVault>>,
     cache: Option<ChunkCache>,
     file_manager: Option<File::Manager>,
     thread_pool: Option<ThreadPool<File>>,
@@ -529,7 +530,7 @@ impl<File: ManagedFile> Config<File> {
     }
 
     /// Sets the vault to use for this database.
-    pub fn vault<V: Vault>(mut self, vault: V) -> Self {
+    pub fn vault<V: AnyVault>(mut self, vault: V) -> Self {
         self.vault = Some(Arc::new(vault));
         self
     }
@@ -572,7 +573,7 @@ impl<File: ManagedFile> Config<File> {
 pub struct Tree<Root: tree::Root, File: ManagedFile> {
     roots: Roots<File>,
     state: State<Root>,
-    vault: Option<Arc<dyn Vault>>,
+    vault: Option<Arc<dyn AnyVault>>,
     name: Cow<'static, str>,
 }
 
@@ -630,7 +631,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     fn open_for_read(&self) -> Result<TreeFile<Root, File>, Error> {
         let context = self.vault.as_ref().map_or_else(
             || Cow::Borrowed(self.roots.context()),
-            |vault| Cow::Owned(self.roots.context().clone().with_vault(vault.clone())),
+            |vault| Cow::Owned(self.roots.context().clone().with_any_vault(vault.clone())),
         );
 
         TreeFile::<Root, File>::read(
@@ -783,6 +784,45 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
             }),
         )?;
         Ok(())
+    }
+}
+
+impl<Root: tree::Root, File: ManagedFile> AnyTreeRoot<File> for Tree<Root, File> {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn default_state(&self) -> Box<dyn AnyTreeState> {
+        Box::new(State::<Root>::default())
+    }
+
+    fn begin_transaction(
+        &self,
+        transaction_id: u64,
+        file_path: &Path,
+        state: &dyn AnyTreeState,
+        context: &Context<File::Manager>,
+        transactions: Option<&TransactionManager<File::Manager>>,
+    ) -> Result<Box<dyn AnyTransactionTree<File>>, Error> {
+        let context = self.vault.as_ref().map_or_else(
+            || Cow::Borrowed(context),
+            |vault| Cow::Owned(context.clone().with_any_vault(vault.clone())),
+        );
+        let tree = TreeFile::write(
+            file_path,
+            state
+                .as_any()
+                .downcast_ref::<State<Root>>()
+                .unwrap()
+                .clone(),
+            &context,
+            transactions,
+        )?;
+
+        Ok(Box::new(TransactionTree {
+            transaction_id,
+            tree,
+        }))
     }
 }
 
@@ -1157,7 +1197,7 @@ mod tests {
         threads.push(std::thread::spawn(move || {
             // While those workers are running, this thread is going to continually
             // execute compaction.
-            while dbg!(tree.count()) < (OPERATION_COUNT * WORKER_COUNT) as u64 {
+            while tree.count() < (OPERATION_COUNT * WORKER_COUNT) as u64 {
                 tree.compact().unwrap();
             }
         }));

@@ -1258,13 +1258,11 @@ mod tests {
             let bad_tree = roots.tree(Versioned::tree("test")).unwrap();
             assert!(bad_tree.get(b"test").is_err());
 
-            // Try to access roots with the vault specified. It will still fail
-            // because the tree can't be validated without reading the
-            // transaction log.
+            // Try to access roots with the vault specified. In this situation, the transaction log will be unreadable, causing itself to not consider any transactions valid.
             let bad_tree = roots
                 .tree(Versioned::tree("test").with_vault(RotatorVault::new(13)))
                 .unwrap();
-            assert!(bad_tree.get(b"test").is_err());
+            assert_eq!(bad_tree.get(b"test").unwrap(), None);
         }
     }
 }

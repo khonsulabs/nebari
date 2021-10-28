@@ -230,7 +230,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             block_start -= PAGE_SIZE as u64;
         }
         let mut scratch_buffer = vec![0_u8; 4];
-        active_state.root = loop {
+        loop {
             // Read the page header
             tree.seek(SeekFrom::Start(block_start))?;
             tree.read_exact(&mut scratch_buffer)?;
@@ -272,20 +272,23 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                             continue;
                         }
                     }
-                    break root;
+                    active_state.root = root;
+                    break;
                 }
                 (_, Ok(_) | Err(_)) => {
                     if block_start == 0 {
-                        return Err(Error::data_integrity(format!(
+                        eprintln!(
                             "Tree {:?} contained data, but no valid pages were found",
                             file_path
-                        )));
+                        );
+                        active_state.root.initialize_default();
+                        break;
                     }
                     block_start -= PAGE_SIZE as u64;
                     continue;
                 }
             }
-        };
+        }
 
         active_state.current_position = file_length;
         active_state.publish(state);

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `nebari&#x2F;src&#x2F;tree&#x2F;btree_entry.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>btree_entry.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../nebari/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">   1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `nebari&#x2F;src&#x2F;tree&#x2F;btree_entry.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>btree_entry.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../nebari/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">   1</span>
 <span id="2">   2</span>
 <span id="3">   3</span>
 <span id="4">   4</span>
@@ -1378,8 +1378,7 @@
 <span id="1378">1378</span>
 <span id="1379">1379</span>
 <span id="1380">1380</span>
-</pre><pre class="rust">
-<span class="kw">use</span> <span class="ident">std</span>::{
+</pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
     <span class="ident">convert::Infallible</span>,
     <span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Display</span>},
@@ -1434,7 +1433,7 @@
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">Index</span>, <span class="ident">ReducedIndex</span><span class="op">&gt;</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">BTreeEntry</span><span class="op">&lt;</span><span class="ident">Index</span>, <span class="ident">ReducedIndex</span><span class="op">&gt;</span> {
     <span class="kw">fn</span> <span class="ident">default</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="self">Self</span><span class="ident">::from</span>(<span class="ident">BTreeNode::Leaf</span>(<span class="ident">Vec::new</span>()))
+        <span class="ident"><span class="self">Self</span>::from</span>(<span class="ident">BTreeNode::Leaf</span>(<span class="ident">Vec::new</span>()))
     }
 }
 
@@ -1507,9 +1506,9 @@
     {
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">node</span> {
             <span class="ident">BTreeNode::Leaf</span>(<span class="ident">children</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">if</span> <span class="self">Self</span><span class="ident">::modify_leaf</span>(<span class="ident">children</span>, <span class="ident">modification</span>, <span class="ident">context</span>, <span class="ident">max_key</span>, <span class="ident">changes</span>, <span class="ident">writer</span>)<span class="question-mark">?</span> {
+                <span class="kw">if</span> <span class="ident"><span class="self">Self</span>::modify_leaf</span>(<span class="ident">children</span>, <span class="ident">modification</span>, <span class="ident">context</span>, <span class="ident">max_key</span>, <span class="ident">changes</span>, <span class="ident">writer</span>)<span class="question-mark">?</span> {
                     <span class="self">self</span>.<span class="ident">dirty</span> <span class="op">=</span> <span class="bool-val">true</span>;
-                    <span class="prelude-val">Ok</span>(<span class="self">Self</span><span class="ident">::clean_up_leaf</span>(
+                    <span class="prelude-val">Ok</span>(<span class="ident"><span class="self">Self</span>::clean_up_leaf</span>(
                         <span class="ident">children</span>,
                         <span class="ident">context</span>.<span class="ident">current_order</span>,
                         <span class="ident">context</span>.<span class="ident">minimum_children</span>,
@@ -1519,7 +1518,7 @@
                 }
             }
             <span class="ident">BTreeNode::Interior</span>(<span class="ident">children</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">match</span> <span class="self">Self</span><span class="ident">::modify_interior</span>(
+                <span class="kw">match</span> <span class="ident"><span class="self">Self</span>::modify_interior</span>(
                     <span class="ident">children</span>,
                     <span class="ident">modification</span>,
                     <span class="ident">context</span>,
@@ -1529,7 +1528,7 @@
                 )<span class="question-mark">?</span> {
                     <span class="ident">ChangeResult::Changed</span> <span class="op">=</span><span class="op">&gt;</span> {
                         <span class="self">self</span>.<span class="ident">dirty</span> <span class="op">=</span> <span class="bool-val">true</span>;
-                        <span class="prelude-val">Ok</span>(<span class="self">Self</span><span class="ident">::clean_up_interior</span>(
+                        <span class="prelude-val">Ok</span>(<span class="ident"><span class="self">Self</span>::clean_up_interior</span>(
                             <span class="ident">children</span>,
                             <span class="ident">context</span>.<span class="ident">current_order</span>,
                             <span class="ident">context</span>.<span class="ident">minimum_children</span>,
@@ -1782,7 +1781,7 @@
                 <span class="prelude-val">Some</span>(<span class="ident">context</span>.<span class="ident">current_order</span>),
             )<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">child_entry</span> <span class="op">=</span> <span class="ident">child</span>.<span class="ident">position</span>.<span class="ident">get_mut</span>().<span class="ident">unwrap</span>();
-            <span class="kw">let</span> (<span class="ident">change_result</span>, <span class="ident">should_backup</span>) <span class="op">=</span> <span class="self">Self</span><span class="ident">::process_interior_change_result</span>(
+            <span class="kw">let</span> (<span class="ident">change_result</span>, <span class="ident">should_backup</span>) <span class="op">=</span> <span class="ident"><span class="self">Self</span>::process_interior_change_result</span>(
                 <span class="ident">child_entry</span>.<span class="ident">modify</span>(
                     <span class="ident">modification</span>,
                     <span class="ident">context</span>,
@@ -1847,10 +1846,10 @@
                 <span class="prelude-val">Ok</span>((<span class="ident">ChangeResult::Changed</span>, <span class="bool-val">false</span>))
             }
             (<span class="ident">ChangeResult::Split</span>, <span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">Self</span><span class="ident">::process_interior_split</span>(<span class="ident">child_index</span>, <span class="ident">children</span>, <span class="ident">context</span>, <span class="ident">writer</span>)
+                <span class="ident"><span class="self">Self</span>::process_interior_split</span>(<span class="ident">child_index</span>, <span class="ident">children</span>, <span class="ident">context</span>, <span class="ident">writer</span>)
             }
             (<span class="ident">ChangeResult::Absorb</span>, <span class="bool-val">true</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">Self</span><span class="ident">::process_absorb</span>(<span class="ident">child_index</span>, <span class="ident">children</span>, <span class="ident">context</span>, <span class="ident">writer</span>)
+                <span class="ident"><span class="self">Self</span>::process_absorb</span>(<span class="ident">child_index</span>, <span class="ident">children</span>, <span class="ident">context</span>, <span class="ident">writer</span>)
             }
             (<span class="ident">ChangeResult::Remove</span>, <span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="ident">children</span>.<span class="ident">remove</span>(<span class="ident">child_index</span>);
@@ -1902,7 +1901,7 @@
                 <span class="prelude-val">Some</span>(<span class="ident">context</span>.<span class="ident">current_order</span>),
             )<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">sponge_entry</span> <span class="op">=</span> <span class="ident">sponge</span>.<span class="ident">position</span>.<span class="ident">get_mut</span>().<span class="ident">unwrap</span>();
-            <span class="kw">match</span> <span class="self">Self</span><span class="ident">::process_interior_change_result</span>(
+            <span class="kw">match</span> <span class="ident"><span class="self">Self</span>::process_interior_change_result</span>(
                 <span class="ident">sponge_entry</span>.<span class="ident">absorb</span>(
                     <span class="ident">leaves</span>,
                     <span class="ident">insert_on_top</span>,
@@ -1953,7 +1952,7 @@
         <span class="comment">// requiring much additional IO. Ultimately, the best time to optimize</span>
         <span class="comment">// the tree will be during a compaction phase.</span>
         <span class="kw">if</span> <span class="ident">child_index</span> <span class="op">&gt;</span> <span class="number">0</span> {
-            <span class="kw">match</span> <span class="self">Self</span><span class="ident">::steal_children_from_start</span>(<span class="ident">child_index</span>, <span class="ident">children</span>, <span class="ident">context</span>, <span class="ident">writer</span>)<span class="question-mark">?</span> {
+            <span class="kw">match</span> <span class="ident"><span class="self">Self</span>::steal_children_from_start</span>(<span class="ident">child_index</span>, <span class="ident">children</span>, <span class="ident">context</span>, <span class="ident">writer</span>)<span class="question-mark">?</span> {
                 (<span class="ident">ChangeResult::Unchanged</span>, <span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {}
                 (<span class="ident">ChangeResult::Changed</span>, <span class="ident">should_backup</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="ident">ChangeResult::Changed</span>, <span class="ident">should_backup</span>))
@@ -1963,7 +1962,7 @@
         }
 
         <span class="kw">if</span> <span class="ident">child_index</span> <span class="op">+</span> <span class="number">1</span> <span class="op">&lt;</span> <span class="ident">children</span>.<span class="ident">len</span>() {
-            <span class="kw">match</span> <span class="self">Self</span><span class="ident">::steal_children_from_end</span>(<span class="ident">child_index</span>, <span class="ident">children</span>, <span class="ident">context</span>, <span class="ident">writer</span>)<span class="question-mark">?</span> {
+            <span class="kw">match</span> <span class="ident"><span class="self">Self</span>::steal_children_from_end</span>(<span class="ident">child_index</span>, <span class="ident">children</span>, <span class="ident">context</span>, <span class="ident">writer</span>)<span class="question-mark">?</span> {
                 <span class="ident">ChangeResult::Unchanged</span> <span class="op">=</span><span class="op">&gt;</span> {}
                 <span class="ident">ChangeResult::Changed</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="ident">ChangeResult::Changed</span>, <span class="bool-val">false</span>)),
                 <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable!</span>(),
@@ -1977,13 +1976,13 @@
                 <span class="kw">let</span> <span class="ident">upper</span> <span class="op">=</span> <span class="ident">children</span>
                     .<span class="ident">splice</span>((<span class="ident">children</span>.<span class="ident">len</span>() <span class="op">+</span> <span class="number">1</span>) <span class="op">/</span> <span class="number">2</span>.., <span class="ident">std::iter::empty</span>())
                     .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span><span class="op">&gt;</span>();
-                <span class="self">Self</span><span class="ident">::from</span>(<span class="ident">BTreeNode::Leaf</span>(<span class="ident">upper</span>))
+                <span class="ident"><span class="self">Self</span>::from</span>(<span class="ident">BTreeNode::Leaf</span>(<span class="ident">upper</span>))
             }
             <span class="ident">BTreeNode::Interior</span>(<span class="ident">children</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">upper</span> <span class="op">=</span> <span class="ident">children</span>
                     .<span class="ident">splice</span>((<span class="ident">children</span>.<span class="ident">len</span>() <span class="op">+</span> <span class="number">1</span>) <span class="op">/</span> <span class="number">2</span>.., <span class="ident">std::iter::empty</span>())
                     .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span><span class="op">&gt;</span>();
-                <span class="self">Self</span><span class="ident">::from</span>(<span class="ident">BTreeNode::Interior</span>(<span class="ident">upper</span>))
+                <span class="ident"><span class="self">Self</span>::from</span>(<span class="ident">BTreeNode::Interior</span>(<span class="ident">upper</span>))
             }
             <span class="ident">BTreeNode::Uninitialized</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented!</span>(),
         };
@@ -2196,7 +2195,7 @@
                     <span class="ident">existing_children</span>.<span class="ident">splice</span>(<span class="number">0</span>..<span class="number">0</span>, <span class="ident">leaves</span>);
                 }
 
-                <span class="prelude-val">Ok</span>(<span class="self">Self</span><span class="ident">::clean_up_leaf</span>(
+                <span class="prelude-val">Ok</span>(<span class="ident"><span class="self">Self</span>::clean_up_leaf</span>(
                     <span class="ident">existing_children</span>,
                     <span class="ident">current_order</span>,
                     <span class="ident">minimum_children</span>,
@@ -2232,7 +2231,7 @@
                     <span class="ident">existing_children</span>.<span class="ident">splice</span>(<span class="number">0</span>..<span class="number">0</span>, <span class="ident">interiors</span>);
                 }
 
-                <span class="prelude-val">Ok</span>(<span class="self">Self</span><span class="ident">::clean_up_interior</span>(
+                <span class="prelude-val">Ok</span>(<span class="ident"><span class="self">Self</span>::clean_up_interior</span>(
                     <span class="ident">existing_children</span>,
                     <span class="ident">current_order</span>,
                     <span class="ident">minimum_children</span>,
@@ -2247,15 +2246,15 @@
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">split</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">Interior</span><span class="op">&lt;</span><span class="ident">Index</span>, <span class="ident">ReducedIndex</span><span class="op">&gt;</span>, <span class="ident">Interior</span><span class="op">&lt;</span><span class="ident">Index</span>, <span class="ident">ReducedIndex</span><span class="op">&gt;</span>) {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">old_node</span> <span class="op">=</span> <span class="self">Self</span><span class="ident">::from</span>(<span class="ident">BTreeNode::Uninitialized</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">old_node</span> <span class="op">=</span> <span class="ident"><span class="self">Self</span>::from</span>(<span class="ident">BTreeNode::Uninitialized</span>);
         <span class="ident">std::mem::swap</span>(<span class="self">self</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">old_node</span>);
         <span class="kw">match</span> <span class="ident">old_node</span>.<span class="ident">node</span> {
             <span class="ident">BTreeNode::Leaf</span>(<span class="kw-2">mut</span> <span class="ident">children</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">upper</span> <span class="op">=</span> <span class="ident">children</span>
                     .<span class="ident">splice</span>((<span class="ident">children</span>.<span class="ident">len</span>() <span class="op">+</span> <span class="number">1</span>) <span class="op">/</span> <span class="number">2</span>.., <span class="ident">std::iter::empty</span>())
                     .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span><span class="op">&gt;</span>();
-                <span class="kw">let</span> <span class="ident">lower</span> <span class="op">=</span> <span class="self">Self</span><span class="ident">::from</span>(<span class="ident">BTreeNode::Leaf</span>(<span class="ident">children</span>));
-                <span class="kw">let</span> <span class="ident">upper</span> <span class="op">=</span> <span class="self">Self</span><span class="ident">::from</span>(<span class="ident">BTreeNode::Leaf</span>(<span class="ident">upper</span>));
+                <span class="kw">let</span> <span class="ident">lower</span> <span class="op">=</span> <span class="ident"><span class="self">Self</span>::from</span>(<span class="ident">BTreeNode::Leaf</span>(<span class="ident">children</span>));
+                <span class="kw">let</span> <span class="ident">upper</span> <span class="op">=</span> <span class="ident"><span class="self">Self</span>::from</span>(<span class="ident">BTreeNode::Leaf</span>(<span class="ident">upper</span>));
 
                 (<span class="ident">Interior::from</span>(<span class="ident">lower</span>), <span class="ident">Interior::from</span>(<span class="ident">upper</span>))
             }
@@ -2263,8 +2262,8 @@
                 <span class="kw">let</span> <span class="ident">upper</span> <span class="op">=</span> <span class="ident">children</span>
                     .<span class="ident">splice</span>((<span class="ident">children</span>.<span class="ident">len</span>() <span class="op">+</span> <span class="number">1</span>) <span class="op">/</span> <span class="number">2</span>.., <span class="ident">std::iter::empty</span>())
                     .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span><span class="op">&gt;</span>();
-                <span class="kw">let</span> <span class="ident">lower</span> <span class="op">=</span> <span class="self">Self</span><span class="ident">::from</span>(<span class="ident">BTreeNode::Interior</span>(<span class="ident">children</span>));
-                <span class="kw">let</span> <span class="ident">upper</span> <span class="op">=</span> <span class="self">Self</span><span class="ident">::from</span>(<span class="ident">BTreeNode::Interior</span>(<span class="ident">upper</span>));
+                <span class="kw">let</span> <span class="ident">lower</span> <span class="op">=</span> <span class="ident"><span class="self">Self</span>::from</span>(<span class="ident">BTreeNode::Interior</span>(<span class="ident">children</span>));
+                <span class="kw">let</span> <span class="ident">upper</span> <span class="op">=</span> <span class="ident"><span class="self">Self</span>::from</span>(<span class="ident">BTreeNode::Interior</span>(<span class="ident">upper</span>));
                 (<span class="ident">Interior::from</span>(<span class="ident">lower</span>), <span class="ident">Interior::from</span>(<span class="ident">upper</span>))
             }
             <span class="ident">BTreeNode::Uninitialized</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable!</span>(),
@@ -2581,13 +2580,13 @@
 <span class="kw">impl</span> <span class="ident">NodeInclusion</span> {
     <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">next</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">match</span> <span class="self">self</span> {
-            <span class="self">Self</span><span class="ident">::Exclude</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::Exclude</span>,
-            <span class="self">Self</span><span class="ident">::IncludeNext</span> <span class="op">|</span> <span class="self">Self</span><span class="ident">::Include</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::Include</span>,
+            <span class="ident"><span class="self">Self</span>::Exclude</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident"><span class="self">Self</span>::Exclude</span>,
+            <span class="ident"><span class="self">Self</span>::IncludeNext</span> <span class="op">|</span> <span class="ident"><span class="self">Self</span>::Include</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident"><span class="self">Self</span>::Include</span>,
         }
     }
 
     <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">should_include</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="macro">matches!</span>(<span class="self">self</span>, <span class="self">Self</span><span class="ident">::Include</span>)
+        <span class="macro">matches!</span>(<span class="self">self</span>, <span class="ident"><span class="self">Self</span>::Include</span>)
     }
 }
 
@@ -2696,7 +2695,7 @@
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">I</span><span class="op">&gt;</span> <span class="ident">Iterator</span> <span class="kw">for</span> <span class="ident">DirectionalSliceIterator</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">I</span><span class="op">&gt;</span> {
     <span class="kw">type</span> <span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">I</span>;
 
-    <span class="kw">fn</span> <span class="ident">next</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Item</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">next</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::Item</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">forwards</span> <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">index</span> <span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">contents</span>.<span class="ident">len</span>() {
             <span class="kw">let</span> <span class="ident">element</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">contents</span>[<span class="self">self</span>.<span class="ident">index</span>];
             <span class="self">self</span>.<span class="ident">index</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
@@ -2759,7 +2758,7 @@
         }
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="nebari" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>
     <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script>
 </body></html>

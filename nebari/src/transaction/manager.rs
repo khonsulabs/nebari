@@ -136,7 +136,6 @@ impl<Manager: FileManager> Deref for TransactionManager<Manager> {
     }
 }
 
-// TODO: when an error happens, we should try to recover.
 #[allow(clippy::needless_pass_by_value)]
 fn transaction_writer_thread<File: ManagedFile>(
     state_sender: flume::Sender<Result<State, Error>>,
@@ -152,9 +151,9 @@ fn transaction_writer_thread<File: ManagedFile>(
         return;
     }
 
-    drop(state_sender.send(Ok(state.clone())));
+    let mut log = TransactionLog::<File>::open(&log_path, state.clone(), context).unwrap();
 
-    let mut log = TransactionLog::<File>::open(&log_path, state, context).unwrap();
+    drop(state_sender.send(Ok(state)));
 
     while let Ok(transaction) = transactions.recv() {
         let mut transaction_batch = Vec::with_capacity(BATCH);

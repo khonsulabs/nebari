@@ -35,7 +35,7 @@ impl ManagedFile for StdFile {
     ) -> Result<Self, Error> {
         let path = path.as_ref();
         Ok(Self {
-            file: File::open(path).unwrap(),
+            file: File::open(path)?,
             path: path.to_path_buf(),
             id,
         })

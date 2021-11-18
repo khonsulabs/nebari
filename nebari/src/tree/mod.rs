@@ -419,7 +419,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     }
 
     /// Gets the values stored in `keys`. Does not error if a key is missing.
-    /// Returns key/value pairs in an unspecified order.
+    /// Returns key/value pairs in an unspecified order. Keys are required to be
+    /// pre-sorted.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn get_multiple(
         &mut self,

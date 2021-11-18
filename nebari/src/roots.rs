@@ -414,7 +414,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     }
 
     /// Retrieves the values of `keys`. If any keys are not found, they will be
-    /// omitted from the results.
+    /// omitted from the results. Keys are required to be pre-sorted.
     pub fn get_multiple(
         &mut self,
         keys: &[&[u8]],
@@ -681,7 +681,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     }
 
     /// Retrieves the values of `keys`. If any keys are not found, they will be
-    /// omitted from the results.
+    /// omitted from the results. Keys are required to be pre-sorted.
     pub fn get_multiple(
         &self,
         keys: &[&[u8]],

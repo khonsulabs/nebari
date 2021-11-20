@@ -3,11 +3,9 @@ use std::{
     cmp::Ordering,
     fmt::{Debug, Write},
     io::{self, ErrorKind, Read},
-    ops::{Bound, Deref},
+    ops::Deref,
     sync::Arc,
 };
-
-use ranges::Domain;
 
 /// A wrapper around a `Cow<'a, [u8]>` wrapper that implements Read, and has a
 /// convenience method to take a slice of bytes as another Buffer which shares a
@@ -198,14 +196,5 @@ impl<'a> Read for Buffer<'a> {
         self.position = end;
 
         Ok(bytes_read)
-    }
-}
-
-impl<'a> Domain for Buffer<'a> {
-    const DISCRETE: bool = false;
-
-    #[must_use]
-    fn minimum() -> Bound<Self> {
-        Bound::Included(Buffer::from(b""))
     }
 }

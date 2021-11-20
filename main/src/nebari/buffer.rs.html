@@ -198,27 +198,14 @@
 <span id="198">198</span>
 <span id="199">199</span>
 <span id="200">200</span>
-<span id="201">201</span>
-<span id="202">202</span>
-<span id="203">203</span>
-<span id="204">204</span>
-<span id="205">205</span>
-<span id="206">206</span>
-<span id="207">207</span>
-<span id="208">208</span>
-<span id="209">209</span>
-<span id="210">210</span>
-<span id="211">211</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">borrow::Cow</span>,
     <span class="ident">cmp::Ordering</span>,
     <span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Write</span>},
     <span class="ident">io</span>::{<span class="self">self</span>, <span class="ident">ErrorKind</span>, <span class="ident">Read</span>},
-    <span class="ident">ops</span>::{<span class="ident">Bound</span>, <span class="ident">Deref</span>},
+    <span class="ident">ops::Deref</span>,
     <span class="ident">sync::Arc</span>,
 };
-
-<span class="kw">use</span> <span class="ident">ranges::Domain</span>;
 
 <span class="doccomment">/// A wrapper around a `Cow&lt;&#39;a, [u8]&gt;` wrapper that implements Read, and has a</span>
 <span class="doccomment">/// convenience method to take a slice of bytes as another Buffer which shares a</span>
@@ -409,15 +396,6 @@
         <span class="self">self</span>.<span class="ident">position</span> <span class="op">=</span> <span class="ident">end</span>;
 
         <span class="prelude-val">Ok</span>(<span class="ident">bytes_read</span>)
-    }
-}
-
-<span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="ident">Domain</span> <span class="kw">for</span> <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
-    <span class="kw">const</span> <span class="ident">DISCRETE</span>: <span class="ident">bool</span> <span class="op">=</span> <span class="bool-val">false</span>;
-
-    <span class="attribute">#[<span class="ident">must_use</span>]</span>
-    <span class="kw">fn</span> <span class="ident">minimum</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Bound</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
-        <span class="ident">Bound::Included</span>(<span class="ident">Buffer::from</span>(<span class="string">b&quot;&quot;</span>))
     }
 }
 </code></pre></div>

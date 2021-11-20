@@ -15,14 +15,14 @@ jobs:
           path: |
             ~/.cargo/.crates.toml
             ~/.cargo/.crates2.json
-            ~/.cargo/bin/cargo-audit
-          key: cargo-audit
-      - name: Install cargo-audit
-        run: cargo -v install cargo-audit
+            ~/.cargo/bin/cargo-deny
+          key: cargo-deny
+      - name: Install cargo-deny
+        run: cargo -v install cargo-deny
       - name: Checkout
         uses: actions/checkout@v2
         with:
           ref: ${{ matrix.branch }}
       - name: Audit
         run: |
-          cargo audit -D warnings --ignore RUSTSEC-2020-0159
+          cargo xtask audit

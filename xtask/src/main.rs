@@ -1,6 +1,7 @@
 use devx_cmd::read;
 use khonsu_tools::{
     anyhow,
+    audit::{self, Audit},
     code_coverage::{self, CodeCoverage},
 };
 use structopt::StructOpt;
@@ -14,6 +15,9 @@ pub enum Commands {
         install_dependencies: bool,
     },
     GenerateBenchmarkOverview,
+    Audit {
+        command: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -23,6 +27,7 @@ fn main() -> anyhow::Result<()> {
         Commands::GenerateCodeCoverageReport {
             install_dependencies,
         } => CodeCoverage::<CoverageConfig>::execute(install_dependencies),
+        Commands::Audit { command } => Audit::<AuditConfig>::execute(command),
     }
 }
 
@@ -59,4 +64,16 @@ fn generate_benchmark_overview() -> anyhow::Result<()> {
     std::fs::write("target/criterion/index.html", &overview)?;
 
     Ok(())
+}
+
+struct AuditConfig;
+
+impl audit::Config for AuditConfig {
+    fn args() -> Vec<String> {
+        vec![
+            String::from("--all-features"),
+            String::from("--exclude=xtask"),
+            String::from("--exclude=benchmarks"),
+        ]
+    }
 }

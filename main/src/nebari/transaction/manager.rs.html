@@ -326,7 +326,7 @@
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">Manager</span>: <span class="ident">FileManager</span><span class="op">&gt;</span> <span class="ident">TransactionManager</span><span class="op">&lt;</span><span class="ident">Manager</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Spawns a new transaction manager. The transaction manager runs its own</span>
     <span class="doccomment">/// thread that writes to the transaction log.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">spawn</span>(<span class="ident">directory</span>: <span class="kw-2">&amp;</span><span class="ident">Path</span>, <span class="ident">context</span>: <span class="ident">Context</span><span class="op">&lt;</span><span class="ident">Manager</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">spawn</span>(<span class="ident">directory</span>: <span class="kw-2">&amp;</span><span class="ident">Path</span>, <span class="ident">context</span>: <span class="ident">Context</span><span class="op">&lt;</span><span class="ident">Manager</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">transaction_sender</span>, <span class="ident">receiver</span>) <span class="op">=</span> <span class="ident">flume::bounded</span>(<span class="number">32</span>);
         <span class="kw">let</span> <span class="ident">log_path</span> <span class="op">=</span> <span class="ident"><span class="self">Self</span>::log_path</span>(<span class="ident">directory</span>);
 
@@ -354,7 +354,7 @@
 
     <span class="doccomment">/// Push `transaction` to the log. Once this function returns, the</span>
     <span class="doccomment">/// transaction log entry has been fully flushed to disk.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">push</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">transaction</span>: <span class="ident">TransactionHandle</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">TreeLocks</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">push</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">transaction</span>: <span class="ident">TransactionHandle</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">TreeLocks</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">completion_sender</span>, <span class="ident">completion_receiver</span>) <span class="op">=</span> <span class="ident">flume::bounded</span>(<span class="number">1</span>);
         <span class="self">self</span>.<span class="ident">transaction_sender</span>
             .<span class="ident">send</span>((<span class="ident">transaction</span>, <span class="ident">completion_sender</span>))
@@ -369,11 +369,11 @@
     <span class="doccomment">/// Scans the transaction log for entries with ids within `range`. Invokes</span>
     <span class="doccomment">/// `callback` for each entry found. The scan will always scan forwards</span>
     <span class="doccomment">/// starting with the lowest ID matching the range.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">scan</span><span class="op">&lt;</span><span class="ident">Callback</span>: <span class="ident">FnMut</span>(<span class="ident">LogEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span><span class="op">&gt;</span>(
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">scan</span><span class="op">&lt;</span><span class="ident">Callback</span>: <span class="ident">FnMut</span>(<span class="ident">LogEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="ident">bool</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">range</span>: <span class="kw">impl</span> <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">callback</span>: <span class="ident">Callback</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">log</span> <span class="op">=</span> <span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">Manager::File</span><span class="op">&gt;</span><span class="ident">::read</span>(
             <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">path</span>(),
             <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">clone</span>(),
@@ -383,14 +383,14 @@
     }
 
     <span class="doccomment">/// Returns true if the transaction id was recorded in the transaction log. This method caches</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">transaction_was_successful</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">transaction_id</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">transaction_was_successful</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">transaction_id</span>: <span class="ident">u64</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">transaction_position</span>(<span class="ident">transaction_id</span>)
             .<span class="ident">map</span>(<span class="op">|</span><span class="ident">position</span><span class="op">|</span> <span class="ident">position</span>.<span class="ident">is_some</span>())
     }
 
     <span class="doccomment">/// Returns the location on disk of the transaction, if found.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">transaction_position</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">transaction_id</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="ident">transaction_id</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">transaction_position</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">transaction_id</span>: <span class="ident">u64</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="ident">transaction_id</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
         } <span class="kw">else</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">position</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">transaction_id_position</span>(<span class="ident">transaction_id</span>) {
             <span class="prelude-val">Ok</span>(<span class="ident">position</span>)
@@ -402,12 +402,12 @@
                 <span class="ident">vault</span>: <span class="self">self</span>.<span class="ident">context</span>.<span class="ident">vault</span>(),
             })<span class="question-mark">?</span>;
             <span class="kw">match</span> <span class="ident">transaction</span> {
-                <span class="ident">ScanResult::Found</span> { <span class="ident">position</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">ScanResult::Found</span> { <span class="ident">position</span>, .. } =&gt; {
                     <span class="self">self</span>.<span class="ident">state</span>
                         .<span class="ident">note_transaction_id_status</span>(<span class="ident">transaction_id</span>, <span class="prelude-val">Some</span>(<span class="ident">position</span>));
                     <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">position</span>))
                 }
-                <span class="ident">ScanResult::NotFound</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">ScanResult::NotFound</span> { .. } =&gt; {
                     <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">note_transaction_id_status</span>(<span class="ident">transaction_id</span>, <span class="prelude-val">None</span>);
                     <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
                 }
@@ -415,13 +415,13 @@
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">log_path</span>(<span class="ident">directory</span>: <span class="kw-2">&amp;</span><span class="ident">Path</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PathBuf</span> {
+    <span class="kw">fn</span> <span class="ident">log_path</span>(<span class="ident">directory</span>: <span class="kw-2">&amp;</span><span class="ident">Path</span>) -&gt; <span class="ident">PathBuf</span> {
         <span class="ident">directory</span>.<span class="ident">join</span>(<span class="string">&quot;_transactions&quot;</span>)
     }
 
     <span class="doccomment">/// Returns the current state of the transaction log.</span>
     <span class="attribute">#[<span class="ident">must_use</span>]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">State</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident">State</span> {
         <span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="kw-2">*</span><span class="self">self</span>
     }
 }
@@ -429,7 +429,7 @@
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">Manager</span>: <span class="ident">FileManager</span><span class="op">&gt;</span> <span class="ident">Deref</span> <span class="kw">for</span> <span class="ident">TransactionManager</span><span class="op">&lt;</span><span class="ident">Manager</span><span class="op">&gt;</span> {
     <span class="kw">type</span> <span class="ident">Target</span> <span class="op">=</span> <span class="ident">State</span>;
 
-    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Target</span> {
+    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Target</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">state</span>
     }
 }
@@ -471,12 +471,12 @@
                         <span class="ident">locked_trees</span>,
                     },
                     <span class="ident">sender</span>,
-                )) <span class="op">=</span><span class="op">&gt;</span> {
+                )) =&gt; {
                     <span class="ident">transaction_batch</span>.<span class="ident">push</span>(<span class="ident">transaction</span>);
                     <span class="ident">completion_senders</span>.<span class="ident">push</span>((<span class="ident">sender</span>, <span class="ident">locked_trees</span>));
                 }
                 <span class="comment">// At this point either type of error we want to finish writing the transactions we have.</span>
-                <span class="prelude-val">Err</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw">break</span>,
+                <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; <span class="kw">break</span>,
             }
         }
         <span class="ident">log</span>.<span class="ident">push</span>(<span class="ident">transaction_batch</span>).<span class="ident">unwrap</span>();
@@ -504,7 +504,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">TreeLock</span> {
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">new</span>() -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">data</span>: <span class="ident">Arc::new</span>(<span class="ident">TreeLockData</span> {
                 <span class="ident">locked</span>: <span class="ident">AtomicBool::new</span>(<span class="bool-val">false</span>),
@@ -513,7 +513,7 @@
         }
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">lock</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">TreeLockHandle</span> {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">lock</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">TreeLockHandle</span> {
         <span class="comment">// Loop until we acquire a lock</span>
         <span class="kw">loop</span> {
             <span class="comment">// Try to acquire the lock without any possibility of blocking</span>
@@ -584,13 +584,13 @@
 <span class="kw">impl</span> <span class="ident">Deref</span> <span class="kw">for</span> <span class="ident">TransactionHandle</span> {
     <span class="kw">type</span> <span class="ident">Target</span> <span class="op">=</span> <span class="ident">LogEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>;
 
-    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Target</span> {
+    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Target</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">transaction</span>
     }
 }
 
 <span class="kw">impl</span> <span class="ident">DerefMut</span> <span class="kw">for</span> <span class="ident">TransactionHandle</span> {
-    <span class="kw">fn</span> <span class="ident">deref_mut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident"><span class="self">Self</span>::Target</span> {
+    <span class="kw">fn</span> <span class="ident">deref_mut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident"><span class="self">Self</span>::Target</span> {
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">transaction</span>
     }
 }

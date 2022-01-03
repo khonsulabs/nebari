@@ -318,7 +318,7 @@
 <span class="kw">fn</span> <span class="ident">lookup_buffer</span>(
     <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">std::path::Path</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Send</span>,
     <span class="ident">create_if_not_found</span>: <span class="ident">bool</span>,
-) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">open_buffers</span> <span class="op">=</span> <span class="ident">OPEN_BUFFERS</span>.<span class="ident">lock</span>();
     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">existing_buffer</span>) <span class="op">=</span> <span class="ident">open_buffers</span>.<span class="ident">get</span>(<span class="ident">path</span>.<span class="ident">as_ref</span>()).<span class="ident">and_then</span>(<span class="ident">Weak::upgrade</span>) {
         <span class="prelude-val">Some</span>(<span class="ident">existing_buffer</span>)
@@ -334,18 +334,18 @@
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::cast_possible_truncation</span>)]</span>
 <span class="kw">impl</span> <span class="ident">ManagedFile</span> <span class="kw">for</span> <span class="ident">MemoryFile</span> {
     <span class="kw">type</span> <span class="ident">Manager</span> <span class="op">=</span> <span class="ident">MemoryFileManager</span>;
-    <span class="kw">fn</span> <span class="ident">id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">id</span>
     }
 
-    <span class="kw">fn</span> <span class="ident">path</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">Path</span> {
+    <span class="kw">fn</span> <span class="ident">path</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident">Path</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">path</span>
     }
 
     <span class="kw">fn</span> <span class="ident">open_for_read</span>(
         <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">std::path::Path</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Send</span>,
         <span class="ident">id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_ref</span>();
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
             <span class="ident">id</span>,
@@ -358,7 +358,7 @@
     <span class="kw">fn</span> <span class="ident">open_for_append</span>(
         <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">std::path::Path</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Send</span>,
         <span class="ident">id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_ref</span>();
         <span class="kw">let</span> <span class="ident">buffer</span> <span class="op">=</span> <span class="ident">lookup_buffer</span>(<span class="ident">path</span>, <span class="bool-val">true</span>).<span class="ident">unwrap</span>();
         <span class="kw">let</span> <span class="ident">position</span> <span class="op">=</span> {
@@ -373,21 +373,21 @@
         })
     }
 
-    <span class="kw">fn</span> <span class="ident">length</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">length</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">file_buffer</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">buffer</span>.<span class="ident">read</span>();
         <span class="prelude-val">Ok</span>(<span class="ident">file_buffer</span>.<span class="ident">len</span>() <span class="kw">as</span> <span class="ident">u64</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">close</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">close</span>(<span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="prelude-val">Ok</span>(())
     }
 }
 
 <span class="kw">impl</span> <span class="ident">std::io::Seek</span> <span class="kw">for</span> <span class="ident">MemoryFile</span> {
-    <span class="kw">fn</span> <span class="ident">seek</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">pos</span>: <span class="ident">SeekFrom</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">io::Result</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">seek</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">pos</span>: <span class="ident">SeekFrom</span>) -&gt; <span class="ident">io::Result</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="ident">pos</span> {
-            <span class="ident">SeekFrom::Start</span>(<span class="ident">position</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">position</span> <span class="op">=</span> <span class="ident">usize::try_from</span>(<span class="ident">position</span>).<span class="ident">unwrap</span>(),
-            <span class="ident">SeekFrom::End</span>(<span class="ident">from_end</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">SeekFrom::Start</span>(<span class="ident">position</span>) =&gt; <span class="self">self</span>.<span class="ident">position</span> <span class="op">=</span> <span class="ident">usize::try_from</span>(<span class="ident">position</span>).<span class="ident">unwrap</span>(),
+            <span class="ident">SeekFrom::End</span>(<span class="ident">from_end</span>) =&gt; {
                 <span class="kw">let</span> <span class="ident">buffer</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">buffer</span>.<span class="ident">read</span>();
                 <span class="self">self</span>.<span class="ident">position</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">from_end</span>.<span class="ident">is_positive</span>() {
                     <span class="ident">buffer</span>.<span class="ident">len</span>()
@@ -395,7 +395,7 @@
                     <span class="ident">buffer</span>.<span class="ident">len</span>() <span class="op">-</span> <span class="ident">usize::try_from</span>(<span class="ident">from_end</span>.<span class="ident">neg</span>()).<span class="ident">unwrap</span>()
                 };
             }
-            <span class="ident">SeekFrom::Current</span>(<span class="ident">relative</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">SeekFrom::Current</span>(<span class="ident">relative</span>) =&gt; {
                 <span class="self">self</span>.<span class="ident">position</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">relative</span>.<span class="ident">is_positive</span>() {
                     <span class="self">self</span>.<span class="ident">position</span> <span class="op">+</span> <span class="ident">usize::try_from</span>(<span class="ident">relative</span>).<span class="ident">unwrap</span>()
                 } <span class="kw">else</span> {
@@ -408,7 +408,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">std::io::Read</span> <span class="kw">for</span> <span class="ident">MemoryFile</span> {
-    <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">buffer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">io::Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">buffer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) -&gt; <span class="ident">io::Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">file_buffer</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">buffer</span>.<span class="ident">read</span>();
 
         <span class="kw">let</span> <span class="ident">read_end</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">position</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">+</span> <span class="ident">buffer</span>.<span class="ident">len</span>();
@@ -427,7 +427,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">std::io::Write</span> <span class="kw">for</span> <span class="ident">MemoryFile</span> {
-    <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">io::Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) -&gt; <span class="ident">io::Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">file_buffer</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">buffer</span>.<span class="ident">write</span>();
 
         <span class="ident">file_buffer</span>.<span class="ident">extend_from_slice</span>(<span class="ident">buf</span>);
@@ -436,7 +436,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">buf</span>.<span class="ident">len</span>())
     }
 
-    <span class="kw">fn</span> <span class="ident">flush</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">io::Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">flush</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="ident">io::Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="prelude-val">Ok</span>(())
     }
 }
@@ -455,7 +455,7 @@
         <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>,
         <span class="ident">create_if_needed</span>: <span class="ident">bool</span>,
         <span class="ident">id</span>: <span class="ident">u64</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_ref</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">open_files</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">open_files</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">open_file</span>) <span class="op">=</span> <span class="ident">open_files</span>.<span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="ident">id</span>) {
@@ -474,18 +474,18 @@
     <span class="kw">type</span> <span class="ident">File</span> <span class="op">=</span> <span class="ident">MemoryFile</span>;
     <span class="kw">type</span> <span class="ident">FileHandle</span> <span class="op">=</span> <span class="ident">OpenMemoryFile</span>;
 
-    <span class="kw">fn</span> <span class="ident">append</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::FileHandle</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">append</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::FileHandle</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_ref</span>();
         <span class="kw">let</span> <span class="ident">id</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">file_ids</span>.<span class="ident">file_id_for_path</span>(<span class="ident">path</span>);
         <span class="self">self</span>.<span class="ident">lookup_file</span>(<span class="ident">path</span>, <span class="bool-val">true</span>, <span class="ident">id</span>)
             .<span class="ident">map</span>(<span class="op">|</span><span class="ident">file</span><span class="op">|</span> <span class="ident">OpenMemoryFile</span>(<span class="ident">file</span>.<span class="ident">unwrap</span>()))
     }
 
-    <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::FileHandle</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::FileHandle</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">append</span>(<span class="ident">path</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">file_length</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">file_length</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lookup_file</span>(<span class="ident">path</span>, <span class="bool-val">false</span>, <span class="number">0</span>)<span class="question-mark">?</span>.<span class="ident">ok_or_else</span>(<span class="op">|</span><span class="op">|</span> {
             <span class="ident">ErrorKind::Io</span>(<span class="ident">io::Error::new</span>(
                 <span class="ident">io::ErrorKind::NotFound</span>,
@@ -497,11 +497,11 @@
         <span class="prelude-val">Ok</span>(<span class="ident">buffer</span>.<span class="ident">len</span>() <span class="kw">as</span> <span class="ident">u64</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">exists</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">exists</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="ident">lookup_file</span>(<span class="ident">path</span>, <span class="bool-val">false</span>, <span class="number">0</span>)<span class="question-mark">?</span>.<span class="ident">is_some</span>())
     }
 
-    <span class="kw">fn</span> <span class="ident">delete</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">delete</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_ref</span>();
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">id</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">file_ids</span>.<span class="ident">remove_file_id_for_path</span>(<span class="ident">path</span>) {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">open_files</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">open_files</span>.<span class="ident">lock</span>();
@@ -511,7 +511,7 @@
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">delete_directory</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">delete_directory</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_ref</span>();
         <span class="kw">let</span> <span class="ident">removed_ids</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">file_ids</span>.<span class="ident">remove_file_ids_for_path_prefix</span>(<span class="ident">path</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">open_files</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">open_files</span>.<span class="ident">lock</span>();
@@ -535,12 +535,12 @@
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">OpenMemoryFile</span>(<span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span><span class="op">&gt;</span>);
 
 <span class="kw">impl</span> <span class="ident">OpenableFile</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">OpenMemoryFile</span> {
-    <span class="kw">fn</span> <span class="ident">id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">f</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">lock</span>();
         <span class="ident">f</span>.<span class="ident">id</span>()
     }
 
-    <span class="kw">fn</span> <span class="ident">execute</span><span class="op">&lt;</span><span class="ident">W</span>: <span class="ident">FileOp</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">writer</span>: <span class="ident">W</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">W::Output</span> {
+    <span class="kw">fn</span> <span class="ident">execute</span><span class="op">&lt;</span><span class="ident">W</span>: <span class="ident">FileOp</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">writer</span>: <span class="ident">W</span>) -&gt; <span class="ident">W::Output</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">file</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">lock</span>();
         <span class="ident">writer</span>.<span class="ident">execute</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">file</span>)
     }
@@ -550,7 +550,7 @@
         <span class="ident">path</span>: <span class="kw-2">&amp;</span><span class="ident">Path</span>,
         <span class="ident">manager</span>: <span class="kw-2">&amp;</span><span class="ident">MemoryFileManager</span>,
         <span class="ident">publish_callback</span>: <span class="ident">C</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">path_buffer</span> <span class="op">=</span> <span class="ident">lookup_buffer</span>(<span class="ident">path</span>, <span class="bool-val">false</span>).<span class="ident">expect</span>(<span class="string">&quot;replacement buffer not found&quot;</span>);
         <span class="kw">let</span> <span class="ident">my_path</span> <span class="op">=</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">file</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">lock</span>();
@@ -569,7 +569,7 @@
         <span class="prelude-val">Ok</span>(<span class="self">self</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">close</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">close</span>(<span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">drop</span>(<span class="self">self</span>);
         <span class="prelude-val">Ok</span>(())
     }

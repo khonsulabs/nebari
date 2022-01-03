@@ -2110,11 +2110,11 @@
 <span class="kw">impl</span> <span class="ident">TryFrom</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">PageHeader</span> {
     <span class="kw">type</span> <span class="ident">Error</span> <span class="op">=</span> <span class="ident">ErrorKind</span>;
 
-    <span class="kw">fn</span> <span class="ident">try_from</span>(<span class="ident">value</span>: <span class="ident">u8</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident"><span class="self">Self</span>::Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">try_from</span>(<span class="ident">value</span>: <span class="ident">u8</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident"><span class="self">Self</span>::Error</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="ident">value</span> {
-            <span class="number">2</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident"><span class="self">Self</span>::VersionedHeader</span>),
-            <span class="number">3</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident"><span class="self">Self</span>::UnversionedHeader</span>),
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">ErrorKind::data_integrity</span>(<span class="macro">format!</span>(
+            <span class="number">2</span> =&gt; <span class="prelude-val">Ok</span>(<span class="ident"><span class="self">Self</span>::VersionedHeader</span>),
+            <span class="number">3</span> =&gt; <span class="prelude-val">Ok</span>(<span class="ident"><span class="self">Self</span>::UnversionedHeader</span>),
+            <span class="kw">_</span> =&gt; <span class="prelude-val">Err</span>(<span class="ident">ErrorKind::data_integrity</span>(<span class="macro">format!</span>(
                 <span class="string">&quot;invalid block header: {}&quot;</span>,
                 <span class="ident">value</span>
             ))),
@@ -2139,13 +2139,13 @@
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">Root</span>: <span class="ident">root::Root</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">Deref</span> <span class="kw">for</span> <span class="ident">TreeFile</span><span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span> {
     <span class="kw">type</span> <span class="ident">Target</span> <span class="op">=</span> <span class="op">&lt;</span><span class="ident">File::Manager</span> <span class="kw">as</span> <span class="ident">FileManager</span><span class="op">&gt;</span><span class="ident">::FileHandle</span>;
 
-    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Target</span> {
+    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Target</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">file</span>
     }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">Root</span>: <span class="ident">root::Root</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">DerefMut</span> <span class="kw">for</span> <span class="ident">TreeFile</span><span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span> {
-    <span class="kw">fn</span> <span class="ident">deref_mut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident"><span class="self">Self</span>::Target</span> {
+    <span class="kw">fn</span> <span class="ident">deref_mut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident"><span class="self">Self</span>::Target</span> {
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">file</span>
     }
 }
@@ -2159,7 +2159,7 @@
         <span class="ident">state</span>: <span class="ident">State</span><span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>,
         <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
             <span class="ident">file</span>,
             <span class="ident">state</span>,
@@ -2175,7 +2175,7 @@
         <span class="ident">state</span>: <span class="ident">State</span><span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>,
         <span class="ident">context</span>: <span class="kw-2">&amp;</span><span class="ident">Context</span><span class="op">&lt;</span><span class="ident">File::Manager</span><span class="op">&gt;</span>,
         <span class="ident">transactions</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">TransactionManager</span><span class="op">&lt;</span><span class="ident">File::Manager</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">context</span>.<span class="ident">file_manager</span>.<span class="ident">read</span>(<span class="ident">path</span>.<span class="ident">as_ref</span>())<span class="question-mark">?</span>;
         <span class="ident"><span class="self">Self</span>::initialize_state</span>(<span class="kw-2">&amp;</span><span class="ident">state</span>, <span class="ident">path</span>.<span class="ident">as_ref</span>(), <span class="ident">file</span>.<span class="ident">id</span>(), <span class="ident">context</span>, <span class="ident">transactions</span>)<span class="question-mark">?</span>;
         <span class="ident"><span class="self">Self</span>::new</span>(<span class="ident">file</span>, <span class="ident">state</span>, <span class="ident">context</span>.<span class="ident">vault</span>.<span class="ident">clone</span>(), <span class="ident">context</span>.<span class="ident">cache</span>.<span class="ident">clone</span>())
@@ -2187,7 +2187,7 @@
         <span class="ident">state</span>: <span class="ident">State</span><span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>,
         <span class="ident">context</span>: <span class="kw-2">&amp;</span><span class="ident">Context</span><span class="op">&lt;</span><span class="ident">File::Manager</span><span class="op">&gt;</span>,
         <span class="ident">transactions</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">TransactionManager</span><span class="op">&lt;</span><span class="ident">File::Manager</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">context</span>.<span class="ident">file_manager</span>.<span class="ident">append</span>(<span class="ident">path</span>.<span class="ident">as_ref</span>())<span class="question-mark">?</span>;
         <span class="ident"><span class="self">Self</span>::initialize_state</span>(<span class="kw-2">&amp;</span><span class="ident">state</span>, <span class="ident">path</span>.<span class="ident">as_ref</span>(), <span class="ident">file</span>.<span class="ident">id</span>(), <span class="ident">context</span>, <span class="ident">transactions</span>)<span class="question-mark">?</span>;
         <span class="ident"><span class="self">Self</span>::new</span>(<span class="ident">file</span>, <span class="ident">state</span>, <span class="ident">context</span>.<span class="ident">vault</span>.<span class="ident">clone</span>(), <span class="ident">context</span>.<span class="ident">cache</span>.<span class="ident">clone</span>())
@@ -2200,7 +2200,7 @@
         <span class="ident">file_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">context</span>: <span class="kw-2">&amp;</span><span class="ident">Context</span><span class="op">&lt;</span><span class="ident">File::Manager</span><span class="op">&gt;</span>,
         <span class="ident">transaction_manager</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">TransactionManager</span><span class="op">&lt;</span><span class="ident">File::Manager</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         {
             <span class="kw">let</span> <span class="ident">read_state</span> <span class="op">=</span> <span class="ident">state</span>.<span class="ident">read</span>();
             <span class="kw">if</span> <span class="ident">read_state</span>.<span class="ident">initialized</span>() {
@@ -2215,7 +2215,7 @@
 
         <span class="ident">active_state</span>.<span class="ident">file_id</span> <span class="op">=</span> <span class="ident">file_id</span>;
         <span class="kw">let</span> <span class="ident">file_length</span> <span class="op">=</span> <span class="ident">context</span>.<span class="ident">file_manager</span>.<span class="ident">file_length</span>(<span class="ident">file_path</span>)<span class="question-mark">?</span>;
-        <span class="kw">if</span> <span class="ident">file_length</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">if</span> <span class="ident">file_length</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="ident">active_state</span>.<span class="ident">root</span>.<span class="ident">initialize_default</span>();
             <span class="ident">active_state</span>.<span class="ident">publish</span>(<span class="ident">state</span>);
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(());
@@ -2240,7 +2240,7 @@
                 <span class="kw-2">&amp;</span><span class="ident">scratch_buffer</span>[<span class="number">0</span>..<span class="number">3</span>],
                 <span class="ident">PageHeader::try_from</span>(<span class="ident">scratch_buffer</span>[<span class="number">3</span>]),
             ) {
-                (<span class="string">b&quot;Nbr&quot;</span>, <span class="prelude-val">Ok</span>(<span class="ident">header</span>)) <span class="op">=</span><span class="op">&gt;</span> {
+                (<span class="string">b&quot;Nbr&quot;</span>, <span class="prelude-val">Ok</span>(<span class="ident">header</span>)) =&gt; {
                     <span class="kw">if</span> <span class="ident">header</span> <span class="op">!</span><span class="op">=</span> <span class="ident">Root::HEADER</span> {
                         <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::data_integrity</span>(<span class="macro">format!</span>(
                             <span class="string">&quot;Tree {:?} contained another header type&quot;</span>,
@@ -2254,8 +2254,8 @@
                         <span class="ident">context</span>.<span class="ident">vault</span>(),
                         <span class="ident">context</span>.<span class="ident">cache</span>(),
                     )<span class="question-mark">?</span> {
-                        <span class="ident">CacheEntry::Buffer</span>(<span class="ident">buffer</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">buffer</span>,
-                        <span class="ident">CacheEntry::Decoded</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable!</span>(),
+                        <span class="ident">CacheEntry::Buffer</span>(<span class="ident">buffer</span>) =&gt; <span class="ident">buffer</span>,
+                        <span class="ident">CacheEntry::Decoded</span>(<span class="kw">_</span>) =&gt; <span class="macro">unreachable!</span>(),
                     };
                     <span class="kw">let</span> <span class="ident">root</span> <span class="op">=</span> <span class="ident">Root::deserialize</span>(<span class="ident">contents</span>)
                         .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> <span class="ident">ErrorKind::DataIntegrity</span>(<span class="ident">Box::new</span>(<span class="ident">err</span>)))<span class="question-mark">?</span>;
@@ -2263,7 +2263,7 @@
                         <span class="kw">if</span> <span class="op">!</span><span class="ident">transaction_manager</span>.<span class="ident">transaction_was_successful</span>(<span class="ident">root</span>.<span class="ident">transaction_id</span>())<span class="question-mark">?</span> {
                             <span class="comment">// The transaction wasn&#39;t written successfully, so</span>
                             <span class="comment">// we cannot trust the data present.</span>
-                            <span class="kw">if</span> <span class="ident">block_start</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+                            <span class="kw">if</span> <span class="ident">block_start</span> <span class="op">==</span> <span class="number">0</span> {
                                 <span class="comment">// No data was ever fully written.</span>
                                 <span class="ident">active_state</span>.<span class="ident">root</span>.<span class="ident">initialize_default</span>();
                                 <span class="kw">return</span> <span class="prelude-val">Ok</span>(());
@@ -2275,8 +2275,8 @@
                     <span class="ident">active_state</span>.<span class="ident">root</span> <span class="op">=</span> <span class="ident">root</span>;
                     <span class="kw">break</span>;
                 }
-                (<span class="kw">_</span>, <span class="prelude-val">Ok</span>(<span class="kw">_</span>) <span class="op">|</span> <span class="prelude-val">Err</span>(<span class="kw">_</span>)) <span class="op">=</span><span class="op">&gt;</span> {
-                    <span class="kw">if</span> <span class="ident">block_start</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+                (<span class="kw">_</span>, <span class="prelude-val">Ok</span>(<span class="kw">_</span>) <span class="op">|</span> <span class="prelude-val">Err</span>(<span class="kw">_</span>)) =&gt; {
+                    <span class="kw">if</span> <span class="ident">block_start</span> <span class="op">==</span> <span class="number">0</span> {
                         <span class="macro">eprintln!</span>(
                             <span class="string">&quot;Tree {:?} contained data, but no valid pages were found&quot;</span>,
                             <span class="ident">file_path</span>
@@ -2301,7 +2301,7 @@
         <span class="ident">transaction_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">key</span>: <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
         <span class="ident">value</span>: <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">execute</span>(<span class="ident">TreeModifier</span> {
             <span class="ident">state</span>: <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">state</span>,
             <span class="ident">vault</span>: <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">as_deref</span>(),
@@ -2316,7 +2316,7 @@
     }
 
     <span class="doccomment">/// Executes a modification.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">modify</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">modification</span>: <span class="ident">Modification</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">modify</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">modification</span>: <span class="ident">Modification</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">execute</span>(<span class="ident">TreeModifier</span> {
             <span class="ident">state</span>: <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">state</span>,
             <span class="ident">vault</span>: <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">as_deref</span>(),
@@ -2335,16 +2335,16 @@
         <span class="ident">old</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="kw-2">mut</span> <span class="ident">new</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">transaction_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">CompareAndSwapError</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">CompareAndSwapError</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">result</span> <span class="op">=</span> <span class="prelude-val">Ok</span>(());
         <span class="self">self</span>.<span class="ident">modify</span>(<span class="ident">Modification</span> {
             <span class="ident">transaction_id</span>,
             <span class="ident">keys</span>: <span class="macro">vec!</span>[<span class="ident">Buffer::from</span>(<span class="ident">key</span>)],
             <span class="ident">operation</span>: <span class="ident">Operation::CompareSwap</span>(<span class="ident">CompareSwap::new</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="op">|</span><span class="ident">_key</span>, <span class="ident">value</span><span class="op">|</span> {
-                <span class="kw">if</span> <span class="ident">value</span>.<span class="ident">as_ref</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">old</span> {
+                <span class="kw">if</span> <span class="ident">value</span>.<span class="ident">as_ref</span>() <span class="op">==</span> <span class="ident">old</span> {
                     <span class="kw">match</span> <span class="ident">new</span>.<span class="ident">take</span>() {
-                        <span class="prelude-val">Some</span>(<span class="ident">new</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">KeyOperation::Set</span>(<span class="ident">new</span>.<span class="ident">to_owned</span>()),
-                        <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">KeyOperation::Remove</span>,
+                        <span class="prelude-val">Some</span>(<span class="ident">new</span>) =&gt; <span class="ident">KeyOperation::Set</span>(<span class="ident">new</span>.<span class="ident">to_owned</span>()),
+                        <span class="prelude-val">None</span> =&gt; <span class="ident">KeyOperation::Remove</span>,
                     }
                 } <span class="kw">else</span> {
                     <span class="ident">result</span> <span class="op">=</span> <span class="prelude-val">Err</span>(<span class="ident">CompareAndSwapError::Conflict</span>(<span class="ident">value</span>));
@@ -2360,7 +2360,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">key</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>],
         <span class="ident">transaction_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">existing_value</span> <span class="op">=</span> <span class="prelude-val">None</span>;
         <span class="self">self</span>.<span class="ident">modify</span>(<span class="ident">Modification</span> {
             <span class="ident">transaction_id</span>,
@@ -2380,7 +2380,7 @@
         <span class="ident">key</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">value</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">transaction_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">existing_value</span> <span class="op">=</span> <span class="prelude-val">None</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">value</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">value</span>.<span class="ident">into</span>());
         <span class="self">self</span>.<span class="ident">modify</span>(<span class="ident">Modification</span> {
@@ -2401,7 +2401,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;k</span> [<span class="ident">u8</span>],
         <span class="ident">in_transaction</span>: <span class="ident">bool</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buffer</span> <span class="op">=</span> <span class="prelude-val">None</span>;
         <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">execute</span>(<span class="ident">TreeGetter</span> {
             <span class="ident">from_transaction</span>: <span class="ident">in_transaction</span>,
@@ -2426,7 +2426,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">keys</span>: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>[<span class="ident">u8</span>]],
         <span class="ident">in_transaction</span>: <span class="ident">bool</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buffers</span> <span class="op">=</span> <span class="ident">Vec::with_capacity</span>(<span class="ident">keys</span>.<span class="ident">len</span>());
         <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">execute</span>(<span class="ident">TreeGetter</span> {
             <span class="ident">from_transaction</span>: <span class="ident">in_transaction</span>,
@@ -2449,7 +2449,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">range</span>: <span class="ident">B</span>,
         <span class="ident">in_transaction</span>: <span class="ident">bool</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">results</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
         <span class="self">self</span>.<span class="ident">scan</span>(
             <span class="ident">range</span>,
@@ -2484,16 +2484,16 @@
         <span class="ident">node_evaluator</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">NodeEvaluator</span>,
         <span class="ident">key_evaluator</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">KeyEvaluator</span>,
         <span class="ident">key_reader</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">DataCallback</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
     <span class="kw">where</span>
         <span class="ident">Range</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;range</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
-        <span class="ident">NodeEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::ReducedIndex</span>, <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>,
-        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KeyEvaluation</span>,
+        <span class="ident">NodeEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::ReducedIndex</span>, <span class="ident">usize</span>) -&gt; <span class="ident">bool</span>,
+        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>) -&gt; <span class="ident">KeyEvaluation</span>,
         <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(
             <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
             <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>,
             <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
-        ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
     {
         <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">execute</span>(<span class="ident">TreeScanner</span> {
@@ -2512,7 +2512,7 @@
     }
 
     <span class="doccomment">/// Returns the last key of the tree.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">last_key</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">in_transaction</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">last_key</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">in_transaction</span>: <span class="ident">bool</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">result</span> <span class="op">=</span> <span class="prelude-val">None</span>;
         <span class="self">self</span>.<span class="ident">scan</span>(
             ..,
@@ -2533,7 +2533,7 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">last</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">in_transaction</span>: <span class="ident">bool</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">result</span> <span class="op">=</span> <span class="prelude-val">None</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">key_requested</span> <span class="op">=</span> <span class="bool-val">false</span>;
         <span class="self">self</span>.<span class="ident">scan</span>(
@@ -2561,7 +2561,7 @@
     <span class="doccomment">/// Commits the tree. This is only needed if writes were done with a</span>
     <span class="doccomment">/// transaction id. This will fully flush the tree and publish the</span>
     <span class="doccomment">/// transactional state to be available to readers.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">execute</span>(<span class="ident">TreeWriter</span> {
             <span class="ident">state</span>: <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">state</span>,
             <span class="ident">vault</span>: <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">as_deref</span>(),
@@ -2580,7 +2580,7 @@
         <span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">file_manager</span>: <span class="kw-2">&amp;</span><span class="ident">File::Manager</span>,
         <span class="ident">transactions</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">TransactableCompaction</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File::Manager</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">compacted_path</span>, <span class="ident">finisher</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">execute</span>(<span class="ident">TreeCompactor</span> {
             <span class="ident">state</span>: <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">state</span>,
             <span class="ident">vault</span>: <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">as_deref</span>(),
@@ -2618,11 +2618,11 @@
         <span class="ident">in_transaction</span>: <span class="ident">bool</span>,
         <span class="ident">key_evaluator</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">KeyEvaluator</span>,
         <span class="ident">data_callback</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">DataCallback</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
     <span class="kw">where</span>
         <span class="ident">Range</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
-        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="ident">KeySequence</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KeyEvaluation</span>,
-        <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(<span class="ident">KeySequence</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="ident">KeySequence</span>) -&gt; <span class="ident">KeyEvaluation</span>,
+        <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(<span class="ident">KeySequence</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
     {
         <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">execute</span>(<span class="ident">TreeSequenceScanner</span> {
@@ -2666,7 +2666,7 @@
 {
     <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">PathBuf</span>, <span class="ident">TreeCompactionFinisher</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Root</span><span class="op">&gt;</span>), <span class="ident">Error</span><span class="op">&gt;</span>;
 
-    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="self">self</span>, <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident"><span class="self">Self</span>::Output</span> {
+    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="self">self</span>, <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>) -&gt; <span class="ident"><span class="self">Self</span>::Output</span> {
         <span class="kw">let</span> <span class="ident">current_path</span> <span class="op">=</span> <span class="ident">file</span>.<span class="ident">path</span>().<span class="ident">to_path_buf</span>();
         <span class="kw">let</span> <span class="ident">file_name</span> <span class="op">=</span> <span class="ident">current_path</span>
             .<span class="ident">file_name</span>()
@@ -2744,7 +2744,7 @@
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Root</span>: <span class="ident">root::Root</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">FileOp</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">TreeWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Root</span><span class="op">&gt;</span> {
     <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="self">self</span>, <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident"><span class="self">Self</span>::Output</span> {
+    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="self">self</span>, <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>) -&gt; <span class="ident"><span class="self">Self</span>::Output</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">active_state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="ident">active_state</span>.<span class="ident">file_id</span> <span class="op">!</span><span class="op">=</span> <span class="ident">file</span>.<span class="ident">id</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::from</span>(<span class="ident">ErrorKind::TreeCompacted</span>));
@@ -2753,7 +2753,7 @@
             <span class="kw">let</span> <span class="ident">data_block</span> <span class="op">=</span> <span class="ident">PagedWriter::new</span>(
                 <span class="prelude-val">None</span>,
                 <span class="ident">file</span>,
-                <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">as_deref</span>(),
+                <span class="self">self</span>.<span class="ident">vault</span>,
                 <span class="self">self</span>.<span class="ident">cache</span>,
                 <span class="ident">active_state</span>.<span class="ident">current_position</span>,
             )<span class="question-mark">?</span>;
@@ -2783,7 +2783,7 @@
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="lifetime">&#39;m</span>, <span class="ident">Root</span>: <span class="ident">root::Root</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">FileOp</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">TreeModifier</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="lifetime">&#39;m</span>, <span class="ident">Root</span><span class="op">&gt;</span> {
     <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>;
 
-    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident"><span class="self">Self</span>::Output</span> {
+    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>) -&gt; <span class="ident"><span class="self">Self</span>::Output</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">active_state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="ident">active_state</span>.<span class="ident">file_id</span> <span class="op">!</span><span class="op">=</span> <span class="ident">file</span>.<span class="ident">id</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::from</span>(<span class="ident">ErrorKind::TreeCompacted</span>));
@@ -2792,7 +2792,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">data_block</span> <span class="op">=</span> <span class="ident">PagedWriter::new</span>(
             <span class="prelude-val">None</span>,
             <span class="ident">file</span>,
-            <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">as_deref</span>(),
+            <span class="self">self</span>.<span class="ident">vault</span>,
             <span class="self">self</span>.<span class="ident">cache</span>,
             <span class="ident">active_state</span>.<span class="ident">current_position</span>,
         )<span class="question-mark">?</span>;
@@ -2834,7 +2834,7 @@
     <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
     <span class="kw-2">mut</span> <span class="ident">data_block</span>: <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
     <span class="ident">scratch</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
-) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
     <span class="ident">scratch</span>.<span class="ident">clear</span>();
     <span class="ident">active_state</span>.<span class="ident">root</span>.<span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">data_block</span>, <span class="ident">scratch</span>)<span class="question-mark">?</span>;
     <span class="kw">let</span> (<span class="ident">file</span>, <span class="ident">after_data</span>) <span class="op">=</span> <span class="ident">data_block</span>.<span class="ident">finish</span>()<span class="question-mark">?</span>;
@@ -2865,21 +2865,21 @@
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">I</span>: <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> [<span class="ident">u8</span>]<span class="op">&gt;</span><span class="op">&gt;</span> <span class="ident">KeyRange</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">I</span><span class="op">&gt;</span> {
-    <span class="kw">fn</span> <span class="ident">new</span>(<span class="kw-2">mut</span> <span class="ident">keys</span>: <span class="ident">I</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="kw-2">mut</span> <span class="ident">keys</span>: <span class="ident">I</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">current_key</span>: <span class="ident">keys</span>.<span class="ident">next</span>(),
             <span class="ident">remaining_keys</span>: <span class="ident">keys</span>,
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">current_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> [<span class="ident">u8</span>]<span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">current_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> [<span class="ident">u8</span>]<span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">current_key</span>
     }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">I</span>: <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> [<span class="ident">u8</span>]<span class="op">&gt;</span><span class="op">&gt;</span> <span class="ident">Iterator</span> <span class="kw">for</span> <span class="ident">KeyRange</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">I</span><span class="op">&gt;</span> {
     <span class="kw">type</span> <span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> [<span class="ident">u8</span>];
-    <span class="kw">fn</span> <span class="ident">next</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> [<span class="ident">u8</span>]<span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">next</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> [<span class="ident">u8</span>]<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">key_to_return</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">current_key</span>;
         <span class="self">self</span>.<span class="ident">current_key</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">remaining_keys</span>.<span class="ident">next</span>();
         <span class="ident">key_to_return</span>
@@ -2901,8 +2901,8 @@
     <span class="lifetime">&#39;a</span>,
     <span class="lifetime">&#39;keys</span>,
     <span class="ident">Root</span>: <span class="ident">root::Root</span>,
-    <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KeyEvaluation</span>,
-    <span class="ident">KeyReader</span>: <span class="ident">FnMut</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>,
+    <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="ident">KeyEvaluation</span>,
+    <span class="ident">KeyReader</span>: <span class="ident">FnMut</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>,
     <span class="ident">Keys</span>: <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;keys</span> [<span class="ident">u8</span>]<span class="op">&gt;</span>,
 <span class="op">&gt;</span> {
     <span class="ident">from_transaction</span>: <span class="ident">bool</span>,
@@ -2917,14 +2917,14 @@
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="lifetime">&#39;keys</span>, <span class="ident">KeyEvaluator</span>, <span class="ident">KeyReader</span>, <span class="ident">Root</span>, <span class="ident">File</span>, <span class="ident">Keys</span><span class="op">&gt;</span> <span class="ident">FileOp</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span>
     <span class="kw">for</span> <span class="ident">TreeGetter</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="lifetime">&#39;keys</span>, <span class="ident">Root</span>, <span class="ident">KeyEvaluator</span>, <span class="ident">KeyReader</span>, <span class="ident">Keys</span><span class="op">&gt;</span>
 <span class="kw">where</span>
-    <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KeyEvaluation</span>,
-    <span class="ident">KeyReader</span>: <span class="ident">FnMut</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>,
+    <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="ident">KeyEvaluation</span>,
+    <span class="ident">KeyReader</span>: <span class="ident">FnMut</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>,
     <span class="ident">Keys</span>: <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;keys</span> [<span class="ident">u8</span>]<span class="op">&gt;</span>,
     <span class="ident">Root</span>: <span class="ident">root::Root</span>,
     <span class="ident">File</span>: <span class="ident">ManagedFile</span>,
 {
     <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident"><span class="self">Self</span>::Output</span> {
+    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>) -&gt; <span class="ident"><span class="self">Self</span>::Output</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">from_transaction</span> {
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>();
             <span class="kw">if</span> <span class="ident">state</span>.<span class="ident">file_id</span> <span class="op">!</span><span class="op">=</span> <span class="ident">file</span>.<span class="ident">id</span>() {
@@ -2967,13 +2967,13 @@
     <span class="ident">KeyReader</span>,
     <span class="ident">KeyRangeBounds</span>,
 <span class="op">&gt;</span> <span class="kw">where</span>
-    <span class="ident">NodeEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::ReducedIndex</span>, <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>,
-    <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KeyEvaluation</span>,
+    <span class="ident">NodeEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::ReducedIndex</span>, <span class="ident">usize</span>) -&gt; <span class="ident">bool</span>,
+    <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>) -&gt; <span class="ident">KeyEvaluation</span>,
     <span class="ident">KeyReader</span>: <span class="ident">FnMut</span>(
         <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
         <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>,
         <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">KeyRangeBounds</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;keys</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
 {
@@ -3012,18 +3012,18 @@
     <span class="op">&gt;</span>
 <span class="kw">where</span>
     <span class="ident">File</span>: <span class="ident">ManagedFile</span>,
-    <span class="ident">NodeEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::ReducedIndex</span>, <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>,
-    <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KeyEvaluation</span>,
+    <span class="ident">NodeEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::ReducedIndex</span>, <span class="ident">usize</span>) -&gt; <span class="ident">bool</span>,
+    <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>) -&gt; <span class="ident">KeyEvaluation</span>,
     <span class="ident">KeyReader</span>: <span class="ident">FnMut</span>(
         <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
         <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>,
         <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">KeyRangeBounds</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;keys</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span>,
     <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
 {
     <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident"><span class="self">Self</span>::Output</span> {
+    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>) -&gt; <span class="ident"><span class="self">Self</span>::Output</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">from_transaction</span> {
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>();
             <span class="kw">if</span> <span class="ident">state</span>.<span class="ident">file_id</span> <span class="op">!</span><span class="op">=</span> <span class="ident">file</span>.<span class="ident">id</span>() {
@@ -3072,9 +3072,9 @@
     <span class="ident">CallerError</span>,
     <span class="ident">Index</span>,
 <span class="op">&gt;</span> <span class="kw">where</span>
-    <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">BySequenceIndex</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KeyEvaluation</span>,
+    <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">BySequenceIndex</span>) -&gt; <span class="ident">KeyEvaluation</span>,
     <span class="ident">KeyRangeBounds</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;keys</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(<span class="ident">KeySequence</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(<span class="ident">KeySequence</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
     <span class="ident">Index</span>: <span class="ident">EmbeddedIndex</span> <span class="op">+</span> <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">Index</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
 {
@@ -3101,14 +3101,14 @@
     <span class="op">&gt;</span>
 <span class="kw">where</span>
     <span class="ident">File</span>: <span class="ident">ManagedFile</span>,
-    <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">BySequenceIndex</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KeyEvaluation</span>,
+    <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">BySequenceIndex</span>) -&gt; <span class="ident">KeyEvaluation</span>,
     <span class="ident">KeyRangeBounds</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;keys</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span>,
-    <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(<span class="ident">KeySequence</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(<span class="ident">KeySequence</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
     <span class="ident">Index</span>: <span class="ident">EmbeddedIndex</span> <span class="op">+</span> <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">Index</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
 {
     <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="self">self</span>, <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident"><span class="self">Self</span>::Output</span> {
+    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="self">self</span>, <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>) -&gt; <span class="ident"><span class="self">Self</span>::Output</span> {
         <span class="kw">let</span> <span class="self">Self</span> {
             <span class="ident">forwards</span>,
             <span class="ident">from_transaction</span>,
@@ -3195,13 +3195,13 @@
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">Deref</span> <span class="kw">for</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">File</span><span class="op">&gt;</span> {
     <span class="kw">type</span> <span class="ident">Target</span> <span class="op">=</span> <span class="ident">File</span>;
 
-    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Target</span> {
+    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Target</span> {
         <span class="self">self</span>.<span class="ident">file</span>
     }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">DerefMut</span> <span class="kw">for</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">File</span><span class="op">&gt;</span> {
-    <span class="kw">fn</span> <span class="ident">deref_mut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident"><span class="self">Self</span>::Target</span> {
+    <span class="kw">fn</span> <span class="ident">deref_mut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident"><span class="self">Self</span>::Target</span> {
         <span class="self">self</span>.<span class="ident">file</span>
     }
 }
@@ -3215,7 +3215,7 @@
         <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
         <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">ChunkCache</span><span class="op">&gt;</span>,
         <span class="ident">position</span>: <span class="ident">u64</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">File</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">File</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">writer</span> <span class="op">=</span> <span class="self">Self</span> {
             <span class="ident">file</span>,
             <span class="ident">vault</span>,
@@ -3236,18 +3236,18 @@
             );
             <span class="ident">writer</span>.<span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="ident">padding_and_header</span>)<span class="question-mark">?</span>;
         }
-        <span class="kw">if</span> <span class="ident">writer</span>.<span class="ident">current_position</span>() <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">if</span> <span class="ident">writer</span>.<span class="ident">current_position</span>() <span class="op">==</span> <span class="number">0</span> {
             <span class="comment">// Write a magic code</span>
             <span class="ident">writer</span>.<span class="ident">write</span>(<span class="string">b&quot;Nbri&quot;</span>)<span class="question-mark">?</span>;
         }
         <span class="prelude-val">Ok</span>(<span class="ident">writer</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">current_position</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+    <span class="kw">fn</span> <span class="ident">current_position</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">u64</span> {
         <span class="self">self</span>.<span class="ident">position</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">offset</span> <span class="kw">as</span> <span class="ident">u64</span>
     }
 
-    <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">bytes_written</span> <span class="op">=</span> <span class="ident">data</span>.<span class="ident">len</span>();
         <span class="kw">if</span> <span class="ident">data</span>.<span class="ident">len</span>() <span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">buffered_write</span>.<span class="ident">len</span>() {
             <span class="self">self</span>.<span class="ident">commit_if_needed</span>()<span class="question-mark">?</span>;
@@ -3261,7 +3261,7 @@
                 <span class="kw">let</span> (<span class="ident">data_to_copy</span>, <span class="ident">remaining</span>) <span class="op">=</span> <span class="ident">data</span>.<span class="ident">split_at</span>(<span class="ident">bytes_to_copy</span>);
                 <span class="self">self</span>.<span class="ident">buffered_write</span>[<span class="self">self</span>.<span class="ident">offset</span>..<span class="ident">new_offset</span>].<span class="ident">copy_from_slice</span>(<span class="ident">data_to_copy</span>);
                 <span class="self">self</span>.<span class="ident">offset</span> <span class="op">=</span> <span class="ident">new_offset</span>;
-                <span class="kw">if</span> <span class="self">self</span>.<span class="ident">offset</span> <span class="op">=</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">buffered_write</span>.<span class="ident">len</span>() {
+                <span class="kw">if</span> <span class="self">self</span>.<span class="ident">offset</span> <span class="op">==</span> <span class="self">self</span>.<span class="ident">buffered_write</span>.<span class="ident">len</span>() {
                     <span class="self">self</span>.<span class="ident">commit</span>()<span class="question-mark">?</span>;
                 }
 
@@ -3271,14 +3271,14 @@
         <span class="prelude-val">Ok</span>(<span class="ident">bytes_written</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">commit_if_needed</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">commit_if_needed</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">offset</span> <span class="op">&gt;</span> <span class="number">0</span> {
             <span class="self">self</span>.<span class="ident">commit</span>()<span class="question-mark">?</span>;
         }
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">write_all</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">buffered_write</span>[<span class="number">0</span>..<span class="self">self</span>.<span class="ident">offset</span>])<span class="question-mark">?</span>;
         <span class="self">self</span>.<span class="ident">position</span> <span class="op">+</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">offset</span> <span class="kw">as</span> <span class="ident">u64</span>;
         <span class="self">self</span>.<span class="ident">offset</span> <span class="op">=</span> <span class="number">0</span>;
@@ -3288,7 +3288,7 @@
     <span class="doccomment">/// Writes a chunk of data to the file, after possibly encrypting it.</span>
     <span class="doccomment">/// Returns the position that this chunk can be read from in the file.</span>
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::cast_possible_truncation</span>)]</span>
-    <span class="kw">fn</span> <span class="ident">write_chunk</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">contents</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">cache</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">write_chunk</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">contents</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">cache</span>: <span class="ident">bool</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">possibly_encrypted</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">as_ref</span>().<span class="ident">map_or_else</span>(
             <span class="op">|</span><span class="op">|</span> <span class="prelude-val">Ok</span>(<span class="ident">Cow::Borrowed</span>(<span class="ident">contents</span>)),
             <span class="op">|</span><span class="ident">vault</span><span class="op">|</span> <span class="ident">vault</span>.<span class="ident">encrypt</span>(<span class="ident">contents</span>).<span class="ident">map</span>(<span class="ident">Cow::Owned</span>),
@@ -3313,17 +3313,17 @@
         <span class="prelude-val">Ok</span>(<span class="ident">position</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">read_chunk</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">position</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">CacheEntry</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">read_chunk</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">position</span>: <span class="ident">u64</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">CacheEntry</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">read_chunk</span>(<span class="ident">position</span>, <span class="bool-val">false</span>, <span class="self">self</span>.<span class="ident">file</span>, <span class="self">self</span>.<span class="ident">vault</span>, <span class="self">self</span>.<span class="ident">cache</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">write_u32</span><span class="op">&lt;</span><span class="ident">B</span>: <span class="ident">ByteOrder</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">value</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">write_u32</span><span class="op">&lt;</span><span class="ident">B</span>: <span class="ident">ByteOrder</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">value</span>: <span class="ident">u32</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buffer</span> <span class="op">=</span> [<span class="number">0_u8</span>; <span class="number">4</span>];
         <span class="ident">B::write_u32</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buffer</span>, <span class="ident">value</span>);
         <span class="self">self</span>.<span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="ident">buffer</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">finish</span>(<span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="ident">File</span>, <span class="ident">u64</span>), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">finish</span>(<span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="ident">File</span>, <span class="ident">u64</span>), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">commit_if_needed</span>()<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>((<span class="self">self</span>.<span class="ident">file</span>, <span class="self">self</span>.<span class="ident">position</span>))
     }
@@ -3337,7 +3337,7 @@
     <span class="ident">file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">File</span>,
     <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
     <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
-) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">CacheEntry</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">CacheEntry</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
     <span class="kw">if</span> <span class="kw">let</span> (<span class="prelude-val">Some</span>(<span class="ident">cache</span>), <span class="prelude-val">Some</span>(<span class="ident">file_id</span>)) <span class="op">=</span> (<span class="ident">cache</span>, <span class="ident">file</span>.<span class="ident">id</span>()) {
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">entry</span>) <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">get</span>(<span class="ident">file_id</span>, <span class="ident">position</span>) {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">entry</span>);
@@ -3366,8 +3366,8 @@
     }
 
     <span class="kw">let</span> <span class="ident">decrypted</span> <span class="op">=</span> <span class="ident">Buffer::from</span>(<span class="kw">match</span> <span class="ident">vault</span> {
-        <span class="prelude-val">Some</span>(<span class="ident">vault</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">vault</span>.<span class="ident">decrypt</span>(<span class="kw-2">&amp;</span><span class="ident">scratch</span>)<span class="question-mark">?</span>,
-        <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">scratch</span>,
+        <span class="prelude-val">Some</span>(<span class="ident">vault</span>) =&gt; <span class="ident">vault</span>.<span class="ident">decrypt</span>(<span class="kw-2">&amp;</span><span class="ident">scratch</span>)<span class="question-mark">?</span>,
+        <span class="prelude-val">None</span> =&gt; <span class="ident">scratch</span>,
     });
 
     <span class="kw">if</span> <span class="kw">let</span> (<span class="prelude-val">Some</span>(<span class="ident">cache</span>), <span class="prelude-val">Some</span>(<span class="ident">file_id</span>)) <span class="op">=</span> (<span class="ident">cache</span>, <span class="ident">file</span>.<span class="ident">id</span>()) {
@@ -3383,8 +3383,8 @@
     <span class="ident">copied_chunks</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">std::collections::HashMap</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">u64</span>, <span class="ident">Hasher</span><span class="op">&gt;</span>,
     <span class="ident">to_file</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
     <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
-) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-    <span class="kw">if</span> <span class="ident">original_position</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">if</span> <span class="ident">original_position</span> <span class="op">==</span> <span class="number">0</span> {
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     } <span class="kw">else</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">new_position</span>) <span class="op">=</span> <span class="ident">copied_chunks</span>.<span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="ident">original_position</span>) {
         <span class="prelude-val">Ok</span>(<span class="kw-2">*</span><span class="ident">new_position</span>)
@@ -3394,8 +3394,8 @@
         <span class="comment">// here. This gives the added benefit for a long-running server to</span>
         <span class="comment">// ensure it&#39;s doing CRC checks occasionally as it copies itself.</span>
         <span class="kw">let</span> <span class="ident">chunk</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">read_chunk</span>(<span class="ident">original_position</span>, <span class="bool-val">true</span>, <span class="ident">from_file</span>, <span class="ident">vault</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span> {
-            <span class="ident">CacheEntry::Buffer</span>(<span class="ident">buffer</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">buffer</span>,
-            <span class="ident">CacheEntry::Decoded</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable!</span>(),
+            <span class="ident">CacheEntry::Buffer</span>(<span class="ident">buffer</span>) =&gt; <span class="ident">buffer</span>,
+            <span class="ident">CacheEntry::Decoded</span>(<span class="kw">_</span>) =&gt; <span class="macro">unreachable!</span>(),
         };
         <span class="kw">let</span> <span class="ident">new_location</span> <span class="op">=</span> <span class="ident">to_file</span>.<span class="ident">write_chunk</span>(<span class="kw-2">&amp;</span><span class="ident">chunk</span>, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
         <span class="ident">copied_chunks</span>.<span class="ident">insert</span>(<span class="ident">original_position</span>, <span class="ident">new_location</span>);
@@ -3413,7 +3413,7 @@
     <span class="ident">clippy::cast_possible_truncation</span>,
     <span class="ident">clippy::cast_sign_loss</span>
 )]</span>
-<span class="kw">fn</span> <span class="ident">dynamic_order</span>(<span class="ident">number_of_records</span>: <span class="ident">u64</span>, <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+<span class="kw">fn</span> <span class="ident">dynamic_order</span>(<span class="ident">number_of_records</span>: <span class="ident">u64</span>, <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>) -&gt; <span class="ident">usize</span> {
     <span class="comment">// Current approximation is the 3rd root.</span>
     <span class="kw">let</span> <span class="ident">max_order</span> <span class="op">=</span> <span class="ident">max_order</span>.<span class="ident">unwrap_or</span>(<span class="ident">DEFAULT_MAX_ORDER</span>);
     <span class="kw">if</span> <span class="ident">number_of_records</span> <span class="op">&gt;</span> <span class="ident">max_order</span>.<span class="ident">pow</span>(<span class="number">3</span>) <span class="kw">as</span> <span class="ident">u64</span> {
@@ -3433,55 +3433,55 @@
 }
 
 <span class="kw">impl</span> <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">U64Bounds</span> {
-    <span class="kw">fn</span> <span class="ident">start_bound</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Bound</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">u64</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">start_bound</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Bound</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">u64</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">start_bound</span> {
-            <span class="ident">Bound::Included</span>(<span class="ident">value</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Included</span>(<span class="ident">value</span>),
-            <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>),
-            <span class="ident">Bound::Unbounded</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Unbounded</span>,
+            <span class="ident">Bound::Included</span>(<span class="ident">value</span>) =&gt; <span class="ident">Bound::Included</span>(<span class="ident">value</span>),
+            <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>) =&gt; <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>),
+            <span class="ident">Bound::Unbounded</span> =&gt; <span class="ident">Bound::Unbounded</span>,
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">end_bound</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Bound</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">u64</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">end_bound</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Bound</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">u64</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">end_bound</span> {
-            <span class="ident">Bound::Included</span>(<span class="ident">value</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Included</span>(<span class="ident">value</span>),
-            <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>),
-            <span class="ident">Bound::Unbounded</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Unbounded</span>,
+            <span class="ident">Bound::Included</span>(<span class="ident">value</span>) =&gt; <span class="ident">Bound::Included</span>(<span class="ident">value</span>),
+            <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>) =&gt; <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>),
+            <span class="ident">Bound::Unbounded</span> =&gt; <span class="ident">Bound::Unbounded</span>,
         }
     }
 }
 
 <span class="kw">impl</span> <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">U64Bounds</span> {
-    <span class="kw">fn</span> <span class="ident">start_bound</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Bound</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">start_bound</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Bound</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">start_bound_bytes</span> {
-            <span class="ident">Bound::Included</span>(<span class="ident">value</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Included</span>(<span class="ident">value</span>),
-            <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>),
-            <span class="ident">Bound::Unbounded</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Unbounded</span>,
+            <span class="ident">Bound::Included</span>(<span class="ident">value</span>) =&gt; <span class="ident">Bound::Included</span>(<span class="ident">value</span>),
+            <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>) =&gt; <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>),
+            <span class="ident">Bound::Unbounded</span> =&gt; <span class="ident">Bound::Unbounded</span>,
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">end_bound</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Bound</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">end_bound</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Bound</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">end_bound_bytes</span> {
-            <span class="ident">Bound::Included</span>(<span class="ident">value</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Included</span>(<span class="ident">value</span>),
-            <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>),
-            <span class="ident">Bound::Unbounded</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Unbounded</span>,
+            <span class="ident">Bound::Included</span>(<span class="ident">value</span>) =&gt; <span class="ident">Bound::Included</span>(<span class="ident">value</span>),
+            <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>) =&gt; <span class="ident">Bound::Excluded</span>(<span class="ident">value</span>),
+            <span class="ident">Bound::Unbounded</span> =&gt; <span class="ident">Bound::Unbounded</span>,
         }
     }
 }
 
 <span class="kw">impl</span> <span class="ident">U64Bounds</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span><span class="op">&lt;</span><span class="ident">B</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="ident">bounds</span>: <span class="ident">B</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span><span class="op">&lt;</span><span class="ident">B</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="ident">bounds</span>: <span class="ident">B</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">start_bound</span>: <span class="ident">bounds</span>.<span class="ident">start_bound</span>().<span class="ident">cloned</span>(),
             <span class="ident">start_bound_bytes</span>: <span class="kw">match</span> <span class="ident">bounds</span>.<span class="ident">start_bound</span>() {
-                <span class="ident">Bound::Included</span>(<span class="ident">id</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Included</span>(<span class="ident">Buffer::from</span>(<span class="ident">id</span>.<span class="ident">to_be_bytes</span>())),
-                <span class="ident">Bound::Excluded</span>(<span class="ident">id</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Excluded</span>(<span class="ident">Buffer::from</span>(<span class="ident">id</span>.<span class="ident">to_be_bytes</span>())),
-                <span class="ident">Bound::Unbounded</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Unbounded</span>,
+                <span class="ident">Bound::Included</span>(<span class="ident">id</span>) =&gt; <span class="ident">Bound::Included</span>(<span class="ident">Buffer::from</span>(<span class="ident">id</span>.<span class="ident">to_be_bytes</span>())),
+                <span class="ident">Bound::Excluded</span>(<span class="ident">id</span>) =&gt; <span class="ident">Bound::Excluded</span>(<span class="ident">Buffer::from</span>(<span class="ident">id</span>.<span class="ident">to_be_bytes</span>())),
+                <span class="ident">Bound::Unbounded</span> =&gt; <span class="ident">Bound::Unbounded</span>,
             },
             <span class="ident">end_bound</span>: <span class="ident">bounds</span>.<span class="ident">end_bound</span>().<span class="ident">cloned</span>(),
             <span class="ident">end_bound_bytes</span>: <span class="kw">match</span> <span class="ident">bounds</span>.<span class="ident">end_bound</span>() {
-                <span class="ident">Bound::Included</span>(<span class="ident">id</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Included</span>(<span class="ident">Buffer::from</span>(<span class="ident">id</span>.<span class="ident">to_be_bytes</span>())),
-                <span class="ident">Bound::Excluded</span>(<span class="ident">id</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Excluded</span>(<span class="ident">Buffer::from</span>(<span class="ident">id</span>.<span class="ident">to_be_bytes</span>())),
-                <span class="ident">Bound::Unbounded</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Bound::Unbounded</span>,
+                <span class="ident">Bound::Included</span>(<span class="ident">id</span>) =&gt; <span class="ident">Bound::Included</span>(<span class="ident">Buffer::from</span>(<span class="ident">id</span>.<span class="ident">to_be_bytes</span>())),
+                <span class="ident">Bound::Excluded</span>(<span class="ident">id</span>) =&gt; <span class="ident">Bound::Excluded</span>(<span class="ident">Buffer::from</span>(<span class="ident">id</span>.<span class="ident">to_be_bytes</span>())),
+                <span class="ident">Bound::Unbounded</span> =&gt; <span class="ident">Bound::Unbounded</span>,
             },
         }
     }
@@ -3494,29 +3494,29 @@
 <span class="doccomment">/// kept shorter for better performance.</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">EmbeddedIndex</span>: <span class="ident">Serializable</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Sized</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> {
     <span class="doccomment">/// Index the key and value.</span>
-    <span class="kw">fn</span> <span class="ident">index</span>(<span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>, <span class="ident">value</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span>;
+    <span class="kw">fn</span> <span class="ident">index</span>(<span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>, <span class="ident">value</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span>;
 }
 
 <span class="doccomment">/// A type that can be serialized and deserialized.</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">Serializable</span>: <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Sized</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> {
     <span class="doccomment">/// Serializes into `writer` and returns the number of bytes written.</span>
-    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">W</span>: <span class="ident">WriteBytesExt</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">W</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">W</span>: <span class="ident">WriteBytesExt</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">W</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
     <span class="doccomment">/// Deserializes from `reader`, and returns the deserialized instance.</span>
     <span class="doccomment">/// Implementors should not expect for the reader to be fully consumed at</span>
     <span class="doccomment">/// the end of this call.</span>
-    <span class="kw">fn</span> <span class="ident">deserialize_from</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">ReadBytesExt</span><span class="op">&gt;</span>(<span class="ident">reader</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">deserialize_from</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">ReadBytesExt</span><span class="op">&gt;</span>(<span class="ident">reader</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
 }
 
 <span class="kw">impl</span> <span class="ident">EmbeddedIndex</span> <span class="kw">for</span> () {
-    <span class="kw">fn</span> <span class="ident">index</span>(<span class="ident">_key</span>: <span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>, <span class="ident">_value</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {}
+    <span class="kw">fn</span> <span class="ident">index</span>(<span class="ident">_key</span>: <span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>, <span class="ident">_value</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {}
 }
 
 <span class="kw">impl</span> <span class="ident">Serializable</span> <span class="kw">for</span> () {
-    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">W</span>: <span class="ident">WriteBytesExt</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">W</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">W</span>: <span class="ident">WriteBytesExt</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_writer</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">W</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">deserialize_from</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">ReadBytesExt</span><span class="op">&gt;</span>(<span class="ident">_reader</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">deserialize_from</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">ReadBytesExt</span><span class="op">&gt;</span>(<span class="ident">_reader</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="prelude-val">Ok</span>(())
     }
 }
@@ -3534,7 +3534,7 @@
         <span class="ident">memory</span>::{<span class="ident">MemoryFile</span>, <span class="ident">MemoryFileManager</span>},
     };
 
-    <span class="kw">fn</span> <span class="ident">test_paged_write</span>(<span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">length</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">test_paged_write</span>(<span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">length</span>: <span class="ident">usize</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">MemoryFile::open_for_append</span>(<span class="macro">format!</span>(<span class="string">&quot;test-{}-{}&quot;</span>, <span class="ident">offset</span>, <span class="ident">length</span>), <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">paged_writer</span> <span class="op">=</span>
             <span class="ident">PagedWriter::new</span>(<span class="prelude-val">Some</span>(<span class="ident">PageHeader::VersionedHeader</span>), <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">file</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="number">0</span>)<span class="question-mark">?</span>;
@@ -3549,11 +3549,11 @@
         <span class="ident">drop</span>(<span class="ident">paged_writer</span>.<span class="ident">finish</span>());
 
         <span class="kw">match</span> <span class="ident">read_chunk</span>(<span class="ident">written_position</span>, <span class="bool-val">true</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">file</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span> {
-            <span class="ident">CacheEntry::Buffer</span>(<span class="ident">data</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">CacheEntry::Buffer</span>(<span class="ident">data</span>) =&gt; {
                 <span class="macro">assert_eq!</span>(<span class="ident">data</span>.<span class="ident">len</span>(), <span class="ident">length</span>);
-                <span class="macro">assert!</span>(<span class="ident">data</span>.<span class="ident">iter</span>().<span class="ident">all</span>(<span class="op">|</span><span class="ident">i</span><span class="op">|</span> <span class="ident">i</span> <span class="op">=</span><span class="op">=</span> <span class="kw-2">&amp;</span><span class="number">1</span>));
+                <span class="macro">assert!</span>(<span class="ident">data</span>.<span class="ident">iter</span>().<span class="ident">all</span>(<span class="op">|</span><span class="ident">i</span><span class="op">|</span> <span class="ident">i</span> <span class="op">==</span> <span class="kw-2">&amp;</span><span class="number">1</span>));
             }
-            <span class="ident">CacheEntry::Decoded</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable!</span>(),
+            <span class="ident">CacheEntry::Decoded</span>(<span class="kw">_</span>) =&gt; <span class="macro">unreachable!</span>(),
         }
 
         <span class="ident">drop</span>(<span class="ident">file</span>);
@@ -3988,7 +3988,7 @@
         .<span class="ident">unwrap</span>();
         <span class="macro">assert_eq!</span>(<span class="ident">sequences</span>.<span class="ident">len</span>(), <span class="number">3</span>);
         <span class="ident">sequences</span>.<span class="ident">sort_by</span>(<span class="op">|</span><span class="ident">a</span>, <span class="ident">b</span><span class="op">|</span> <span class="ident">a</span>.<span class="number">0</span>.<span class="ident">sequence</span>.<span class="ident">cmp</span>(<span class="kw-2">&amp;</span><span class="ident">b</span>.<span class="number">0</span>.<span class="ident">sequence</span>));
-        <span class="macro">assert!</span>(<span class="ident">sequences</span>.<span class="ident">iter</span>().<span class="ident">all</span>(<span class="op">|</span><span class="ident">s</span><span class="op">|</span> <span class="ident">s</span>.<span class="number">0</span>.<span class="ident">key</span>.<span class="ident">as_slice</span>() <span class="op">=</span><span class="op">=</span> <span class="string">b&quot;a&quot;</span>));
+        <span class="macro">assert!</span>(<span class="ident">sequences</span>.<span class="ident">iter</span>().<span class="ident">all</span>(<span class="op">|</span><span class="ident">s</span><span class="op">|</span> <span class="ident">s</span>.<span class="number">0</span>.<span class="ident">key</span>.<span class="ident">as_slice</span>() <span class="op">==</span> <span class="string">b&quot;a&quot;</span>));
         <span class="macro">assert_eq!</span>(<span class="ident">sequences</span>[<span class="number">0</span>].<span class="number">0</span>.<span class="ident">last_sequence</span>, <span class="prelude-val">None</span>);
         <span class="macro">assert_eq!</span>(<span class="ident">sequences</span>[<span class="number">1</span>].<span class="number">0</span>.<span class="ident">last_sequence</span>, <span class="prelude-val">Some</span>(<span class="ident">sequences</span>[<span class="number">0</span>].<span class="number">0</span>.<span class="ident">sequence</span>));
         <span class="macro">assert_eq!</span>(<span class="ident">sequences</span>[<span class="number">2</span>].<span class="number">0</span>.<span class="ident">last_sequence</span>, <span class="prelude-val">Some</span>(<span class="ident">sequences</span>[<span class="number">1</span>].<span class="number">0</span>.<span class="ident">sequence</span>));

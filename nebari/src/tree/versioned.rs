@@ -287,7 +287,7 @@ where
     fn serialize<File: ManagedFile>(
         &mut self,
         paged_writer: &mut PagedWriter<'_, File>,
-        mut output: &mut Vec<u8>,
+        output: &mut Vec<u8>,
     ) -> Result<(), Error> {
         output.reserve(PAGE_SIZE);
         output.write_u64::<BigEndian>(self.transaction_id)?;
@@ -295,11 +295,9 @@ where
         // Reserve space for by_sequence and by_id sizes (2xu16).
         output.write_u64::<BigEndian>(0)?;
 
-        let by_sequence_size = self
-            .by_sequence_root
-            .serialize_to(&mut output, paged_writer)?;
+        let by_sequence_size = self.by_sequence_root.serialize_to(output, paged_writer)?;
 
-        let by_id_size = self.by_id_root.serialize_to(&mut output, paged_writer)?;
+        let by_id_size = self.by_id_root.serialize_to(output, paged_writer)?;
 
         let by_sequence_size = u32::try_from(by_sequence_size)
             .ok()

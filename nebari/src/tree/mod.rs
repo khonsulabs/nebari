@@ -753,7 +753,7 @@ impl<'a, Root: root::Root, File: ManagedFile> FileOp<File> for TreeWriter<'a, Ro
             let data_block = PagedWriter::new(
                 None,
                 file,
-                self.vault.as_deref(),
+                self.vault,
                 self.cache,
                 active_state.current_position,
             )?;
@@ -792,7 +792,7 @@ impl<'a, 'm, Root: root::Root, File: ManagedFile> FileOp<File> for TreeModifier<
         let mut data_block = PagedWriter::new(
             None,
             file,
-            self.vault.as_deref(),
+            self.vault,
             self.cache,
             active_state.current_position,
         )?;

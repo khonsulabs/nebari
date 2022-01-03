@@ -1,17 +1,17 @@
 use devx_cmd::read;
-use khonsu_tools::{
+use khonsu_tools::universal::{
     anyhow,
     audit::{self, Audit},
+    clap::{self, Parser},
     code_coverage::{self, CodeCoverage},
 };
-use structopt::StructOpt;
 use sysinfo::{RefreshKind, System, SystemExt};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 pub enum Commands {
     GenerateCodeCoverageReport {
-        #[structopt(long = "install-dependencies")]
+        #[clap(long = "install-dependencies")]
         install_dependencies: bool,
     },
     GenerateBenchmarkOverview,
@@ -21,7 +21,7 @@ pub enum Commands {
 }
 
 fn main() -> anyhow::Result<()> {
-    let command = Commands::from_args();
+    let command = Commands::parse();
     match command {
         Commands::GenerateBenchmarkOverview => generate_benchmark_overview(),
         Commands::GenerateCodeCoverageReport {

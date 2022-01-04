@@ -1,1 +1,1 @@
-initSidebarItems({"enum":[["Commands",""]],"fn":[["generate_benchmark_overview",""],["main",""]],"struct":[["AuditConfig",""],["CoverageConfig",""]]});
+initSidebarItems({"enum":[["Commands",""],["Config",""]],"fn":[["generate_benchmark_overview",""],["main",""]]});

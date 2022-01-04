@@ -71,7 +71,16 @@ impl khonsu_tools::universal::Config for Config {
     type CodeCoverage = Self;
 }
 
-impl code_coverage::Config for Config {}
+impl code_coverage::Config for Config {
+    fn cargo_args() -> Vec<String> {
+        vec![
+            String::from("+nightly"),
+            String::from("test"),
+            String::from("--workspace"),
+            String::from("--all-features"),
+        ]
+    }
+}
 
 impl audit::Config for Config {
     fn args() -> Vec<String> {

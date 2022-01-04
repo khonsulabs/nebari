@@ -1,39 +1,30 @@
 use devx_cmd::read;
-use khonsu_tools::universal::{
-    anyhow,
-    audit::{self, Audit},
-    clap::{self, Parser},
-    code_coverage::{self, CodeCoverage},
+use khonsu_tools::{
+    publish,
+    universal::{
+        anyhow,
+        audit::{self},
+        clap::{self, Parser},
+        code_coverage::{self},
+    },
 };
 use sysinfo::{RefreshKind, System, SystemExt};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 #[derive(Parser, Debug)]
 pub enum Commands {
-    GenerateCodeCoverageReport {
-        #[clap(long = "install-dependencies")]
-        install_dependencies: bool,
-    },
     GenerateBenchmarkOverview,
-    Audit {
-        command: Option<String>,
-    },
+    #[clap(flatten)]
+    Tools(khonsu_tools::Commands),
 }
 
 fn main() -> anyhow::Result<()> {
     let command = Commands::parse();
     match command {
         Commands::GenerateBenchmarkOverview => generate_benchmark_overview(),
-        Commands::GenerateCodeCoverageReport {
-            install_dependencies,
-        } => CodeCoverage::<CoverageConfig>::execute(install_dependencies),
-        Commands::Audit { command } => Audit::<AuditConfig>::execute(command),
+        Commands::Tools(command) => command.execute::<Config>(),
     }
 }
-
-struct CoverageConfig;
-
-impl code_coverage::Config for CoverageConfig {}
 
 fn generate_benchmark_overview() -> anyhow::Result<()> {
     let overview = std::fs::read_to_string("benchmarks/overview.html")?;
@@ -66,14 +57,34 @@ fn generate_benchmark_overview() -> anyhow::Result<()> {
     Ok(())
 }
 
-struct AuditConfig;
+enum Config {}
 
-impl audit::Config for AuditConfig {
+impl khonsu_tools::Config for Config {
+    type Publish = Self;
+
+    type Universal = Self;
+}
+
+impl khonsu_tools::universal::Config for Config {
+    type Audit = Self;
+
+    type CodeCoverage = Self;
+}
+
+impl code_coverage::Config for Config {}
+
+impl audit::Config for Config {
     fn args() -> Vec<String> {
         vec![
             String::from("--all-features"),
             String::from("--exclude=xtask"),
             String::from("--exclude=benchmarks"),
         ]
+    }
+}
+
+impl publish::Config for Config {
+    fn paths() -> Vec<String> {
+        vec![String::from("nebari")]
     }
 }

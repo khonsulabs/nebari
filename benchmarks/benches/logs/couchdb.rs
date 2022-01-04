@@ -1,6 +1,7 @@
 use http_auth_basic::Credentials;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::time::{Duration, Instant};
 
 use super::{InsertConfig, LogEntryBatchGenerator, ReadConfig, ReadState};
 use crate::{BenchConfig, SimpleBench};
@@ -63,13 +64,20 @@ impl SimpleBench for InsertLogs {
         })
     }
 
-    fn execute_measured(&mut self, _config: &Self::Config) -> Result<(), anyhow::Error> {
-        ureq::post("http://localhost:5984/nebari-log-benchmark/_bulk_docs").send_json(
-            serde_json::to_value(&Documents {
-                docs: self.state.next().unwrap(),
-            })?,
-        )?;
-        Ok(())
+    fn execute_measured(
+        &mut self,
+        _config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            let state = self.state.next().unwrap();
+            let start = Instant::now();
+            ureq::post("http://localhost:5984/nebari-log-benchmark/_bulk_docs")
+                .send_json(serde_json::to_value(&Documents { docs: state })?)?;
+            total_duration += Instant::now() - start;
+        }
+        Ok(total_duration)
     }
 }
 
@@ -162,17 +170,25 @@ impl SimpleBench for ReadLogs {
         })
     }
 
-    fn execute_measured(&mut self, _config: &Self::Config) -> Result<(), anyhow::Error> {
-        let entry = self.state.next().unwrap();
-        let result = ureq::get(&format!(
-            "http://localhost:5984/nebari-log-benchmark/{}",
-            entry.id
-        ))
-        .call()?
-        .into_json::<LogEntryDoc>()?;
-        assert_eq!(&result.timestamp, &entry.timestamp);
-        assert_eq!(&result.message, &entry.message);
-
-        Ok(())
+    fn execute_measured(
+        &mut self,
+        _config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            let entry = self.state.next().unwrap();
+            let start = Instant::now();
+            let result = ureq::get(&format!(
+                "http://localhost:5984/nebari-log-benchmark/{}",
+                entry.id
+            ))
+            .call()?
+            .into_json::<LogEntryDoc>()?;
+            assert_eq!(&result.timestamp, &entry.timestamp);
+            assert_eq!(&result.message, &entry.message);
+            total_duration += Instant::now() - start;
+        }
+        Ok(total_duration)
     }
 }

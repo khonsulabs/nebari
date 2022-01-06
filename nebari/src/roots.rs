@@ -370,17 +370,23 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
         key: impl Into<Buffer<'static>>,
         value: impl Into<Buffer<'static>>,
     ) -> Result<(), Error> {
-        self.tree
-            .modify(Modification {
-                transaction_id: Some(self.transaction_id),
-                keys: vec![key.into()],
-                operation: Operation::Set(value.into()),
-            })
-            .map(|_| {})
+        self.modify(vec![key.into()], Operation::Set(value.into()))
+    }
+
+    /// Executes a modification.
+    pub fn modify<'a>(
+        &mut self,
+        keys: Vec<Buffer<'a>>,
+        operation: Operation<'a, Buffer<'static>>,
+    ) -> Result<(), Error> {
+        self.tree.modify(Modification {
+            keys,
+            transaction_id: Some(self.transaction_id),
+            operation,
+        })
     }
 
     /// Sets `key` to `value`. If a value already exists, it will be returned.
-    #[allow(clippy::missing_panics_doc)]
     pub fn replace(
         &mut self,
         key: impl Into<Buffer<'static>>,
@@ -650,6 +656,35 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
 
             tree.get(key, false)
         })
+    }
+
+    /// Sets `key` to `value`. If a value already exists, it will be returned.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn replace(
+        &mut self,
+        key: impl Into<Buffer<'static>>,
+        value: impl Into<Buffer<'static>>,
+    ) -> Result<Option<Buffer<'static>>, Error> {
+        let mut transaction = self.begin_transaction()?;
+        let existing_value = transaction.tree::<Root>(0).unwrap().replace(key, value)?;
+        transaction.commit()?;
+        Ok(existing_value)
+    }
+
+    /// Executes a modification.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn modify<'a>(
+        &mut self,
+        keys: Vec<Buffer<'a>>,
+        operation: Operation<'a, Buffer<'static>>,
+    ) -> Result<(), Error> {
+        let mut transaction = self.begin_transaction()?;
+        transaction
+            .tree::<Root>(0)
+            .unwrap()
+            .modify(keys, operation)?;
+        transaction.commit()?;
+        Ok(())
     }
 
     /// Removes `key` and returns the existing value, if present. This is executed within its own transaction.

@@ -1,7 +1,8 @@
+use std::time::{Duration, Instant};
+
 use http_auth_basic::Credentials;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::time::{Duration, Instant};
 
 use super::{InsertConfig, LogEntryBatchGenerator, ReadConfig, ReadState};
 use crate::{BenchConfig, SimpleBench};

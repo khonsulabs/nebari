@@ -1266,6 +1266,41 @@
 <span id="1266">1266</span>
 <span id="1267">1267</span>
 <span id="1268">1268</span>
+<span id="1269">1269</span>
+<span id="1270">1270</span>
+<span id="1271">1271</span>
+<span id="1272">1272</span>
+<span id="1273">1273</span>
+<span id="1274">1274</span>
+<span id="1275">1275</span>
+<span id="1276">1276</span>
+<span id="1277">1277</span>
+<span id="1278">1278</span>
+<span id="1279">1279</span>
+<span id="1280">1280</span>
+<span id="1281">1281</span>
+<span id="1282">1282</span>
+<span id="1283">1283</span>
+<span id="1284">1284</span>
+<span id="1285">1285</span>
+<span id="1286">1286</span>
+<span id="1287">1287</span>
+<span id="1288">1288</span>
+<span id="1289">1289</span>
+<span id="1290">1290</span>
+<span id="1291">1291</span>
+<span id="1292">1292</span>
+<span id="1293">1293</span>
+<span id="1294">1294</span>
+<span id="1295">1295</span>
+<span id="1296">1296</span>
+<span id="1297">1297</span>
+<span id="1298">1298</span>
+<span id="1299">1299</span>
+<span id="1300">1300</span>
+<span id="1301">1301</span>
+<span id="1302">1302</span>
+<span id="1303">1303</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">any::Any</span>,
     <span class="ident">borrow</span>::{<span class="ident">Borrow</span>, <span class="ident">Cow</span>},
@@ -1638,17 +1673,23 @@
         <span class="ident">key</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">value</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">tree</span>
-            .<span class="ident">modify</span>(<span class="ident">Modification</span> {
-                <span class="ident">transaction_id</span>: <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">transaction_id</span>),
-                <span class="ident">keys</span>: <span class="macro">vec!</span>[<span class="ident">key</span>.<span class="ident">into</span>()],
-                <span class="ident">operation</span>: <span class="ident">Operation::Set</span>(<span class="ident">value</span>.<span class="ident">into</span>()),
-            })
-            .<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> {})
+        <span class="self">self</span>.<span class="ident">modify</span>(<span class="macro">vec!</span>[<span class="ident">key</span>.<span class="ident">into</span>()], <span class="ident">Operation::Set</span>(<span class="ident">value</span>.<span class="ident">into</span>()))
+    }
+
+    <span class="doccomment">/// Executes a modification.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">modify</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">keys</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">operation</span>: <span class="ident">Operation</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">tree</span>.<span class="ident">modify</span>(<span class="ident">Modification</span> {
+            <span class="ident">keys</span>,
+            <span class="ident">transaction_id</span>: <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">transaction_id</span>),
+            <span class="ident">operation</span>,
+        })
     }
 
     <span class="doccomment">/// Sets `key` to `value`. If a value already exists, it will be returned.</span>
-    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::missing_panics_doc</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">replace</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">key</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
@@ -1918,6 +1959,35 @@
 
             <span class="ident">tree</span>.<span class="ident">get</span>(<span class="ident">key</span>, <span class="bool-val">false</span>)
         })
+    }
+
+    <span class="doccomment">/// Sets `key` to `value`. If a value already exists, it will be returned.</span>
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::missing_panics_doc</span>)]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">replace</span>(
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">key</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">value</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">existing_value</span> <span class="op">=</span> <span class="ident">transaction</span>.<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>(<span class="number">0</span>).<span class="ident">unwrap</span>().<span class="ident">replace</span>(<span class="ident">key</span>, <span class="ident">value</span>)<span class="question-mark">?</span>;
+        <span class="ident">transaction</span>.<span class="ident">commit</span>()<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(<span class="ident">existing_value</span>)
+    }
+
+    <span class="doccomment">/// Executes a modification.</span>
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::missing_panics_doc</span>)]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">modify</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">keys</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">operation</span>: <span class="ident">Operation</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
+        <span class="ident">transaction</span>
+            .<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>(<span class="number">0</span>)
+            .<span class="ident">unwrap</span>()
+            .<span class="ident">modify</span>(<span class="ident">keys</span>, <span class="ident">operation</span>)<span class="question-mark">?</span>;
+        <span class="ident">transaction</span>.<span class="ident">commit</span>()<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(())
     }
 
     <span class="doccomment">/// Removes `key` and returns the existing value, if present. This is executed within its own transaction.</span>

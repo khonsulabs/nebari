@@ -1,6 +1,6 @@
 use std::{fmt::Debug, sync::Arc};
 
-use parking_lot::{Mutex, MutexGuard, RwLock, RwLockReadGuard};
+use parking_lot::{Mutex, MutexGuard, RwLock};
 
 use crate::chunk_cache::AnySendSync;
 
@@ -9,7 +9,7 @@ use crate::chunk_cache::AnySendSync;
 #[derive(Default, Clone, Debug)]
 #[must_use]
 pub struct State<Root: super::Root> {
-    reader: Arc<RwLock<ActiveState<Root>>>,
+    reader: Arc<RwLock<Arc<ActiveState<Root>>>>,
     writer: Arc<Mutex<ActiveState<Root>>>,
 }
 
@@ -27,7 +27,7 @@ where
         };
 
         Self {
-            reader: Arc::new(RwLock::new(state.clone())),
+            reader: Arc::new(RwLock::new(Arc::new(state.clone()))),
             writer: Arc::new(Mutex::new(state)),
         }
     }
@@ -44,7 +44,7 @@ where
         };
 
         Self {
-            reader: Arc::new(RwLock::new(state.clone())),
+            reader: Arc::new(RwLock::new(Arc::new(state.clone()))),
             writer: Arc::new(Mutex::new(state)),
         }
     }
@@ -54,17 +54,11 @@ where
         self.writer.lock()
     }
 
-    /// Reads the current state. Holding onto the returned value will block
-    /// writers from publishing new changes. If you plan on needing access to
-    /// the data for an extended period, clone the state and drop the guard.
-    ///
-    /// Be aware that by not holding the lock, database compaction could execute
-    /// in the background and cause the `file_id` to no longer match the file
-    /// handle your thread is working with. This will result in
-    /// [`ErrorKind::TreeCompacted`](crate::ErrorKind::TreeCompacted) being
-    /// raised from any operation on the file.
-    pub fn read(&self) -> RwLockReadGuard<'_, ActiveState<Root>> {
-        self.reader.read()
+    /// Reads the current state.
+    #[must_use]
+    pub fn read(&self) -> Arc<ActiveState<Root>> {
+        let reader = self.reader.read();
+        reader.clone()
     }
 }
 
@@ -111,7 +105,7 @@ where
 
     pub(crate) fn publish(&self, state: &State<Root>) {
         let mut reader = state.reader.write();
-        *reader = self.clone();
+        *reader = Arc::new(self.clone());
     }
 
     pub(crate) fn rollback(&mut self, state: &State<Root>) {

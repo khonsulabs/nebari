@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `nebari&#x2F;src&#x2F;roots.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>roots.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../nebari/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">   1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `nebari&#x2F;src&#x2F;roots.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>roots.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><script defer src="../../main.js"></script><script defer src="../../source-script.js"></script><script defer src="../../source-files.js"></script>
+    <noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../nebari/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">   1</span>
 <span id="2">   2</span>
 <span id="3">   3</span>
 <span id="4">   4</span>
@@ -1561,7 +1562,7 @@
     <span class="doccomment">/// Returns a mutable reference to the [`LogEntry`] for this transaction.</span>
     <span class="attribute">#[<span class="ident">must_use</span>]</span>
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::missing_panics_doc</span>)]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">entry_mut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">LogEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">entry_mut</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="ident">LogEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">transaction</span>.<span class="ident">as_mut</span>().<span class="ident">unwrap</span>()
     }
 
@@ -1570,7 +1571,7 @@
     <span class="doccomment">/// well as impervious to sudden failures such as a power outage.</span>
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::missing_panics_doc</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">trees</span> <span class="op">=</span> <span class="ident">std::mem::take</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">trees</span>);
+        <span class="kw">let</span> <span class="ident">trees</span> <span class="op">=</span> <span class="ident">std::mem::take</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="ident">trees</span>);
         <span class="comment">// Write the trees to disk</span>
         <span class="kw">let</span> <span class="ident">trees</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">roots</span>.<span class="ident">data</span>.<span class="ident">thread_pool</span>.<span class="ident">commit_trees</span>(<span class="ident">trees</span>)<span class="question-mark">?</span>;
 
@@ -1592,15 +1593,15 @@
 
     <span class="doccomment">/// Accesses a locked tree.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">tree</span><span class="op">&lt;</span><span class="ident">Root</span>: <span class="ident">tree::Root</span><span class="op">&gt;</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">index</span>: <span class="ident">usize</span>,
-    ) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">TransactionTree</span><span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;mut</span> <span class="ident">TransactionTree</span><span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">trees</span>
             .<span class="ident">get_mut</span>(<span class="ident">index</span>)
             .<span class="ident">and_then</span>(<span class="op">|</span><span class="ident">any_tree</span><span class="op">|</span> <span class="ident">any_tree</span>.<span class="ident">as_mut</span>().<span class="ident">as_any_mut</span>().<span class="ident">downcast_mut</span>())
     }
 
-    <span class="kw">fn</span> <span class="ident">rollback_tree_states</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
+    <span class="kw">fn</span> <span class="ident">rollback_tree_states</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
         <span class="kw">for</span> <span class="ident">tree</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">trees</span>.<span class="ident">drain</span>(..) {
             <span class="ident">tree</span>.<span class="ident">rollback</span>();
         }
@@ -1608,7 +1609,7 @@
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">ExecutingTransaction</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> {
-    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
+    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">transaction</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">transaction</span>.<span class="ident">take</span>() {
             <span class="self">self</span>.<span class="ident">rollback_tree_states</span>();
             <span class="comment">// Now the transaction can be dropped safely, freeing up access to the trees.</span>
@@ -1625,11 +1626,11 @@
 
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">AnyTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>: <span class="ident">Any</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> {
     <span class="kw">fn</span> <span class="ident">as_any</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Any</span>;
-    <span class="kw">fn</span> <span class="ident">as_any_mut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="kw">dyn</span> <span class="ident">Any</span>;
+    <span class="kw">fn</span> <span class="ident">as_any_mut</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">Any</span>;
 
     <span class="kw">fn</span> <span class="ident">state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTreeState</span><span class="op">&gt;</span>;
 
-    <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>;
     <span class="kw">fn</span> <span class="ident">rollback</span>(<span class="kw-2">&amp;</span><span class="self">self</span>);
 }
 
@@ -1637,7 +1638,7 @@
     <span class="kw">fn</span> <span class="ident">as_any</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Any</span> {
         <span class="self">self</span>
     }
-    <span class="kw">fn</span> <span class="ident">as_any_mut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="kw">dyn</span> <span class="ident">Any</span> {
+    <span class="kw">fn</span> <span class="ident">as_any_mut</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">Any</span> {
         <span class="self">self</span>
     }
 
@@ -1645,7 +1646,7 @@
         <span class="ident">Box::new</span>(<span class="self">self</span>.<span class="ident">tree</span>.<span class="ident">state</span>.<span class="ident">clone</span>())
     }
 
-    <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">tree</span>.<span class="ident">commit</span>()
     }
 
@@ -1669,7 +1670,7 @@
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">Root</span>: <span class="ident">tree::Root</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">TransactionTree</span><span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Sets `key` to `value`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">key</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">value</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
@@ -1678,7 +1679,7 @@
 
     <span class="doccomment">/// Executes a modification.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">modify</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">keys</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">operation</span>: <span class="ident">Operation</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
@@ -1691,7 +1692,7 @@
 
     <span class="doccomment">/// Sets `key` to `value`. If a value already exists, it will be returned.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">replace</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">key</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">value</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
@@ -1700,12 +1701,12 @@
 
     <span class="doccomment">/// Returns the current value of `key`. This will return updated information</span>
     <span class="doccomment">/// if it has been previously updated within this transaction.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">tree</span>.<span class="ident">get</span>(<span class="ident">key</span>, <span class="bool-val">true</span>)
     }
 
     <span class="doccomment">/// Removes `key` and returns the existing value, if present.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">remove</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">tree</span>.<span class="ident">remove</span>(<span class="ident">key</span>, <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">transaction_id</span>))
     }
 
@@ -1713,7 +1714,7 @@
     <span class="doccomment">/// be set to the new value if `new` is `Some` or removed if `new` is</span>
     <span class="doccomment">/// `None`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">compare_and_swap</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">key</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>],
         <span class="ident">old</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">new</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span><span class="op">&gt;</span>,
@@ -1725,7 +1726,7 @@
     <span class="doccomment">/// Retrieves the values of `keys`. If any keys are not found, they will be</span>
     <span class="doccomment">/// omitted from the results. Keys are required to be pre-sorted.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_multiple</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">keys</span>: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>[<span class="ident">u8</span>]],
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">tree</span>.<span class="ident">get_multiple</span>(<span class="ident">keys</span>, <span class="bool-val">true</span>)
@@ -1733,7 +1734,7 @@
 
     <span class="doccomment">/// Retrieves all of the values of keys within `range`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_range</span><span class="op">&lt;</span><span class="lifetime">&#39;bounds</span>, <span class="ident">Range</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;bounds</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span><span class="op">&gt;</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">range</span>: <span class="ident">Range</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">tree</span>.<span class="ident">get_range</span>(<span class="ident">range</span>, <span class="bool-val">true</span>)
@@ -1750,7 +1751,7 @@
         <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>, <span class="ident">node_evaluator</span>, <span class="ident">key_evaluator</span>, <span class="ident">callback</span>))
     )]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">scan</span><span class="op">&lt;</span><span class="lifetime">&#39;b</span>, <span class="ident">CallerError</span>, <span class="ident">Range</span>, <span class="ident">NodeEvaluator</span>, <span class="ident">KeyEvaluator</span>, <span class="ident">DataCallback</span><span class="op">&gt;</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">range</span>: <span class="ident">Range</span>,
         <span class="ident">forwards</span>: <span class="ident">bool</span>,
         <span class="kw-2">mut</span> <span class="ident">node_evaluator</span>: <span class="ident">NodeEvaluator</span>,
@@ -1772,21 +1773,21 @@
             <span class="ident">range</span>,
             <span class="ident">forwards</span>,
             <span class="bool-val">true</span>,
-            <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">node_evaluator</span>,
-            <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">key_evaluator</span>,
-            <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">callback</span>,
+            <span class="kw-2">&amp;mut</span> <span class="ident">node_evaluator</span>,
+            <span class="kw-2">&amp;mut</span> <span class="ident">key_evaluator</span>,
+            <span class="kw-2">&amp;mut</span> <span class="ident">callback</span>,
         )
     }
 
     <span class="doccomment">/// Returns the last  of the tree.</span>
     <span class="attribute">#[<span class="ident">cfg_attr</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>, <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>)))]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">last_key</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">last_key</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">tree</span>.<span class="ident">last_key</span>(<span class="bool-val">true</span>)
     }
 
     <span class="doccomment">/// Returns the last key and value of the tree.</span>
     <span class="attribute">#[<span class="ident">cfg_attr</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>, <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>)))]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">last</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">last</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">tree</span>.<span class="ident">last</span>(<span class="bool-val">true</span>)
     }
 }
@@ -1964,7 +1965,7 @@
     <span class="doccomment">/// Sets `key` to `value`. If a value already exists, it will be returned.</span>
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::missing_panics_doc</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">replace</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">key</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">value</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
@@ -1977,7 +1978,7 @@
     <span class="doccomment">/// Executes a modification.</span>
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::missing_panics_doc</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">modify</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">keys</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">operation</span>: <span class="ident">Operation</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
@@ -2079,9 +2080,9 @@
                 <span class="ident">range</span>.<span class="ident">clone</span>(),
                 <span class="ident">forwards</span>,
                 <span class="bool-val">false</span>,
-                <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">node_evaluator</span>,
-                <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">key_evaluator</span>,
-                <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">callback</span>,
+                <span class="kw-2">&amp;mut</span> <span class="ident">node_evaluator</span>,
+                <span class="kw-2">&amp;mut</span> <span class="ident">key_evaluator</span>,
+                <span class="kw-2">&amp;mut</span> <span class="ident">callback</span>,
             )
         })
     }
@@ -2180,11 +2181,11 @@
         <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>, <span class="ident">key_evaluator</span>, <span class="ident">data_callback</span>))
     )]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">scan_sequences</span><span class="op">&lt;</span><span class="ident">CallerError</span>, <span class="ident">Range</span>, <span class="ident">KeyEvaluator</span>, <span class="ident">DataCallback</span><span class="op">&gt;</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">range</span>: <span class="ident">Range</span>,
         <span class="ident">forwards</span>: <span class="ident">bool</span>,
-        <span class="ident">key_evaluator</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">KeyEvaluator</span>,
-        <span class="ident">data_callback</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">DataCallback</span>,
+        <span class="ident">key_evaluator</span>: <span class="kw-2">&amp;mut</span> <span class="ident">KeyEvaluator</span>,
+        <span class="ident">data_callback</span>: <span class="kw-2">&amp;mut</span> <span class="ident">DataCallback</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
     <span class="kw">where</span>
         <span class="ident">Range</span>: <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
@@ -2606,5 +2607,4 @@
 }
 </code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="nebari" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
-    <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script>
 </body></html>

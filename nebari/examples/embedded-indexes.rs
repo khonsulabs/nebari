@@ -58,7 +58,7 @@ impl EmbeddedIndex for Zeroes {
     fn index(_key: &nebari::Buffer<'_>, value: Option<&nebari::Buffer<'static>>) -> Self {
         Self(
             value
-                .map(|bytes| bytes.iter().filter(|&&b| b as char == '0').count())
+                .map(|bytes| bytes.iter().filter(|&b| b as char == '0').count())
                 .unwrap_or_default() as u32,
         )
     }

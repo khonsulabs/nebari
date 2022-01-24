@@ -24,14 +24,15 @@ pub mod transaction;
 pub mod tree;
 mod vault;
 
-mod buffer;
 mod chunk_cache;
 mod context;
 #[cfg(test)]
 mod test_util;
 
+// TODO rename this with a breaking change?
+pub use arc_bytes::ArcBytes as Buffer;
+
 pub use self::{
-    buffer::Buffer,
     chunk_cache::ChunkCache,
     context::Context,
     error::{Error, ErrorKind},

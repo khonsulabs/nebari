@@ -1551,7 +1551,7 @@ mod tests {
         match read_chunk(written_position, true, &mut file, None, None)? {
             CacheEntry::Buffer(data) => {
                 assert_eq!(data.len(), length);
-                assert!(data.iter().all(|i| i == &1));
+                assert!(data.iter().all(|i| i == 1));
             }
             CacheEntry::Decoded(_) => unreachable!(),
         }

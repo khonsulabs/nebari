@@ -10,8 +10,10 @@
 > nebari - noun - the surface roots that flare out from the base of a bonsai tree
 
 This crate provides the `Roots` type, which is the transactional storage layer
-for [`BonsaiDb`](https://dev.bonsaidb.io/). It is loosely inspired by
+for [`BonsaiDb`][bonsaidb]. It is loosely inspired by
 [`Couchstore`](https://github.com/couchbase/couchstore).
+
+This crate blocks the current thread when accessing the filesystem. If you are looking for an async-ready database, [BonsaiDb][bonsaidb] is our vision of an async-aware database built atop Nebari.
 
 This crate is alpha. While its format is considered stable, there may be bugs
 that could lead to data loss. Please have a good backup strategy while using
@@ -127,6 +129,7 @@ introduce IO overhead during the operation.
 Nebari provides APIs that perform compaction, but currently delegates scheduling
 and automation to consumers of this library.
 
+[bonsaidb]: https://bonsaidb.io/
 ## Open-source Licenses
 
 This project, like all projects from [Khonsu Labs](https://khonsulabs.com/), are

@@ -2050,8 +2050,6 @@
 <span id="2049">2049</span>
 <span id="2050">2050</span>
 <span id="2051">2051</span>
-<span id="2052">2052</span>
-<span id="2053">2053</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Append-only B-Tree implementation</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! The file format is loosely inspired by</span>
@@ -2687,15 +2685,13 @@
         <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(<span class="ident">KeySequence</span>, <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
     {
-        <span class="kw">let</span> <span class="ident">range</span> <span class="op">=</span> <span class="ident">U64Range::new</span>(<span class="ident">range</span>);
-        <span class="kw">let</span> <span class="ident">range2</span> <span class="op">=</span> <span class="ident">range</span>.<span class="ident">borrow</span>();
         <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">execute</span>(<span class="ident">TreeSequenceScanner</span> {
             <span class="ident">forwards</span>,
             <span class="ident">from_transaction</span>: <span class="ident">in_transaction</span>,
             <span class="ident">state</span>: <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">state</span>,
             <span class="ident">vault</span>: <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">as_deref</span>(),
             <span class="ident">cache</span>: <span class="self">self</span>.<span class="ident">cache</span>.<span class="ident">as_ref</span>(),
-            <span class="ident">range</span>: <span class="kw-2">&amp;</span><span class="ident">range2</span>,
+            <span class="ident">range</span>: <span class="kw-2">&amp;</span><span class="ident">U64Range::new</span>(<span class="ident">range</span>).<span class="ident">borrow_as_bytes</span>(),
             <span class="ident">key_evaluator</span>: <span class="kw-2">&amp;mut</span> <span class="kw">move</span> <span class="op">|</span><span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>, <span class="ident">index</span>: <span class="kw-2">&amp;</span><span class="ident">BySequenceIndex</span><span class="op">|</span> {
                 <span class="kw">let</span> <span class="ident">id</span> <span class="op">=</span> <span class="ident">BigEndian::read_u64</span>(<span class="ident">key</span>);
                 <span class="ident">key_evaluator</span>(<span class="ident">KeySequence</span> {
@@ -3487,7 +3483,7 @@
 }
 
 <span class="doccomment">/// A range of u64 values that is able to be used as keys in a tree scan, once</span>
-<span class="doccomment">/// [borrowed](BorrowByteRange::borrow()).</span>
+<span class="doccomment">/// [borrowed](BorrowByteRange::borrow_as_bytes()).</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">U64Range</span> {
     <span class="ident">start_bound</span>: <span class="ident">Bound</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
@@ -3524,11 +3520,11 @@
 <span class="doccomment">/// Borrows a range.</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">BorrowByteRange</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Returns a borrowed version of byte representation the original range.</span>
-    <span class="kw">fn</span> <span class="ident">borrow</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>) -&gt; <span class="ident">BorrowedRange</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">borrow_as_bytes</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>) -&gt; <span class="ident">BorrowedRange</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>;
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="ident">BorrowByteRange</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Range</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-    <span class="kw">fn</span> <span class="ident">borrow</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>) -&gt; <span class="ident">BorrowedRange</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">borrow_as_bytes</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>) -&gt; <span class="ident">BorrowedRange</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
         <span class="ident">BorrowedRange</span> {
             <span class="ident">start</span>: <span class="ident">Bound::Included</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">start</span>[..]),
             <span class="ident">end</span>: <span class="ident">Bound::Excluded</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">end</span>[..]),
@@ -3537,7 +3533,7 @@
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="ident">BorrowByteRange</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">U64Range</span> {
-    <span class="kw">fn</span> <span class="ident">borrow</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>) -&gt; <span class="ident">BorrowedRange</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">borrow_as_bytes</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>) -&gt; <span class="ident">BorrowedRange</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
         <span class="ident">BorrowedRange</span> {
             <span class="ident">start</span>: <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">start_bound_bytes</span> {
                 <span class="ident">Bound::Included</span>(<span class="ident">bytes</span>) =&gt; <span class="ident">Bound::Included</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>[..]),

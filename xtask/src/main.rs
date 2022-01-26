@@ -5,7 +5,7 @@ use khonsu_tools::{
         anyhow,
         audit::{self},
         clap::{self, Parser},
-        code_coverage::{self},
+        DefaultConfig,
     },
 };
 use sysinfo::{RefreshKind, System, SystemExt};
@@ -68,18 +68,7 @@ impl khonsu_tools::Config for Config {
 impl khonsu_tools::universal::Config for Config {
     type Audit = Self;
 
-    type CodeCoverage = Self;
-}
-
-impl code_coverage::Config for Config {
-    fn cargo_args() -> Vec<String> {
-        vec![
-            String::from("+nightly"),
-            String::from("test"),
-            String::from("--workspace"),
-            String::from("--all-features"),
-        ]
-    }
+    type CodeCoverage = DefaultConfig;
 }
 
 impl audit::Config for Config {

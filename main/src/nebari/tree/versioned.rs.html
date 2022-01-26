@@ -591,7 +591,7 @@
         <span class="ident">BTreeNode</span>, <span class="ident">Interior</span>, <span class="ident">PageHeader</span>, <span class="ident">Reducer</span>, <span class="ident">Root</span>,
     },
     <span class="ident">vault::AnyVault</span>,
-    <span class="ident">Buffer</span>, <span class="ident">ChunkCache</span>, <span class="ident">ErrorKind</span>,
+    <span class="ident">ArcBytes</span>, <span class="ident">ChunkCache</span>, <span class="ident">ErrorKind</span>,
 };
 
 <span class="kw">const</span> <span class="ident">UNINITIALIZED_SEQUENCE</span>: <span class="ident">u64</span> <span class="op">=</span> <span class="number">0</span>;
@@ -672,7 +672,7 @@
                 <span class="kw-2">&amp;</span><span class="ident">ModificationContext</span> {
                     <span class="ident">current_order</span>: <span class="ident">by_sequence_order</span>,
                     <span class="ident">minimum_children</span>: <span class="ident">by_sequence_minimum_children</span>,
-                    <span class="ident">indexer</span>: <span class="op">|</span><span class="ident">_key</span>: <span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
+                    <span class="ident">indexer</span>: <span class="op">|</span><span class="ident">_key</span>: <span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
                               <span class="ident">value</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">BySequenceIndex</span><span class="op">&gt;</span>,
                               <span class="ident">_existing_index</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">BySequenceIndex</span><span class="op">&gt;</span>,
                               <span class="ident">_changes</span>: <span class="kw-2">&amp;mut</span> <span class="ident">EntryChanges</span>,
@@ -702,7 +702,7 @@
 
     <span class="kw">fn</span> <span class="ident">modify_id_root</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
-        <span class="kw-2">mut</span> <span class="ident">modification</span>: <span class="ident">Modification</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="kw-2">mut</span> <span class="ident">modification</span>: <span class="ident">Modification</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">changes</span>: <span class="kw-2">&amp;mut</span> <span class="ident">EntryChanges</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
         <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
@@ -723,8 +723,8 @@
                 <span class="kw-2">&amp;</span><span class="ident">ModificationContext</span> {
                     <span class="ident">current_order</span>: <span class="ident">by_id_order</span>,
                     <span class="ident">minimum_children</span>: <span class="ident">by_id_minimum_children</span>,
-                    <span class="ident">indexer</span>: <span class="op">|</span><span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
-                              <span class="ident">value</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+                    <span class="ident">indexer</span>: <span class="op">|</span><span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
+                              <span class="ident">value</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
                               <span class="ident">existing_index</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">VersionedByIdIndex</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span><span class="op">&gt;</span><span class="op">&gt;</span>,
                               <span class="ident">changes</span>: <span class="kw-2">&amp;mut</span> <span class="ident">EntryChanges</span>,
                               <span class="ident">writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="op">|</span> {
@@ -762,7 +762,7 @@
                     <span class="ident">loader</span>: <span class="op">|</span><span class="ident">index</span>, <span class="ident">writer</span><span class="op">|</span> {
                         <span class="kw">if</span> <span class="ident">index</span>.<span class="ident">position</span> <span class="op">&gt;</span> <span class="number">0</span> {
                             <span class="kw">match</span> <span class="ident">writer</span>.<span class="ident">read_chunk</span>(<span class="ident">index</span>.<span class="ident">position</span>) {
-                                <span class="prelude-val">Ok</span>(<span class="ident">CacheEntry::Buffer</span>(<span class="ident">buffer</span>)) =&gt; <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">buffer</span>)),
+                                <span class="prelude-val">Ok</span>(<span class="ident">CacheEntry::ArcBytes</span>(<span class="ident">buffer</span>)) =&gt; <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">buffer</span>)),
                                 <span class="prelude-val">Ok</span>(<span class="ident">CacheEntry::Decoded</span>(<span class="kw">_</span>)) =&gt; <span class="macro">unreachable!</span>(),
                                 <span class="prelude-val">Err</span>(<span class="ident">err</span>) =&gt; <span class="prelude-val">Err</span>(<span class="ident">err</span>),
                             }
@@ -817,7 +817,7 @@
         <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">stats</span>().<span class="ident">alive_keys</span>
     }
 
-    <span class="kw">fn</span> <span class="ident">deserialize</span>(<span class="kw-2">mut</span> <span class="ident">bytes</span>: <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">deserialize</span>(<span class="kw-2">mut</span> <span class="ident">bytes</span>: <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">transaction_id</span> <span class="op">=</span> <span class="ident">bytes</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">sequence</span> <span class="op">=</span> <span class="ident">bytes</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">by_sequence_size</span> <span class="op">=</span> <span class="ident">bytes</span>.<span class="ident">read_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span> <span class="kw">as</span> <span class="ident">usize</span>;
@@ -878,7 +878,7 @@
 
     <span class="kw">fn</span> <span class="ident">modify</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
-        <span class="ident">modification</span>: <span class="ident">Modification</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">modification</span>: <span class="ident">Modification</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
         <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
@@ -903,7 +903,7 @@
                     <span class="ident">value_length</span>: <span class="ident">change</span>.<span class="ident">value_size</span>,
                     <span class="ident">position</span>: <span class="ident">change</span>.<span class="ident">value_position</span>,
                 });
-                <span class="ident">Buffer::from</span>(<span class="ident">change</span>.<span class="ident">key_sequence</span>.<span class="ident">sequence</span>.<span class="ident">to_be_bytes</span>())
+                <span class="ident">ArcBytes::from</span>(<span class="ident">change</span>.<span class="ident">key_sequence</span>.<span class="ident">sequence</span>.<span class="ident">to_be_bytes</span>())
             })
             .<span class="ident">collect</span>();
         <span class="kw">let</span> <span class="ident">sequence_modifications</span> <span class="op">=</span> <span class="ident">Modification</span> {
@@ -932,8 +932,8 @@
         <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>
     <span class="kw">where</span>
-        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="ident">KeyEvaluation</span>,
-        <span class="ident">KeyReader</span>: <span class="ident">FnMut</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>,
+        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="ident">KeyEvaluation</span>,
+        <span class="ident">KeyReader</span>: <span class="ident">FnMut</span>(<span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>,
         <span class="ident">Keys</span>: <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;keys</span> [<span class="ident">u8</span>]<span class="op">&gt;</span>,
     {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">positions_to_read</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
@@ -958,7 +958,7 @@
         <span class="kw">for</span> (<span class="ident">key</span>, <span class="ident">position</span>) <span class="kw">in</span> <span class="ident">positions_to_read</span> {
             <span class="kw">if</span> <span class="ident">position</span> <span class="op">&gt;</span> <span class="number">0</span> {
                 <span class="kw">match</span> <span class="ident">read_chunk</span>(<span class="ident">position</span>, <span class="bool-val">false</span>, <span class="ident">file</span>, <span class="ident">vault</span>, <span class="ident">cache</span>)<span class="question-mark">?</span> {
-                    <span class="ident">CacheEntry::Buffer</span>(<span class="ident">contents</span>) =&gt; {
+                    <span class="ident">CacheEntry::ArcBytes</span>(<span class="ident">contents</span>) =&gt; {
                         <span class="ident">key_reader</span>(<span class="ident">key</span>, <span class="ident">contents</span>)<span class="question-mark">?</span>;
                     }
                     <span class="ident">CacheEntry::Decoded</span>(<span class="kw">_</span>) =&gt; <span class="macro">unreachable!</span>(),
@@ -978,7 +978,7 @@
         <span class="ident">ScanDataCallback</span>,
     <span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">range</span>: <span class="kw-2">&amp;</span><span class="ident">KeyRangeBounds</span>,
+        <span class="ident">range</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;keys</span> <span class="ident">KeyRangeBounds</span>,
         <span class="ident">args</span>: <span class="kw-2">&amp;mut</span> <span class="ident">ScanArgs</span><span class="op">&lt;</span>
             <span class="ident"><span class="self">Self</span>::Index</span>,
             <span class="ident"><span class="self">Self</span>::ReducedIndex</span>,
@@ -992,13 +992,13 @@
         <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
     <span class="kw">where</span>
-        <span class="ident">NodeEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::ReducedIndex</span>, <span class="ident">usize</span>) -&gt; <span class="ident">bool</span>,
-        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Index</span>) -&gt; <span class="ident">KeyEvaluation</span>,
-        <span class="ident">KeyRangeBounds</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;keys</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span>,
+        <span class="ident">NodeEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::ReducedIndex</span>, <span class="ident">usize</span>) -&gt; <span class="ident">bool</span>,
+        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Index</span>) -&gt; <span class="ident">KeyEvaluation</span>,
+        <span class="ident">KeyRangeBounds</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;keys</span> [<span class="ident">u8</span>]<span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="question-mark">?</span><span class="ident">Sized</span>,
         <span class="ident">ScanDataCallback</span>: <span class="ident">FnMut</span>(
-            <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
+            <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
             <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Index</span>,
-            <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
+            <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
         ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     {
         <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">scan</span>(<span class="ident">range</span>, <span class="ident">args</span>, <span class="ident">file</span>, <span class="ident">vault</span>, <span class="ident">cache</span>, <span class="number">0</span>)
@@ -1079,7 +1079,7 @@
             <span class="kw-2">&amp;</span><span class="ident">ModificationContext</span> {
                 <span class="ident">current_order</span>: <span class="ident">by_sequence_order</span>,
                 <span class="ident">minimum_children</span>,
-                <span class="ident">indexer</span>: <span class="op">|</span><span class="ident">_key</span>: <span class="kw-2">&amp;</span><span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
+                <span class="ident">indexer</span>: <span class="op">|</span><span class="ident">_key</span>: <span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
                           <span class="ident">value</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">BySequenceIndex</span><span class="op">&gt;</span>,
                           <span class="ident">_existing_index</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">BySequenceIndex</span><span class="op">&gt;</span>,
                           <span class="ident">_changes</span>: <span class="kw-2">&amp;mut</span> <span class="ident">EntryChanges</span>,
@@ -1113,7 +1113,7 @@
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">KeySequence</span> {
     <span class="doccomment">/// The key that this entry was written for.</span>
-    <span class="kw">pub</span> <span class="ident">key</span>: <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">key</span>: <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The unique sequence id.</span>
     <span class="kw">pub</span> <span class="ident">sequence</span>: <span class="ident">u64</span>,
     <span class="doccomment">/// The previous sequence id for this key, if any.</span>

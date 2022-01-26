@@ -99,7 +99,7 @@
 <span class="kw">use</span> <span class="ident">lru::LruCache</span>;
 <span class="kw">use</span> <span class="ident">parking_lot::Mutex</span>;
 
-<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::Buffer</span>;
+<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::ArcBytes</span>;
 
 <span class="doccomment">/// A configurable cache that operates at the &quot;chunk&quot; level.</span>
 <span class="doccomment">///</span>
@@ -155,10 +155,10 @@
     }
 
     <span class="doccomment">/// Adds a new cached chunk for `file_path` at `position`.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">insert</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">file_id</span>: <span class="ident">u64</span>, <span class="ident">position</span>: <span class="ident">u64</span>, <span class="ident">buffer</span>: <span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">insert</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">file_id</span>: <span class="ident">u64</span>, <span class="ident">position</span>: <span class="ident">u64</span>, <span class="ident">buffer</span>: <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) {
         <span class="kw">if</span> <span class="ident">buffer</span>.<span class="ident">len</span>() <span class="op">&lt;</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">max_block_length</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cache</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">cache</span>.<span class="ident">lock</span>();
-            <span class="ident">cache</span>.<span class="ident">put</span>(<span class="ident">ChunkKey</span> { <span class="ident">position</span>, <span class="ident">file_id</span> }, <span class="ident">CacheEntry::Buffer</span>(<span class="ident">buffer</span>));
+            <span class="ident">cache</span>.<span class="ident">put</span>(<span class="ident">ChunkKey</span> { <span class="ident">position</span>, <span class="ident">file_id</span> }, <span class="ident">CacheEntry::ArcBytes</span>(<span class="ident">buffer</span>));
         }
     }
 
@@ -186,7 +186,7 @@
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">CacheEntry</span> {
-    <span class="ident">Buffer</span>(<span class="ident">Buffer</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>),
+    <span class="ident">ArcBytes</span>(<span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>),
     <span class="ident">Decoded</span>(<span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnySendSync</span><span class="op">&gt;</span>),
 }
 </code></pre></div>

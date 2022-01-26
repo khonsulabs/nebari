@@ -633,15 +633,13 @@ where
         DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
-        let range = U64Range::new(range);
-        let range2 = range.borrow();
         self.file.execute(TreeSequenceScanner {
             forwards,
             from_transaction: in_transaction,
             state: &self.state,
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
-            range: &range2,
+            range: &U64Range::new(range).borrow_as_bytes(),
             key_evaluator: &mut move |key: &ArcBytes<'_>, index: &BySequenceIndex| {
                 let id = BigEndian::read_u64(key);
                 key_evaluator(KeySequence {
@@ -1470,11 +1468,11 @@ pub struct BorrowedRange<'a> {
 /// Borrows a range.
 pub trait BorrowByteRange<'a> {
     /// Returns a borrowed version of byte representation the original range.
-    fn borrow(&'a self) -> BorrowedRange<'a>;
+    fn borrow_as_bytes(&'a self) -> BorrowedRange<'a>;
 }
 
 impl<'a> BorrowByteRange<'a> for Range<Vec<u8>> {
-    fn borrow(&'a self) -> BorrowedRange<'a> {
+    fn borrow_as_bytes(&'a self) -> BorrowedRange<'a> {
         BorrowedRange {
             start: Bound::Included(&self.start[..]),
             end: Bound::Excluded(&self.end[..]),
@@ -1483,7 +1481,7 @@ impl<'a> BorrowByteRange<'a> for Range<Vec<u8>> {
 }
 
 impl<'a> BorrowByteRange<'a> for U64Range {
-    fn borrow(&'a self) -> BorrowedRange<'a> {
+    fn borrow_as_bytes(&'a self) -> BorrowedRange<'a> {
         BorrowedRange {
             start: match &self.start_bound_bytes {
                 Bound::Included(bytes) => Bound::Included(&bytes[..]),

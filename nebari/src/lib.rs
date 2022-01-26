@@ -29,8 +29,7 @@ mod context;
 #[cfg(test)]
 mod test_util;
 
-// TODO rename this with a breaking change?
-pub use arc_bytes::ArcBytes as Buffer;
+pub use arc_bytes::ArcBytes;
 
 pub use self::{
     chunk_cache::ChunkCache,

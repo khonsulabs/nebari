@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use ::nebari::Buffer;
+use ::nebari::ArcBytes;
 use criterion::{Criterion, Throughput};
 use nanorand::{Pcg64, Rng};
 use ubyte::ToByteUnit;
@@ -43,7 +43,7 @@ pub struct InsertConfig {
 }
 
 #[derive(Clone)]
-pub struct Blob(u64, Buffer<'static>);
+pub struct Blob(u64, ArcBytes<'static>);
 
 pub struct BlobGenerator {
     last_id: u64,
@@ -59,7 +59,7 @@ impl Iterator for BlobGenerator {
         for i in 0..self.bytes.len() {
             self.bytes[i] = self.rng.generate();
         }
-        Some(Blob(self.last_id, Buffer::from(self.bytes.clone())))
+        Some(Blob(self.last_id, ArcBytes::from(self.bytes.clone())))
     }
 }
 

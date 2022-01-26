@@ -22,7 +22,7 @@ use crate::{
     io::ManagedFile,
     tree::{key_entry::ValueIndex, read_chunk, versioned::Children, KeyEvaluation},
     vault::AnyVault,
-    AbortError, Buffer, ChunkCache, ErrorKind,
+    AbortError, ArcBytes, ChunkCache, ErrorKind,
 };
 
 /// A B-Tree entry that stores a list of key-`Index` pairs.
@@ -85,7 +85,7 @@ impl<Index> Reducer<Index> for () {
 pub struct ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>
 where
     Indexer: Fn(
-        &Buffer<'_>,
+        &ArcBytes<'_>,
         Option<&IndexedType>,
         Option<&Index>,
         &mut Context,
@@ -109,14 +109,14 @@ where
         &mut self,
         modification: &mut Modification<'_, IndexedType>,
         context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
-        max_key: Option<&Buffer<'_>>,
+        max_key: Option<&ArcBytes<'_>>,
         changes: &mut Context,
         writer: &mut PagedWriter<'_, File>,
     ) -> Result<ChangeResult, Error>
     where
         File: ManagedFile,
         Indexer: Fn(
-            &Buffer<'_>,
+            &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
@@ -202,14 +202,14 @@ where
         children: &mut Vec<KeyEntry<Index>>,
         modification: &mut Modification<'_, IndexedType>,
         context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
-        max_key: Option<&Buffer<'_>>,
+        max_key: Option<&ArcBytes<'_>>,
         changes: &mut Context,
         writer: &mut PagedWriter<'_, File>,
     ) -> Result<bool, Error>
     where
         File: ManagedFile,
         Indexer: Fn(
-            &Buffer<'_>,
+            &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
@@ -278,7 +278,7 @@ where
                         KeyOperation::Skip => {}
                         KeyOperation::Set(index) => {
                             children[last_index] = KeyEntry {
-                                key: key.to_owned(),
+                                key: key.into_owned(),
                                 index,
                             };
                             any_changes = true;
@@ -333,7 +333,7 @@ where
                             children.insert(
                                 last_index,
                                 KeyEntry {
-                                    key: key.to_owned(),
+                                    key: key.into_owned(),
                                     index,
                                 },
                             );
@@ -352,14 +352,14 @@ where
         children: &mut Vec<Interior<Index, ReducedIndex>>,
         modification: &mut Modification<'_, IndexedType>,
         context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
-        max_key: Option<&Buffer<'_>>,
+        max_key: Option<&ArcBytes<'_>>,
         changes: &mut Context,
         writer: &mut PagedWriter<'_, File>,
     ) -> Result<ChangeResult, Error>
     where
         File: ManagedFile,
         Indexer: Fn(
-            &Buffer<'_>,
+            &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
@@ -447,7 +447,7 @@ where
     where
         File: ManagedFile,
         Indexer: Fn(
-            &Buffer<'_>,
+            &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
@@ -488,7 +488,7 @@ where
     where
         File: ManagedFile,
         Indexer: Fn(
-            &Buffer<'_>,
+            &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
@@ -556,7 +556,7 @@ where
     where
         File: ManagedFile,
         Indexer: Fn(
-            &Buffer<'_>,
+            &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
@@ -624,7 +624,7 @@ where
     where
         File: ManagedFile,
         Indexer: Fn(
-            &Buffer<'_>,
+            &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
@@ -713,7 +713,7 @@ where
     where
         File: ManagedFile,
         Indexer: Fn(
-            &Buffer<'_>,
+            &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
@@ -912,7 +912,7 @@ where
     /// Returns the highest-ordered key contained in this node.
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
-    pub fn max_key(&self) -> &Buffer<'static> {
+    pub fn max_key(&self) -> &ArcBytes<'static> {
         match &self.node {
             BTreeNode::Leaf(children) => &children.last().unwrap().key,
             BTreeNode::Interior(children) => &children.last().unwrap().key,
@@ -926,6 +926,7 @@ where
     )]
     pub(crate) fn scan<
         'k,
+        'keys,
         CallerError: Display + Debug,
         File: ManagedFile,
         KeyRangeBounds,
@@ -934,7 +935,7 @@ where
         ScanDataCallback,
     >(
         &self,
-        range: &KeyRangeBounds,
+        range: &'keys KeyRangeBounds,
         args: &mut ScanArgs<
             Index,
             ReducedIndex,
@@ -949,16 +950,19 @@ where
         current_depth: usize,
     ) -> Result<bool, AbortError<CallerError>>
     where
-        NodeEvaluator: FnMut(&Buffer<'static>, &ReducedIndex, usize) -> bool,
-        KeyEvaluator: FnMut(&Buffer<'static>, &Index) -> KeyEvaluation,
-        KeyRangeBounds: RangeBounds<Buffer<'k>> + Debug,
-        ScanDataCallback:
-            FnMut(Buffer<'static>, &Index, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &ReducedIndex, usize) -> bool,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Index) -> KeyEvaluation,
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+        ScanDataCallback: FnMut(
+            ArcBytes<'static>,
+            &Index,
+            ArcBytes<'static>,
+        ) -> Result<(), AbortError<CallerError>>,
     {
         match &self.node {
             BTreeNode::Leaf(children) => {
                 for child in DirectionalSliceIterator::new(args.forwards, children) {
-                    if range.contains(&child.key) {
+                    if range.contains(&child.key.as_slice()) {
                         match (args.key_evaluator)(&child.key, &child.index) {
                             KeyEvaluation::ReadData => {
                                 let data = match read_chunk(
@@ -968,7 +972,7 @@ where
                                     vault,
                                     cache,
                                 )? {
-                                    CacheEntry::Buffer(contents) => contents,
+                                    CacheEntry::ArcBytes(contents) => contents,
                                     CacheEntry::Decoded(_) => unreachable!(),
                                 };
                                 (args.data_callback)(child.key.clone(), &child.index, data)?;
@@ -994,7 +998,7 @@ where
                             // bound, we can break out of the loop.
                             match end_bound {
                                 Bound::Included(key) => {
-                                    if previous_entry.key > *key {
+                                    if previous_entry.key > **key {
                                         break;
                                     }
                                 }
@@ -1014,7 +1018,7 @@ where
                     // is less than the key for this child.
                     match start_bound {
                         Bound::Included(key) => {
-                            if child.key < *key {
+                            if child.key < **key {
                                 continue;
                             }
                         }
@@ -1061,8 +1065,8 @@ where
         cache: Option<&ChunkCache>,
     ) -> Result<bool, Error>
     where
-        KeyEvaluator: FnMut(&Buffer<'static>, &Index) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, &Index) -> Result<(), AbortError<Infallible>>,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Index) -> KeyEvaluation,
+        KeyReader: FnMut(ArcBytes<'static>, &Index) -> Result<(), AbortError<Infallible>>,
         Keys: Iterator<Item = &'keys [u8]>,
     {
         match &self.node {
@@ -1151,7 +1155,7 @@ where
     where
         File: ManagedFile,
         Callback: FnMut(
-            &Buffer<'static>,
+            &ArcBytes<'static>,
             &mut Index,
             &mut File,
             &mut HashMap<u64, u64>,
@@ -1247,7 +1251,7 @@ impl<
     }
 
     fn deserialize_from(
-        reader: &mut Buffer<'_>,
+        reader: &mut ArcBytes<'_>,
         current_order: Option<usize>,
     ) -> Result<Self, Error> {
         let node_header = reader.read_u8()?;
@@ -1337,10 +1341,10 @@ pub struct ScanArgs<
     KeyEvaluator,
     DataCallback,
 > where
-    NodeEvaluator: FnMut(&Buffer<'static>, &ReducedIndex, usize) -> bool,
-    KeyEvaluator: FnMut(&Buffer<'static>, &Index) -> KeyEvaluation,
+    NodeEvaluator: FnMut(&ArcBytes<'static>, &ReducedIndex, usize) -> bool,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &Index) -> KeyEvaluation,
     DataCallback:
-        FnMut(Buffer<'static>, &Index, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        FnMut(ArcBytes<'static>, &Index, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
 {
     pub forwards: bool,
     pub node_evaluator: NodeEvaluator,
@@ -1358,10 +1362,10 @@ impl<
         DataCallback,
     > ScanArgs<Index, ReducedIndex, CallerError, NodeEvaluator, KeyEvaluator, DataCallback>
 where
-    NodeEvaluator: FnMut(&Buffer<'static>, &ReducedIndex, usize) -> bool,
-    KeyEvaluator: FnMut(&Buffer<'static>, &Index) -> KeyEvaluation,
+    NodeEvaluator: FnMut(&ArcBytes<'static>, &ReducedIndex, usize) -> bool,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &Index) -> KeyEvaluation,
     DataCallback:
-        FnMut(Buffer<'static>, &Index, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        FnMut(ArcBytes<'static>, &Index, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
 {
     pub fn new(
         forwards: bool,

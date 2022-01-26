@@ -3,13 +3,13 @@ use std::{collections::HashMap, convert::TryFrom};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{serialization::BinarySerialization, PagedWriter};
-use crate::{error::Error, io::ManagedFile, vault::AnyVault, Buffer, ErrorKind};
+use crate::{error::Error, io::ManagedFile, vault::AnyVault, ArcBytes, ErrorKind};
 
 /// An entry for a key. Stores a single index value for a single key.
 #[derive(Debug, Clone)]
 pub struct KeyEntry<Index> {
     /// The key of this entry.
-    pub key: Buffer<'static>,
+    pub key: ArcBytes<'static>,
     /// The index value of this entry.
     pub index: Index,
 }
@@ -32,7 +32,7 @@ impl<Index: ValueIndex + BinarySerialization> KeyEntry<Index> {
     where
         File: ManagedFile,
         Callback: FnMut(
-            &Buffer<'static>,
+            &ArcBytes<'static>,
             &mut Index,
             &mut File,
             &mut HashMap<u64, u64>,
@@ -70,7 +70,7 @@ impl<Index: BinarySerialization> BinarySerialization for KeyEntry<Index> {
     }
 
     fn deserialize_from(
-        reader: &mut Buffer<'_>,
+        reader: &mut ArcBytes<'_>,
         current_order: Option<usize>,
     ) -> Result<Self, Error> {
         let key_len = reader.read_u16::<BigEndian>()? as usize;
@@ -81,7 +81,7 @@ impl<Index: BinarySerialization> BinarySerialization for KeyEntry<Index> {
                 reader.len()
             )));
         }
-        let key = reader.read_bytes(key_len)?.to_owned();
+        let key = reader.read_bytes(key_len)?.into_owned();
 
         let value = Index::deserialize_from(reader, current_order)?;
 

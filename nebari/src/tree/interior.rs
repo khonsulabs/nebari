@@ -16,7 +16,7 @@ use crate::{
     io::ManagedFile,
     tree::{btree_entry::NodeInclusion, key_entry::ValueIndex},
     vault::AnyVault,
-    AbortError, Buffer, ChunkCache, ErrorKind,
+    AbortError, ArcBytes, ChunkCache, ErrorKind,
 };
 
 /// An interior B-Tree node. Does not contain values directly, and instead
@@ -24,7 +24,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct Interior<Index, ReducedIndex> {
     /// The key with the highest sort value within.
-    pub key: Buffer<'static>,
+    pub key: ArcBytes<'static>,
     /// The location of the node.
     pub position: Pointer<Index, ReducedIndex>,
     /// The reduced statistics.
@@ -84,7 +84,7 @@ impl<
         match self {
             Pointer::OnDisk(position) => {
                 let entry = match read_chunk(*position, validate_crc, file, vault, cache)? {
-                    CacheEntry::Buffer(mut buffer) => {
+                    CacheEntry::ArcBytes(mut buffer) => {
                         // It's worthless to store this node in the cache
                         // because if we mutate, we'll be rewritten.
                         Box::new(BTreeEntry::deserialize_from(&mut buffer, current_order)?)
@@ -156,7 +156,7 @@ impl<
     ) -> Result<Output, AbortError<CallerError>> {
         match self {
             Pointer::OnDisk(position) => match read_chunk(*position, false, file, vault, cache)? {
-                CacheEntry::Buffer(mut buffer) => {
+                CacheEntry::ArcBytes(mut buffer) => {
                     let decoded = BTreeEntry::deserialize_from(&mut buffer, current_order)?;
 
                     let result = callback(&decoded, file);
@@ -198,7 +198,7 @@ impl<
     where
         File: ManagedFile,
         Callback: FnMut(
-            &Buffer<'static>,
+            &ArcBytes<'static>,
             &mut Index,
             &mut File,
             &mut HashMap<u64, u64>,
@@ -288,7 +288,7 @@ impl<
     }
 
     fn deserialize_from(
-        reader: &mut Buffer<'_>,
+        reader: &mut ArcBytes<'_>,
         current_order: Option<usize>,
     ) -> Result<Self, Error> {
         let key_len = reader.read_u16::<BigEndian>()? as usize;
@@ -299,7 +299,7 @@ impl<
                 reader.len()
             )));
         }
-        let key = reader.read_bytes(key_len)?.to_owned();
+        let key = reader.read_bytes(key_len)?.into_owned();
 
         let position = reader.read_u64::<BigEndian>()?;
         let stats = ReducedIndex::deserialize_from(reader, current_order)?;

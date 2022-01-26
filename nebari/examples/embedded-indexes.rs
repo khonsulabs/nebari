@@ -25,7 +25,7 @@ fn main() -> Result<(), Error> {
     // the scan at every level of the tree, and we have full control over
     // iteration of the tree.
     tree.scan::<Infallible, _, _, _, _>(
-        ..,
+        &(..),
         true,
         // The node evaluator is called for every interior node -- nodes that
         // don't contain values directly, but point to other nodes instead.
@@ -55,7 +55,7 @@ fn main() -> Result<(), Error> {
 pub struct Zeroes(pub u32);
 
 impl EmbeddedIndex for Zeroes {
-    fn index(_key: &nebari::Buffer<'_>, value: Option<&nebari::Buffer<'static>>) -> Self {
+    fn index(_key: &nebari::ArcBytes<'_>, value: Option<&nebari::ArcBytes<'static>>) -> Self {
         Self(
             value
                 .map(|bytes| bytes.iter().filter(|&b| b as char == '0').count())

@@ -44,7 +44,7 @@ use std::{
     hash::BuildHasher,
     io::SeekFrom,
     marker::PhantomData,
-    ops::{Bound, Deref, DerefMut, RangeBounds},
+    ops::{Bound, Deref, DerefMut, Range, RangeBounds},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -61,7 +61,7 @@ use crate::{
     transaction::{TransactionHandle, TransactionManager},
     tree::{btree_entry::ScanArgs, serialization::BinarySerialization},
     vault::AnyVault,
-    Buffer, ChunkCache, CompareAndSwapError, Context, ErrorKind,
+    ArcBytes, ChunkCache, CompareAndSwapError, Context, ErrorKind,
 };
 
 mod btree_entry;
@@ -254,7 +254,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                         context.vault(),
                         context.cache(),
                     )? {
-                        CacheEntry::Buffer(buffer) => buffer,
+                        CacheEntry::ArcBytes(buffer) => buffer,
                         CacheEntry::Decoded(_) => unreachable!(),
                     };
                     let root = Root::deserialize(contents)
@@ -299,8 +299,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     pub fn push(
         &mut self,
         transaction_id: Option<u64>,
-        key: Buffer<'static>,
-        value: Buffer<'static>,
+        key: ArcBytes<'static>,
+        value: ArcBytes<'static>,
     ) -> Result<(), Error> {
         self.file.execute(TreeModifier {
             state: &self.state,
@@ -316,7 +316,10 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     }
 
     /// Executes a modification.
-    pub fn modify(&mut self, modification: Modification<'_, Buffer<'static>>) -> Result<(), Error> {
+    pub fn modify(
+        &mut self,
+        modification: Modification<'_, ArcBytes<'static>>,
+    ) -> Result<(), Error> {
         self.file.execute(TreeModifier {
             state: &self.state,
             vault: self.vault.as_deref(),
@@ -332,22 +335,24 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     pub fn compare_and_swap(
         &mut self,
         key: &[u8],
-        old: Option<&Buffer<'_>>,
-        mut new: Option<Buffer<'_>>,
+        old: Option<&ArcBytes<'_>>,
+        mut new: Option<ArcBytes<'_>>,
         transaction_id: Option<u64>,
     ) -> Result<(), CompareAndSwapError> {
         let mut result = Ok(());
         self.modify(Modification {
             transaction_id,
-            keys: vec![Buffer::from(key)],
+            keys: vec![ArcBytes::from(key)],
             operation: Operation::CompareSwap(CompareSwap::new(&mut |_key, value| {
                 if value.as_ref() == old {
                     match new.take() {
-                        Some(new) => KeyOperation::Set(new.to_owned()),
+                        Some(new) => KeyOperation::Set(new.into_owned()),
                         None => KeyOperation::Remove,
                     }
                 } else {
-                    result = Err(CompareAndSwapError::Conflict(value));
+                    result = Err(CompareAndSwapError::Conflict(
+                        value.map(ArcBytes::into_owned),
+                    ));
                     KeyOperation::Skip
                 }
             })),
@@ -360,11 +365,11 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         &mut self,
         key: &[u8],
         transaction_id: Option<u64>,
-    ) -> Result<Option<Buffer<'static>>, Error> {
+    ) -> Result<Option<ArcBytes<'static>>, Error> {
         let mut existing_value = None;
         self.modify(Modification {
             transaction_id,
-            keys: vec![Buffer::from(key)],
+            keys: vec![ArcBytes::from(key)],
             operation: Operation::CompareSwap(CompareSwap::new(&mut |_key, value| {
                 existing_value = value;
                 KeyOperation::Remove
@@ -377,10 +382,10 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     #[allow(clippy::missing_panics_doc)]
     pub fn replace(
         &mut self,
-        key: impl Into<Buffer<'static>>,
-        value: impl Into<Buffer<'static>>,
+        key: impl Into<ArcBytes<'static>>,
+        value: impl Into<ArcBytes<'static>>,
         transaction_id: Option<u64>,
-    ) -> Result<Option<Buffer<'static>>, Error> {
+    ) -> Result<Option<ArcBytes<'static>>, Error> {
         let mut existing_value = None;
         let mut value = Some(value.into());
         self.modify(Modification {
@@ -401,7 +406,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         &mut self,
         key: &'k [u8],
         in_transaction: bool,
-    ) -> Result<Option<Buffer<'static>>, Error> {
+    ) -> Result<Option<ArcBytes<'static>>, Error> {
         let mut buffer = None;
         self.file.execute(TreeGetter {
             from_transaction: in_transaction,
@@ -426,7 +431,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         &mut self,
         keys: &[&[u8]],
         in_transaction: bool,
-    ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
         let mut buffers = Vec::with_capacity(keys.len());
         self.file.execute(TreeGetter {
             from_transaction: in_transaction,
@@ -445,11 +450,14 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
 
     /// Retrieves all keys and values with keys that are contained by `range`.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
-    pub fn get_range<'b, B: RangeBounds<Buffer<'b>> + Debug + 'static>(
+    pub fn get_range<'keys, KeyRangeBounds>(
         &mut self,
-        range: B,
+        range: &'keys KeyRangeBounds,
         in_transaction: bool,
-    ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error>
+    where
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+    {
         let mut results = Vec::new();
         self.scan(
             range,
@@ -476,9 +484,9 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         feature = "tracing",
         tracing::instrument(skip(self, node_evaluator, key_evaluator, key_reader))
     )]
-    pub fn scan<'range, CallerError, Range, NodeEvaluator, KeyEvaluator, DataCallback>(
+    pub fn scan<'keys, CallerError, KeyRangeBounds, NodeEvaluator, KeyEvaluator, DataCallback>(
         &mut self,
-        range: Range,
+        range: &'keys KeyRangeBounds,
         forwards: bool,
         in_transaction: bool,
         node_evaluator: &mut NodeEvaluator,
@@ -486,13 +494,13 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         key_reader: &mut DataCallback,
     ) -> Result<(), AbortError<CallerError>>
     where
-        Range: RangeBounds<Buffer<'range>> + Debug + 'static,
-        NodeEvaluator: FnMut(&Buffer<'static>, &Root::ReducedIndex, usize) -> bool,
-        KeyEvaluator: FnMut(&Buffer<'static>, &Root::Index) -> KeyEvaluation,
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> bool,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> KeyEvaluation,
         DataCallback: FnMut(
-            Buffer<'static>,
+            ArcBytes<'static>,
             &Root::Index,
-            Buffer<'static>,
+            ArcBytes<'static>,
         ) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
@@ -512,10 +520,10 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     }
 
     /// Returns the last key of the tree.
-    pub fn last_key(&mut self, in_transaction: bool) -> Result<Option<Buffer<'static>>, Error> {
+    pub fn last_key(&mut self, in_transaction: bool) -> Result<Option<ArcBytes<'static>>, Error> {
         let mut result = None;
         self.scan(
-            ..,
+            &(..),
             false,
             in_transaction,
             &mut |_, _, _| true,
@@ -533,11 +541,11 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     pub fn last(
         &mut self,
         in_transaction: bool,
-    ) -> Result<Option<(Buffer<'static>, Buffer<'static>)>, Error> {
+    ) -> Result<Option<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
         let mut result = None;
         let mut key_requested = false;
         self.scan(
-            ..,
+            &(..),
             false,
             in_transaction,
             &mut |_, _, _| true,
@@ -622,17 +630,19 @@ where
     where
         Range: RangeBounds<u64> + Debug + 'static,
         KeyEvaluator: FnMut(KeySequence) -> KeyEvaluation,
-        DataCallback: FnMut(KeySequence, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
+        let range = U64Range::new(range);
+        let range2 = range.borrow();
         self.file.execute(TreeSequenceScanner {
             forwards,
             from_transaction: in_transaction,
             state: &self.state,
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
-            range: U64Bounds::new(range),
-            key_evaluator: &mut move |key: &Buffer<'static>, index: &BySequenceIndex| {
+            range: &range2,
+            key_evaluator: &mut move |key: &ArcBytes<'_>, index: &BySequenceIndex| {
                 let id = BigEndian::read_u64(key);
                 key_evaluator(KeySequence {
                     key: index.key.clone(),
@@ -641,7 +651,6 @@ where
                 })
             },
             data_callback,
-            _phantom: PhantomData,
         })?;
         Ok(())
     }
@@ -776,7 +785,7 @@ struct TreeModifier<'a, 'm, Root: root::Root> {
     state: &'a State<Root>,
     vault: Option<&'a dyn AnyVault>,
     cache: Option<&'a ChunkCache>,
-    modification: Option<Modification<'m, Buffer<'static>>>,
+    modification: Option<Modification<'m, ArcBytes<'static>>>,
     scratch: &'a mut Vec<u8>,
 }
 
@@ -901,8 +910,8 @@ struct TreeGetter<
     'a,
     'keys,
     Root: root::Root,
-    KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-    KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
+    KeyEvaluator: FnMut(&ArcBytes<'static>) -> KeyEvaluation,
+    KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
     Keys: Iterator<Item = &'keys [u8]>,
 > {
     from_transaction: bool,
@@ -917,8 +926,8 @@ struct TreeGetter<
 impl<'a, 'keys, KeyEvaluator, KeyReader, Root, File, Keys> FileOp<File>
     for TreeGetter<'a, 'keys, Root, KeyEvaluator, KeyReader, Keys>
 where
-    KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-    KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
+    KeyEvaluator: FnMut(&ArcBytes<'static>) -> KeyEvaluation,
+    KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
     Keys: Iterator<Item = &'keys [u8]>,
     Root: root::Root,
     File: ManagedFile,
@@ -967,14 +976,14 @@ struct TreeScanner<
     KeyReader,
     KeyRangeBounds,
 > where
-    NodeEvaluator: FnMut(&Buffer<'static>, &Root::ReducedIndex, usize) -> bool,
-    KeyEvaluator: FnMut(&Buffer<'static>, &Root::Index) -> KeyEvaluation,
+    NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> bool,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> KeyEvaluation,
     KeyReader: FnMut(
-        Buffer<'static>,
+        ArcBytes<'static>,
         &Root::Index,
-        Buffer<'static>,
+        ArcBytes<'static>,
     ) -> Result<(), AbortError<CallerError>>,
-    KeyRangeBounds: RangeBounds<Buffer<'keys>>,
+    KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
     CallerError: Display + Debug,
 {
     forwards: bool,
@@ -982,11 +991,11 @@ struct TreeScanner<
     state: &'a State<Root>,
     vault: Option<&'a dyn AnyVault>,
     cache: Option<&'a ChunkCache>,
-    range: KeyRangeBounds,
+    range: &'keys KeyRangeBounds,
     node_evaluator: NodeEvaluator,
     key_evaluator: KeyEvaluator,
     key_reader: KeyReader,
-    _phantom: PhantomData<&'keys ()>,
+    _phantom: PhantomData<&'keys [u8]>,
 }
 
 impl<
@@ -1012,14 +1021,14 @@ impl<
     >
 where
     File: ManagedFile,
-    NodeEvaluator: FnMut(&Buffer<'static>, &Root::ReducedIndex, usize) -> bool,
-    KeyEvaluator: FnMut(&Buffer<'static>, &Root::Index) -> KeyEvaluation,
+    NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> bool,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> KeyEvaluation,
     KeyReader: FnMut(
-        Buffer<'static>,
+        ArcBytes<'static>,
         &Root::Index,
-        Buffer<'static>,
+        ArcBytes<'static>,
     ) -> Result<(), AbortError<CallerError>>,
-    KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
+    KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
     CallerError: Display + Debug,
 {
     type Output = Result<bool, AbortError<CallerError>>;
@@ -1031,7 +1040,7 @@ where
             }
 
             state.root.scan(
-                &self.range,
+                self.range,
                 &mut ScanArgs::new(
                     self.forwards,
                     &mut self.node_evaluator,
@@ -1049,7 +1058,7 @@ where
             }
 
             state.root.scan(
-                &self.range,
+                self.range,
                 &mut ScanArgs::new(
                     self.forwards,
                     &mut self.node_evaluator,
@@ -1072,9 +1081,9 @@ struct TreeSequenceScanner<
     CallerError,
     Index,
 > where
-    KeyEvaluator: FnMut(&Buffer<'static>, &BySequenceIndex) -> KeyEvaluation,
-    KeyRangeBounds: RangeBounds<Buffer<'keys>>,
-    DataCallback: FnMut(KeySequence, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &BySequenceIndex) -> KeyEvaluation,
+    KeyRangeBounds: RangeBounds<&'keys [u8]> + ?Sized,
+    DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
     CallerError: Display + Debug,
     Index: EmbeddedIndex + Reducer<Index> + Clone + Debug + 'static,
 {
@@ -1083,10 +1092,9 @@ struct TreeSequenceScanner<
     state: &'a State<VersionedTreeRoot<Index>>,
     vault: Option<&'a dyn AnyVault>,
     cache: Option<&'a ChunkCache>,
-    range: KeyRangeBounds,
+    range: &'keys KeyRangeBounds,
     key_evaluator: KeyEvaluator,
     data_callback: DataCallback,
-    _phantom: PhantomData<&'keys ()>,
 }
 
 impl<'a, 'keys, KeyEvaluator, KeyRangeBounds, File, DataCallback, CallerError, Index> FileOp<File>
@@ -1101,9 +1109,9 @@ impl<'a, 'keys, KeyEvaluator, KeyRangeBounds, File, DataCallback, CallerError, I
     >
 where
     File: ManagedFile,
-    KeyEvaluator: FnMut(&Buffer<'static>, &BySequenceIndex) -> KeyEvaluation,
-    KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
-    DataCallback: FnMut(KeySequence, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &BySequenceIndex) -> KeyEvaluation,
+    KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+    DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
     CallerError: Display + Debug,
     Index: EmbeddedIndex + Reducer<Index> + Clone + Debug + 'static,
 {
@@ -1121,7 +1129,7 @@ where
             ..
         } = self;
         let mapped_data_callback =
-            |key: Buffer<'static>, index: &BySequenceIndex, data: Buffer<'static>| {
+            |key: ArcBytes<'static>, index: &BySequenceIndex, data: ArcBytes<'static>| {
                 let sequence = BigEndian::read_u64(&key);
                 (data_callback)(
                     KeySequence {
@@ -1142,7 +1150,7 @@ where
                 .root
                 .by_sequence_root
                 .scan(
-                    &range,
+                    range,
                     &mut ScanArgs::new(
                         forwards,
                         |_, _, _| true,
@@ -1165,7 +1173,7 @@ where
                 .root
                 .by_sequence_root
                 .scan(
-                    &range,
+                    range,
                     &mut ScanArgs::new(
                         forwards,
                         |_, _, _| true,
@@ -1306,7 +1314,7 @@ impl<'a, File: ManagedFile> PagedWriter<'a, File> {
             if let (Some(cache), Cow::Owned(vec), Some(file_id)) =
                 (self.cache, possibly_encrypted, self.file.id())
             {
-                cache.insert(file_id, position, Buffer::from(vec));
+                cache.insert(file_id, position, ArcBytes::from(vec));
             }
         }
 
@@ -1365,7 +1373,7 @@ fn read_chunk<File: ManagedFile>(
         }
     }
 
-    let decrypted = Buffer::from(match vault {
+    let decrypted = ArcBytes::from(match vault {
         Some(vault) => vault.decrypt(&scratch)?,
         None => scratch,
     });
@@ -1374,7 +1382,7 @@ fn read_chunk<File: ManagedFile>(
         cache.insert(file_id, position, decrypted.clone());
     }
 
-    Ok(CacheEntry::Buffer(decrypted))
+    Ok(CacheEntry::ArcBytes(decrypted))
 }
 
 pub(crate) fn copy_chunk<File: ManagedFile, Hasher: BuildHasher>(
@@ -1394,7 +1402,7 @@ pub(crate) fn copy_chunk<File: ManagedFile, Hasher: BuildHasher>(
         // here. This gives the added benefit for a long-running server to
         // ensure it's doing CRC checks occasionally as it copies itself.
         let chunk = match read_chunk(original_position, true, from_file, vault, None)? {
-            CacheEntry::Buffer(buffer) => buffer,
+            CacheEntry::ArcBytes(buffer) => buffer,
             CacheEntry::Decoded(_) => unreachable!(),
         };
         let new_location = to_file.write_chunk(&chunk, false)?;
@@ -1424,15 +1432,17 @@ fn dynamic_order(number_of_records: u64, max_order: Option<usize>) -> usize {
     }
 }
 
+/// A range of u64 values that is able to be used as keys in a tree scan, once
+/// [borrowed](BorrowByteRange::borrow()).
 #[derive(Debug)]
-struct U64Bounds {
+pub struct U64Range {
     start_bound: Bound<u64>,
-    start_bound_bytes: Bound<Buffer<'static>>,
+    start_bound_bytes: Bound<[u8; 8]>,
     end_bound: Bound<u64>,
-    end_bound_bytes: Bound<Buffer<'static>>,
+    end_bound_bytes: Bound<[u8; 8]>,
 }
 
-impl RangeBounds<u64> for U64Bounds {
+impl RangeBounds<u64> for U64Range {
     fn start_bound(&self) -> Bound<&u64> {
         match &self.start_bound {
             Bound::Included(value) => Bound::Included(value),
@@ -1450,17 +1460,56 @@ impl RangeBounds<u64> for U64Bounds {
     }
 }
 
-impl RangeBounds<Buffer<'static>> for U64Bounds {
-    fn start_bound(&self) -> Bound<&Buffer<'static>> {
-        match &self.start_bound_bytes {
+/// A borrowed range in byte form.
+#[derive(Debug, Clone)]
+pub struct BorrowedRange<'a> {
+    start: Bound<&'a [u8]>,
+    end: Bound<&'a [u8]>,
+}
+
+/// Borrows a range.
+pub trait BorrowByteRange<'a> {
+    /// Returns a borrowed version of byte representation the original range.
+    fn borrow(&'a self) -> BorrowedRange<'a>;
+}
+
+impl<'a> BorrowByteRange<'a> for Range<Vec<u8>> {
+    fn borrow(&'a self) -> BorrowedRange<'a> {
+        BorrowedRange {
+            start: Bound::Included(&self.start[..]),
+            end: Bound::Excluded(&self.end[..]),
+        }
+    }
+}
+
+impl<'a> BorrowByteRange<'a> for U64Range {
+    fn borrow(&'a self) -> BorrowedRange<'a> {
+        BorrowedRange {
+            start: match &self.start_bound_bytes {
+                Bound::Included(bytes) => Bound::Included(&bytes[..]),
+                Bound::Excluded(bytes) => Bound::Excluded(&bytes[..]),
+                Bound::Unbounded => Bound::Unbounded,
+            },
+            end: match &self.end_bound_bytes {
+                Bound::Included(bytes) => Bound::Included(&bytes[..]),
+                Bound::Excluded(bytes) => Bound::Excluded(&bytes[..]),
+                Bound::Unbounded => Bound::Unbounded,
+            },
+        }
+    }
+}
+
+impl<'a, 'b: 'a> RangeBounds<&'a [u8]> for BorrowedRange<'b> {
+    fn start_bound(&self) -> Bound<&&'a [u8]> {
+        match &self.start {
             Bound::Included(value) => Bound::Included(value),
             Bound::Excluded(value) => Bound::Excluded(value),
             Bound::Unbounded => Bound::Unbounded,
         }
     }
 
-    fn end_bound(&self) -> Bound<&Buffer<'static>> {
-        match &self.end_bound_bytes {
+    fn end_bound(&self) -> Bound<&&'a [u8]> {
+        match &self.end {
             Bound::Included(value) => Bound::Included(value),
             Bound::Excluded(value) => Bound::Excluded(value),
             Bound::Unbounded => Bound::Unbounded,
@@ -1468,19 +1517,20 @@ impl RangeBounds<Buffer<'static>> for U64Bounds {
     }
 }
 
-impl U64Bounds {
+impl U64Range {
+    /// Creates a new instance from the range passed in.
     pub fn new<B: RangeBounds<u64>>(bounds: B) -> Self {
         Self {
             start_bound: bounds.start_bound().cloned(),
             start_bound_bytes: match bounds.start_bound() {
-                Bound::Included(id) => Bound::Included(Buffer::from(id.to_be_bytes())),
-                Bound::Excluded(id) => Bound::Excluded(Buffer::from(id.to_be_bytes())),
+                Bound::Included(id) => Bound::Included(id.to_be_bytes()),
+                Bound::Excluded(id) => Bound::Excluded(id.to_be_bytes()),
                 Bound::Unbounded => Bound::Unbounded,
             },
             end_bound: bounds.end_bound().cloned(),
             end_bound_bytes: match bounds.end_bound() {
-                Bound::Included(id) => Bound::Included(Buffer::from(id.to_be_bytes())),
-                Bound::Excluded(id) => Bound::Excluded(Buffer::from(id.to_be_bytes())),
+                Bound::Included(id) => Bound::Included(id.to_be_bytes()),
+                Bound::Excluded(id) => Bound::Excluded(id.to_be_bytes()),
                 Bound::Unbounded => Bound::Unbounded,
             },
         }
@@ -1494,7 +1544,7 @@ impl U64Bounds {
 /// kept shorter for better performance.
 pub trait EmbeddedIndex: Serializable + Send + Sync + Sized + 'static {
     /// Index the key and value.
-    fn index(key: &Buffer<'_>, value: Option<&Buffer<'static>>) -> Self;
+    fn index(key: &ArcBytes<'_>, value: Option<&ArcBytes<'static>>) -> Self;
 }
 
 /// A type that can be serialized and deserialized.
@@ -1508,7 +1558,7 @@ pub trait Serializable: Send + Sync + Sized + 'static {
 }
 
 impl EmbeddedIndex for () {
-    fn index(_key: &Buffer<'_>, _value: Option<&Buffer<'static>>) -> Self {}
+    fn index(_key: &ArcBytes<'_>, _value: Option<&ArcBytes<'static>>) -> Self {}
 }
 
 impl Serializable for () {
@@ -1549,7 +1599,7 @@ mod tests {
         drop(paged_writer.finish());
 
         match read_chunk(written_position, true, &mut file, None, None)? {
-            CacheEntry::Buffer(data) => {
+            CacheEntry::ArcBytes(data) => {
                 assert_eq!(data.len(), length);
                 assert!(data.iter().all(|i| i == 1));
             }
@@ -1597,12 +1647,12 @@ mod tests {
                 break id;
             }
         };
-        let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
+        let id_buffer = ArcBytes::from(id.to_be_bytes().to_vec());
         {
             let mut tree =
                 TreeFile::<R, F>::write(file_path, State::new(None, max_order), context, None)
                     .unwrap();
-            tree.push(None, id_buffer.clone(), Buffer::from(b"hello world"))
+            tree.push(None, id_buffer.clone(), ArcBytes::from(b"hello world"))
                 .unwrap();
 
             // This shouldn't have to scan the file, as the data fits in memory.
@@ -1626,7 +1676,7 @@ mod tests {
         id: u64,
         max_order: Option<usize>,
     ) {
-        let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
+        let id_buffer = ArcBytes::from(id.to_be_bytes().to_vec());
         {
             let file = context.file_manager.append(file_path).unwrap();
             let state = State::new(None, max_order);
@@ -1797,8 +1847,8 @@ mod tests {
         let state = State::default();
         let mut tree = TreeFile::<R, F>::write(file_path, state, &context, None).unwrap();
         for (_index, id) in ids.enumerate() {
-            let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
-            tree.push(None, id_buffer.clone(), Buffer::from(b"hello world"))
+            let id_buffer = ArcBytes::from(id.to_be_bytes().to_vec());
+            tree.push(None, id_buffer.clone(), ArcBytes::from(b"hello world"))
                 .unwrap();
         }
     }
@@ -1836,16 +1886,16 @@ mod tests {
                 transaction_id: None,
                 keys: ids
                     .iter()
-                    .map(|id| Buffer::from(id.to_be_bytes().to_vec()))
+                    .map(|id| ArcBytes::from(id.to_be_bytes().to_vec()))
                     .collect(),
-                operation: Operation::Set(Buffer::from(b"hello world")),
+                operation: Operation::Set(ArcBytes::from(b"hello world")),
             };
             tree.modify(modification).unwrap();
 
             // Try five random gets
             for _ in 0..5 {
                 let index = rng.generate_range(0..ids.len());
-                let id = Buffer::from(ids[index].to_be_bytes().to_vec());
+                let id = ArcBytes::from(ids[index].to_be_bytes().to_vec());
                 let value = tree.get(&id, false).unwrap();
                 assert_eq!(&*value.unwrap(), b"hello world");
             }
@@ -1866,7 +1916,7 @@ mod tests {
         // Create enough records to go 4 levels deep.
         let mut ids = Vec::new();
         for id in 0..3_u32.pow(4) {
-            let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
+            let id_buffer = ArcBytes::from(id.to_be_bytes().to_vec());
             tree.push(None, id_buffer.clone(), id_buffer.clone())
                 .unwrap();
             ids.push(id_buffer);
@@ -1874,7 +1924,10 @@ mod tests {
 
         // Get them all
         let mut all_records = tree
-            .get_multiple(&ids.iter().map(Buffer::as_slice).collect::<Vec<_>>(), false)
+            .get_multiple(
+                &ids.iter().map(ArcBytes::as_slice).collect::<Vec<_>>(),
+                false,
+            )
             .unwrap();
         // Order isn't guaranteeed.
         all_records.sort();
@@ -1887,23 +1940,23 @@ mod tests {
         );
 
         // Try some ranges
-        let mut unbounded_to_five = tree.get_range(..ids[5].clone(), false).unwrap();
+        let mut unbounded_to_five = tree.get_range(&(..ids[5].as_slice()), false).unwrap();
         unbounded_to_five.sort();
         assert_eq!(&all_records[..5], &unbounded_to_five);
         let mut one_to_ten_unbounded = tree
-            .get_range(ids[1].clone()..ids[10].clone(), false)
+            .get_range(&(ids[1].as_slice()..ids[10].as_slice()), false)
             .unwrap();
         one_to_ten_unbounded.sort();
         assert_eq!(&all_records[1..10], &one_to_ten_unbounded);
         let mut bounded_upper = tree
-            .get_range(ids[3].clone()..=ids[50].clone(), false)
+            .get_range(&(ids[3].as_slice()..=ids[50].as_slice()), false)
             .unwrap();
         bounded_upper.sort();
         assert_eq!(&all_records[3..=50], &bounded_upper);
-        let mut unbounded_upper = tree.get_range(ids[60].clone().., false).unwrap();
+        let mut unbounded_upper = tree.get_range(&(ids[60].as_slice()..), false).unwrap();
         unbounded_upper.sort();
         assert_eq!(&all_records[60..], &unbounded_upper);
-        let mut all_through_scan = tree.get_range(.., false).unwrap();
+        let mut all_through_scan = tree.get_range(&(..), false).unwrap();
         all_through_scan.sort();
         assert_eq!(&all_records, &all_through_scan);
     }
@@ -1936,7 +1989,7 @@ mod tests {
 
         // Try fetching all the records to ensure they're still present.
         for id in ids {
-            let id_buffer = Buffer::from(id.to_be_bytes().to_vec());
+            let id_buffer = ArcBytes::from(id.to_be_bytes().to_vec());
             tree.get(&id_buffer, false)
                 .unwrap()
                 .expect("no value found");
@@ -1966,11 +2019,11 @@ mod tests {
             TreeFile::<Versioned, StdFile>::write(tempfile.path(), state, &context, None).unwrap();
 
         // Store three versions of the same key.
-        tree.push(None, Buffer::from(b"a"), Buffer::from(b"0"))
+        tree.push(None, ArcBytes::from(b"a"), ArcBytes::from(b"0"))
             .unwrap();
-        tree.push(None, Buffer::from(b"a"), Buffer::from(b"1"))
+        tree.push(None, ArcBytes::from(b"a"), ArcBytes::from(b"1"))
             .unwrap();
-        tree.push(None, Buffer::from(b"a"), Buffer::from(b"2"))
+        tree.push(None, ArcBytes::from(b"a"), ArcBytes::from(b"2"))
             .unwrap();
 
         // Retrieve the sequences

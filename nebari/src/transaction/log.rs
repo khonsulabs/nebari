@@ -17,7 +17,7 @@ use crate::{
     error::Error,
     io::{FileManager, FileOp, ManagedFile, OpenableFile},
     vault::AnyVault,
-    Buffer, Context, ErrorKind,
+    ArcBytes, Context, ErrorKind,
 };
 
 const PAGE_SIZE: usize = 1024;
@@ -494,7 +494,7 @@ impl<File: ManagedFile> FileOp<File> for LogWriter<File> {
 pub struct LogEntry<'a> {
     /// The unique id of this entry.
     pub id: u64,
-    pub(crate) data: Option<Buffer<'a>>,
+    pub(crate) data: Option<ArcBytes<'a>>,
 }
 
 impl<'a> LogEntry<'a> {
@@ -503,7 +503,7 @@ impl<'a> LogEntry<'a> {
     pub fn into_owned(self) -> LogEntry<'static> {
         LogEntry {
             id: self.id,
-            data: self.data.as_ref().map(Buffer::to_owned),
+            data: self.data.map(ArcBytes::into_owned),
         }
     }
 }
@@ -511,13 +511,13 @@ impl<'a> LogEntry<'a> {
 impl<'a> LogEntry<'a> {
     /// Returns the associated data, if any.
     #[must_use]
-    pub const fn data(&self) -> Option<&Buffer<'a>> {
+    pub const fn data(&self) -> Option<&ArcBytes<'a>> {
         self.data.as_ref()
     }
 
     /// Sets the associated data that will be stored in the transaction log.
     /// Limited to a length 16,777,208 (2^24 - 8) bytes -- just shy of 16MB.
-    pub fn set_data(&mut self, data: impl Into<Buffer<'a>>) -> Result<(), Error> {
+    pub fn set_data(&mut self, data: impl Into<ArcBytes<'a>>) -> Result<(), Error> {
         let data = data.into();
         if data.len() <= 2_usize.pow(24) - 8 {
             self.data = Some(data);
@@ -545,7 +545,7 @@ impl<'a> LogEntry<'a> {
         let data = if buffer.is_empty() {
             None
         } else {
-            Some(Buffer::from(buffer))
+            Some(ArcBytes::from(buffer))
         };
         Ok(Self { id, data })
     }
@@ -555,7 +555,7 @@ impl<'a> LogEntry<'a> {
 fn serialization_tests() {
     let transaction = LogEntry {
         id: 1,
-        data: Some(Buffer::from(b"hello")),
+        data: Some(ArcBytes::from(b"hello")),
     };
     let serialized = transaction.serialize().unwrap();
     let deserialized = LogEntry::deserialize(&serialized).unwrap();
@@ -573,7 +573,7 @@ fn serialization_tests() {
     let mut transaction = LogEntry { id: 0, data: None };
     let mut big_data = Vec::new();
     big_data.resize(2_usize.pow(24), 0);
-    let mut big_data = Buffer::from(big_data);
+    let mut big_data = ArcBytes::from(big_data);
     assert!(matches!(
         transaction.set_data(big_data.clone()),
         Err(Error {
@@ -685,7 +685,7 @@ mod tests {
             assert_eq!(transactions.current_transaction_id(), id);
             let mut tx = transactions.new_transaction([&b"hello"[..]]);
 
-            tx.transaction.data = Some(Buffer::from(id.to_be_bytes()));
+            tx.transaction.data = Some(ArcBytes::from(id.to_be_bytes()));
 
             transactions.push(vec![tx.transaction]).unwrap();
             transactions.close().unwrap();

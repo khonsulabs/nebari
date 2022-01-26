@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::btree_entry::KeyOperation;
-use crate::{error::Error, Buffer, ErrorKind};
+use crate::{error::Error, ArcBytes, ErrorKind};
 
 /// A tree modification.
 #[derive(Debug)]
@@ -12,7 +12,7 @@ pub struct Modification<'a, T> {
     /// The transaction ID to store with this change.
     pub transaction_id: Option<u64>,
     /// The keys to operate upon.
-    pub keys: Vec<Buffer<'a>>,
+    pub keys: Vec<ArcBytes<'a>>,
     /// The operation to perform on the keys.
     pub operation: Operation<'a, T>,
 }
@@ -59,14 +59,14 @@ impl<'a, T: Debug> Debug for Operation<'a, T> {
 /// A function that is allowed to check the current value of a key and determine
 /// how to operate on it. The first parameter is the key, and the second
 /// parameter is the current value, if present.
-pub type CompareSwapFn<'a, T> = dyn FnMut(&Buffer<'a>, Option<T>) -> KeyOperation<T> + 'a;
+pub type CompareSwapFn<'a, T> = dyn FnMut(&ArcBytes<'a>, Option<T>) -> KeyOperation<T> + 'a;
 
 /// A wrapper for a [`CompareSwapFn`].
 pub struct CompareSwap<'a, T>(&'a mut CompareSwapFn<'a, T>);
 
 impl<'a, T> CompareSwap<'a, T> {
     /// Returns a new wrapped callback.
-    pub fn new<F: FnMut(&Buffer<'_>, Option<T>) -> KeyOperation<T> + 'a>(
+    pub fn new<F: FnMut(&ArcBytes<'_>, Option<T>) -> KeyOperation<T> + 'a>(
         callback: &'a mut F,
     ) -> Self {
         Self(callback)

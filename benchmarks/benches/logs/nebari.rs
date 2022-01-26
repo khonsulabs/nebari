@@ -6,7 +6,7 @@ use std::{
 use nebari::{
     io::{fs::StdFile, FileManager, ManagedFile, OpenableFile},
     tree::{Modification, Operation, State, TreeFile},
-    Buffer, ChunkCache, Context,
+    ArcBytes, ChunkCache, Context,
 };
 use tempfile::TempDir;
 
@@ -76,12 +76,12 @@ impl<B: NebariBenchmark> SimpleBench for InsertLogs<B> {
                 transaction_id: None,
                 keys: batch
                     .iter()
-                    .map(|e| Buffer::from(e.id.to_be_bytes()))
+                    .map(|e| ArcBytes::from(e.id.to_be_bytes()))
                     .collect(),
                 operation: Operation::SetEach(
                     batch
                         .iter()
-                        .map(|e| Buffer::from(pot::to_vec(e).unwrap()))
+                        .map(|e| ArcBytes::from(pot::to_vec(e).unwrap()))
                         .collect(),
                 ),
             })?;
@@ -122,12 +122,12 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
                 transaction_id: None,
                 keys: chunk
                     .iter()
-                    .map(|e| Buffer::from(e.id.to_be_bytes()))
+                    .map(|e| ArcBytes::from(e.id.to_be_bytes()))
                     .collect(),
                 operation: Operation::SetEach(
                     chunk
                         .iter()
-                        .map(|e| Buffer::from(pot::to_vec(e).unwrap()))
+                        .map(|e| ArcBytes::from(pot::to_vec(e).unwrap()))
                         .collect(),
                 ),
             })
@@ -213,12 +213,12 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
                 transaction_id: None,
                 keys: chunk
                     .iter()
-                    .map(|e| Buffer::from(e.id.to_be_bytes()))
+                    .map(|e| ArcBytes::from(e.id.to_be_bytes()))
                     .collect(),
                 operation: Operation::SetEach(
                     chunk
                         .iter()
-                        .map(|e| Buffer::from(pot::to_vec(e).unwrap()))
+                        .map(|e| ArcBytes::from(pot::to_vec(e).unwrap()))
                         .collect(),
                 ),
             })
@@ -249,9 +249,10 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
         for _ in 0..iters {
             let range = self.state.next().unwrap();
             let start = Instant::now();
-            let range =
-                Buffer::from(range.start().to_be_bytes())..=Buffer::from(range.end().to_be_bytes());
-            let entries = self.tree.get_range(range, false)?;
+            let start_bytes = range.start().to_be_bytes();
+            let end_bytes = range.end().to_be_bytes();
+            let range = &start_bytes[..]..=&end_bytes[..];
+            let entries = self.tree.get_range(&range, false)?;
             assert_eq!(entries.len(), config.element_count);
             total_duration += Instant::now() - start;
         }

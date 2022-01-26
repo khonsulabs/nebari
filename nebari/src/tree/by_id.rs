@@ -1,7 +1,7 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};
-use crate::{error::Error, io::ManagedFile, tree::key_entry::ValueIndex, Buffer};
+use crate::{error::Error, io::ManagedFile, tree::key_entry::ValueIndex, ArcBytes};
 
 /// The index stored within [`VersionedTreeRoot::by_id_root`](crate::tree::VersionedTreeRoot::by_id_root).
 #[derive(Clone, Debug)]
@@ -32,7 +32,7 @@ where
     }
 
     fn deserialize_from(
-        reader: &mut Buffer<'_>,
+        reader: &mut ArcBytes<'_>,
         _current_order: Option<usize>,
     ) -> Result<Self, Error> {
         let sequence_id = reader.read_u64::<BigEndian>()?;
@@ -79,7 +79,7 @@ where
     }
 
     fn deserialize_from(
-        reader: &mut Buffer<'_>,
+        reader: &mut ArcBytes<'_>,
         _current_order: Option<usize>,
     ) -> Result<Self, Error> {
         let value_length = reader.read_u32::<BigEndian>()?;
@@ -135,7 +135,7 @@ where
     }
 
     fn deserialize_from(
-        reader: &mut Buffer<'_>,
+        reader: &mut ArcBytes<'_>,
         _current_order: Option<usize>,
     ) -> Result<Self, Error> {
         let alive_keys = reader.read_u64::<BigEndian>()?;

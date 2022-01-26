@@ -1,5 +1,5 @@
 use super::PagedWriter;
-use crate::{error::Error, io::ManagedFile, Buffer};
+use crate::{error::Error, io::ManagedFile, ArcBytes};
 
 pub trait BinarySerialization: Send + Sync + Sized {
     fn serialize_to<File: ManagedFile>(
@@ -8,7 +8,7 @@ pub trait BinarySerialization: Send + Sync + Sized {
         paged_writer: &mut PagedWriter<'_, File>,
     ) -> Result<usize, Error>;
     fn deserialize_from(
-        reader: &mut Buffer<'_>,
+        reader: &mut ArcBytes<'_>,
         current_order: Option<usize>,
     ) -> Result<Self, Error>;
 }
@@ -23,7 +23,7 @@ impl BinarySerialization for () {
     }
 
     fn deserialize_from(
-        _reader: &mut Buffer<'_>,
+        _reader: &mut ArcBytes<'_>,
         _current_order: Option<usize>,
     ) -> Result<Self, Error> {
         Ok(())

@@ -18,7 +18,7 @@ use crate::{
         PagedWriter, State, TreeFile,
     },
     vault::AnyVault,
-    AbortError, Buffer, ChunkCache, Context, TransactionTree, Vault,
+    AbortError, ArcBytes, ChunkCache, Context, TransactionTree, Vault,
 };
 
 /// A B-Tree root implementation.
@@ -63,7 +63,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     ) -> Result<(), Error>;
 
     /// Deserializes the root from `bytes`.
-    fn deserialize(bytes: Buffer<'_>) -> Result<Self, Error>;
+    fn deserialize(bytes: ArcBytes<'_>) -> Result<Self, Error>;
 
     /// Returns the current transaction id.
     fn transaction_id(&self) -> u64;
@@ -71,7 +71,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     /// Modifies the tree.
     fn modify<'a, 'w, File: ManagedFile>(
         &'a mut self,
-        modification: Modification<'_, Buffer<'static>>,
+        modification: Modification<'_, ArcBytes<'static>>,
         writer: &'a mut PagedWriter<'w, File>,
         max_order: Option<usize>,
     ) -> Result<(), Error>;
@@ -91,8 +91,8 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
     where
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
+        KeyEvaluator: FnMut(&ArcBytes<'static>) -> KeyEvaluation,
+        KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
         Keys: Iterator<Item = &'keys [u8]>;
 
     /// Scans the tree over `range`. `args.key_evaluator` is invoked for each key as
@@ -109,7 +109,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
         ScanDataCallback,
     >(
         &self,
-        range: &KeyRangeBounds,
+        range: &'keys KeyRangeBounds,
         args: &mut ScanArgs<
             Self::Index,
             Self::ReducedIndex,
@@ -123,13 +123,13 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
     where
-        NodeEvaluator: FnMut(&Buffer<'static>, &Self::ReducedIndex, usize) -> bool,
-        KeyEvaluator: FnMut(&Buffer<'static>, &Self::Index) -> KeyEvaluation,
-        KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &Self::ReducedIndex, usize) -> bool,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Self::Index) -> KeyEvaluation,
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
         ScanDataCallback: FnMut(
-            Buffer<'static>,
+            ArcBytes<'static>,
             &Self::Index,
-            Buffer<'static>,
+            ArcBytes<'static>,
         ) -> Result<(), AbortError<CallerError>>;
 
     /// Copies all data from `file` into `writer`, updating `self` with the new

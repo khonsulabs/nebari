@@ -30,7 +30,7 @@ use crate::{
         BTreeNode, Interior, PageHeader, Reducer, Root,
     },
     vault::AnyVault,
-    Buffer, ChunkCache, ErrorKind,
+    ArcBytes, ChunkCache, ErrorKind,
 };
 
 const UNINITIALIZED_SEQUENCE: u64 = 0;
@@ -111,7 +111,7 @@ where
                 &ModificationContext {
                     current_order: by_sequence_order,
                     minimum_children: by_sequence_minimum_children,
-                    indexer: |_key: &Buffer<'_>,
+                    indexer: |_key: &ArcBytes<'_>,
                               value: Option<&BySequenceIndex>,
                               _existing_index: Option<&BySequenceIndex>,
                               _changes: &mut EntryChanges,
@@ -141,7 +141,7 @@ where
 
     fn modify_id_root<File: ManagedFile>(
         &mut self,
-        mut modification: Modification<'_, Buffer<'static>>,
+        mut modification: Modification<'_, ArcBytes<'static>>,
         changes: &mut EntryChanges,
         writer: &mut PagedWriter<'_, File>,
         max_order: Option<usize>,
@@ -162,8 +162,8 @@ where
                 &ModificationContext {
                     current_order: by_id_order,
                     minimum_children: by_id_minimum_children,
-                    indexer: |key: &Buffer<'_>,
-                              value: Option<&Buffer<'static>>,
+                    indexer: |key: &ArcBytes<'_>,
+                              value: Option<&ArcBytes<'static>>,
                               existing_index: Option<&VersionedByIdIndex<EmbeddedIndex>>,
                               changes: &mut EntryChanges,
                               writer: &mut PagedWriter<'_, File>| {
@@ -201,7 +201,7 @@ where
                     loader: |index, writer| {
                         if index.position > 0 {
                             match writer.read_chunk(index.position) {
-                                Ok(CacheEntry::Buffer(buffer)) => Ok(Some(buffer)),
+                                Ok(CacheEntry::ArcBytes(buffer)) => Ok(Some(buffer)),
                                 Ok(CacheEntry::Decoded(_)) => unreachable!(),
                                 Err(err) => Err(err),
                             }
@@ -256,7 +256,7 @@ where
         self.by_id_root.stats().alive_keys
     }
 
-    fn deserialize(mut bytes: Buffer<'_>) -> Result<Self, Error> {
+    fn deserialize(mut bytes: ArcBytes<'_>) -> Result<Self, Error> {
         let transaction_id = bytes.read_u64::<BigEndian>()?;
         let sequence = bytes.read_u64::<BigEndian>()?;
         let by_sequence_size = bytes.read_u32::<BigEndian>()? as usize;
@@ -317,7 +317,7 @@ where
 
     fn modify<File: ManagedFile>(
         &mut self,
-        modification: Modification<'_, Buffer<'static>>,
+        modification: Modification<'_, ArcBytes<'static>>,
         writer: &mut PagedWriter<'_, File>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
@@ -342,7 +342,7 @@ where
                     value_length: change.value_size,
                     position: change.value_position,
                 });
-                Buffer::from(change.key_sequence.sequence.to_be_bytes())
+                ArcBytes::from(change.key_sequence.sequence.to_be_bytes())
             })
             .collect();
         let sequence_modifications = Modification {
@@ -371,8 +371,8 @@ where
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
     where
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
+        KeyEvaluator: FnMut(&ArcBytes<'static>) -> KeyEvaluation,
+        KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
         Keys: Iterator<Item = &'keys [u8]>,
     {
         let mut positions_to_read = Vec::new();
@@ -397,7 +397,7 @@ where
         for (key, position) in positions_to_read {
             if position > 0 {
                 match read_chunk(position, false, file, vault, cache)? {
-                    CacheEntry::Buffer(contents) => {
+                    CacheEntry::ArcBytes(contents) => {
                         key_reader(key, contents)?;
                     }
                     CacheEntry::Decoded(_) => unreachable!(),
@@ -417,7 +417,7 @@ where
         ScanDataCallback,
     >(
         &self,
-        range: &KeyRangeBounds,
+        range: &'keys KeyRangeBounds,
         args: &mut ScanArgs<
             Self::Index,
             Self::ReducedIndex,
@@ -431,13 +431,13 @@ where
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
     where
-        NodeEvaluator: FnMut(&Buffer<'static>, &Self::ReducedIndex, usize) -> bool,
-        KeyEvaluator: FnMut(&Buffer<'static>, &Self::Index) -> KeyEvaluation,
-        KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &Self::ReducedIndex, usize) -> bool,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Self::Index) -> KeyEvaluation,
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
         ScanDataCallback: FnMut(
-            Buffer<'static>,
+            ArcBytes<'static>,
             &Self::Index,
-            Buffer<'static>,
+            ArcBytes<'static>,
         ) -> Result<(), AbortError<CallerError>>,
     {
         self.by_id_root.scan(range, args, file, vault, cache, 0)
@@ -518,7 +518,7 @@ where
             &ModificationContext {
                 current_order: by_sequence_order,
                 minimum_children,
-                indexer: |_key: &Buffer<'_>,
+                indexer: |_key: &ArcBytes<'_>,
                           value: Option<&BySequenceIndex>,
                           _existing_index: Option<&BySequenceIndex>,
                           _changes: &mut EntryChanges,
@@ -552,7 +552,7 @@ pub struct EntryChange {
 #[derive(Debug)]
 pub struct KeySequence {
     /// The key that this entry was written for.
-    pub key: Buffer<'static>,
+    pub key: ArcBytes<'static>,
     /// The unique sequence id.
     pub sequence: u64,
     /// The previous sequence id for this key, if any.

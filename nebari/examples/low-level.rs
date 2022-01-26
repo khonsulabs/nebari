@@ -4,7 +4,7 @@
 use nebari::{
     io::{fs::StdFile, memory::MemoryFile, ManagedFile},
     tree::{KeyEvaluation, State, TreeFile, Unversioned, Versioned},
-    Buffer, Context, Error,
+    ArcBytes, Context, Error,
 };
 
 fn main() -> Result<(), Error> {
@@ -65,15 +65,15 @@ fn tree_basics<Root: nebari::tree::Root, File: ManagedFile>(
     tree: &mut TreeFile<Root, File>,
 ) -> Result<(), Error> {
     // Insert a few key-value pairs.
-    tree.push(None, Buffer::from(b"a key"), Buffer::from(b"a value"))?;
-    tree.push(None, Buffer::from(b"b key"), Buffer::from(b"b value"))?;
+    tree.push(None, ArcBytes::from(b"a key"), ArcBytes::from(b"a value"))?;
+    tree.push(None, ArcBytes::from(b"b key"), ArcBytes::from(b"b value"))?;
     // Retrieve a value.
     let value = tree.get(b"a key", false)?.unwrap();
     assert_eq!(value, b"a value");
 
     // Scan for values
     tree.scan(
-        ..,
+        &(..),
         true,
         false,
         &mut |_, _, _| true,
@@ -85,7 +85,11 @@ fn tree_basics<Root: nebari::tree::Root, File: ManagedFile>(
     )?;
 
     // Replace the value for "a key"
-    tree.push(None, Buffer::from(b"a key"), Buffer::from(b"a new value"))?;
+    tree.push(
+        None,
+        ArcBytes::from(b"a key"),
+        ArcBytes::from(b"a new value"),
+    )?;
     let updated_value = tree.get(b"a key", false)?.unwrap();
     assert_eq!(updated_value, b"a new value");
 

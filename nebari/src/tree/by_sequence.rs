@@ -3,13 +3,13 @@ use std::convert::TryFrom;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};
-use crate::{error::Error, io::ManagedFile, tree::key_entry::ValueIndex, Buffer, ErrorKind};
+use crate::{error::Error, io::ManagedFile, tree::key_entry::ValueIndex, ArcBytes, ErrorKind};
 
 /// The index stored within [`VersionedTreeRoot::by_sequence_root`](crate::tree::VersionedTreeRoot::by_sequence_root).
 #[derive(Clone, Debug)]
 pub struct BySequenceIndex {
     /// The key associated with this sequence id.
-    pub key: Buffer<'static>,
+    pub key: ArcBytes<'static>,
     /// The previous sequence of this key.
     pub last_sequence: Option<u64>,
     /// The size of the value stored on disk.
@@ -41,7 +41,7 @@ impl BinarySerialization for BySequenceIndex {
     }
 
     fn deserialize_from(
-        reader: &mut Buffer<'_>,
+        reader: &mut ArcBytes<'_>,
         _current_order: Option<usize>,
     ) -> Result<Self, Error> {
         let value_length = reader.read_u32::<BigEndian>()?;
@@ -55,7 +55,7 @@ impl BinarySerialization for BySequenceIndex {
                 reader.len()
             )));
         }
-        let key = reader.read_bytes(key_length)?.to_owned();
+        let key = reader.read_bytes(key_length)?.into_owned();
 
         Ok(Self {
             key,
@@ -94,7 +94,7 @@ impl BinarySerialization for BySequenceStats {
     }
 
     fn deserialize_from(
-        reader: &mut Buffer<'_>,
+        reader: &mut ArcBytes<'_>,
         _current_order: Option<usize>,
     ) -> Result<Self, Error> {
         let number_of_records = reader.read_u64::<BigEndian>()?;

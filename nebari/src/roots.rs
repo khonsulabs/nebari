@@ -29,7 +29,7 @@ use crate::{
         VersionedTreeRoot,
     },
     vault::AnyVault,
-    Buffer, ChunkCache, ErrorKind,
+    ArcBytes, ChunkCache, ErrorKind,
 };
 
 /// A multi-tree transactional B-Tree database.
@@ -367,8 +367,8 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     /// Sets `key` to `value`.
     pub fn set(
         &mut self,
-        key: impl Into<Buffer<'static>>,
-        value: impl Into<Buffer<'static>>,
+        key: impl Into<ArcBytes<'static>>,
+        value: impl Into<ArcBytes<'static>>,
     ) -> Result<(), Error> {
         self.modify(vec![key.into()], Operation::Set(value.into()))
     }
@@ -376,8 +376,8 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     /// Executes a modification.
     pub fn modify<'a>(
         &mut self,
-        keys: Vec<Buffer<'a>>,
-        operation: Operation<'a, Buffer<'static>>,
+        keys: Vec<ArcBytes<'a>>,
+        operation: Operation<'a, ArcBytes<'static>>,
     ) -> Result<(), Error> {
         self.tree.modify(Modification {
             keys,
@@ -389,20 +389,20 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     /// Sets `key` to `value`. If a value already exists, it will be returned.
     pub fn replace(
         &mut self,
-        key: impl Into<Buffer<'static>>,
-        value: impl Into<Buffer<'static>>,
-    ) -> Result<Option<Buffer<'static>>, Error> {
+        key: impl Into<ArcBytes<'static>>,
+        value: impl Into<ArcBytes<'static>>,
+    ) -> Result<Option<ArcBytes<'static>>, Error> {
         self.tree.replace(key, value, Some(self.transaction_id))
     }
 
     /// Returns the current value of `key`. This will return updated information
     /// if it has been previously updated within this transaction.
-    pub fn get(&mut self, key: &[u8]) -> Result<Option<Buffer<'static>>, Error> {
+    pub fn get(&mut self, key: &[u8]) -> Result<Option<ArcBytes<'static>>, Error> {
         self.tree.get(key, true)
     }
 
     /// Removes `key` and returns the existing value, if present.
-    pub fn remove(&mut self, key: &[u8]) -> Result<Option<Buffer<'static>>, Error> {
+    pub fn remove(&mut self, key: &[u8]) -> Result<Option<ArcBytes<'static>>, Error> {
         self.tree.remove(key, Some(self.transaction_id))
     }
 
@@ -412,8 +412,8 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     pub fn compare_and_swap(
         &mut self,
         key: &[u8],
-        old: Option<&Buffer<'_>>,
-        new: Option<Buffer<'_>>,
+        old: Option<&ArcBytes<'_>>,
+        new: Option<ArcBytes<'_>>,
     ) -> Result<(), CompareAndSwapError> {
         self.tree
             .compare_and_swap(key, old, new, Some(self.transaction_id))
@@ -424,15 +424,18 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     pub fn get_multiple(
         &mut self,
         keys: &[&[u8]],
-    ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
         self.tree.get_multiple(keys, true)
     }
 
     /// Retrieves all of the values of keys within `range`.
-    pub fn get_range<'bounds, Range: RangeBounds<Buffer<'bounds>> + Debug + 'static>(
+    pub fn get_range<'keys, KeyRangeBounds>(
         &mut self,
-        range: Range,
-    ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
+        range: &'keys KeyRangeBounds,
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error>
+    where
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+    {
         self.tree.get_range(range, true)
     }
 
@@ -446,22 +449,22 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
         feature = "tracing",
         tracing::instrument(skip(self, node_evaluator, key_evaluator, callback))
     )]
-    pub fn scan<'b, CallerError, Range, NodeEvaluator, KeyEvaluator, DataCallback>(
+    pub fn scan<'b, 'keys, CallerError, KeyRangeBounds, NodeEvaluator, KeyEvaluator, DataCallback>(
         &mut self,
-        range: Range,
+        range: &'keys KeyRangeBounds,
         forwards: bool,
         mut node_evaluator: NodeEvaluator,
         mut key_evaluator: KeyEvaluator,
         mut callback: DataCallback,
     ) -> Result<(), AbortError<CallerError>>
     where
-        Range: RangeBounds<Buffer<'b>> + Debug + 'static,
-        NodeEvaluator: FnMut(&Buffer<'static>, &Root::ReducedIndex, usize) -> bool,
-        KeyEvaluator: FnMut(&Buffer<'static>, &Root::Index) -> KeyEvaluation,
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> bool,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> KeyEvaluation,
         DataCallback: FnMut(
-            Buffer<'static>,
+            ArcBytes<'static>,
             &Root::Index,
-            Buffer<'static>,
+            ArcBytes<'static>,
         ) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
@@ -477,13 +480,13 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
 
     /// Returns the last  of the tree.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
-    pub fn last_key(&mut self) -> Result<Option<Buffer<'static>>, Error> {
+    pub fn last_key(&mut self) -> Result<Option<ArcBytes<'static>>, Error> {
         self.tree.last_key(true)
     }
 
     /// Returns the last key and value of the tree.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
-    pub fn last(&mut self) -> Result<Option<(Buffer<'static>, Buffer<'static>)>, Error> {
+    pub fn last(&mut self) -> Result<Option<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
         self.tree.last(true)
     }
 }
@@ -493,7 +496,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
 pub enum CompareAndSwapError {
     /// The stored value did not match the conditional value.
     #[error("value did not match. existing value: {0:?}")]
-    Conflict(Option<Buffer<'static>>),
+    Conflict(Option<ArcBytes<'static>>),
     /// Another error occurred while executing the operation.
     #[error("error during compare_and_swap: {0}")]
     Error(#[from] Error),
@@ -618,8 +621,8 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     #[allow(clippy::missing_panics_doc)]
     pub fn set(
         &self,
-        key: impl Into<Buffer<'static>>,
-        value: impl Into<Buffer<'static>>,
+        key: impl Into<ArcBytes<'static>>,
+        value: impl Into<ArcBytes<'static>>,
     ) -> Result<(), Error> {
         let mut transaction = self.begin_transaction()?;
         transaction.tree::<Root>(0).unwrap().set(key, value)?;
@@ -650,7 +653,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
 
     /// Retrieves the current value of `key`, if present. Does not reflect any
     /// changes in pending transactions.
-    pub fn get(&self, key: &[u8]) -> Result<Option<Buffer<'static>>, Error> {
+    pub fn get(&self, key: &[u8]) -> Result<Option<ArcBytes<'static>>, Error> {
         catch_compaction_and_retry(|| {
             let mut tree = self.open_for_read()?;
 
@@ -662,9 +665,9 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     #[allow(clippy::missing_panics_doc)]
     pub fn replace(
         &mut self,
-        key: impl Into<Buffer<'static>>,
-        value: impl Into<Buffer<'static>>,
-    ) -> Result<Option<Buffer<'static>>, Error> {
+        key: impl Into<ArcBytes<'static>>,
+        value: impl Into<ArcBytes<'static>>,
+    ) -> Result<Option<ArcBytes<'static>>, Error> {
         let mut transaction = self.begin_transaction()?;
         let existing_value = transaction.tree::<Root>(0).unwrap().replace(key, value)?;
         transaction.commit()?;
@@ -675,8 +678,8 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     #[allow(clippy::missing_panics_doc)]
     pub fn modify<'a>(
         &mut self,
-        keys: Vec<Buffer<'a>>,
-        operation: Operation<'a, Buffer<'static>>,
+        keys: Vec<ArcBytes<'a>>,
+        operation: Operation<'a, ArcBytes<'static>>,
     ) -> Result<(), Error> {
         let mut transaction = self.begin_transaction()?;
         transaction
@@ -689,7 +692,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
 
     /// Removes `key` and returns the existing value, if present. This is executed within its own transaction.
     #[allow(clippy::missing_panics_doc)]
-    pub fn remove(&self, key: &[u8]) -> Result<Option<Buffer<'static>>, Error> {
+    pub fn remove(&self, key: &[u8]) -> Result<Option<ArcBytes<'static>>, Error> {
         let mut transaction = self.begin_transaction()?;
         let existing_value = transaction.tree::<Root>(0).unwrap().remove(key)?;
         transaction.commit()?;
@@ -703,8 +706,8 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     pub fn compare_and_swap(
         &self,
         key: &[u8],
-        old: Option<&Buffer<'_>>,
-        new: Option<Buffer<'_>>,
+        old: Option<&ArcBytes<'_>>,
+        new: Option<ArcBytes<'_>>,
     ) -> Result<(), CompareAndSwapError> {
         let mut transaction = self.begin_transaction()?;
         transaction
@@ -720,7 +723,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     pub fn get_multiple(
         &self,
         keys: &[&[u8]],
-    ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
         catch_compaction_and_retry(|| {
             let mut tree = self.open_for_read()?;
 
@@ -729,14 +732,17 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     }
 
     /// Retrieves all of the values of keys within `range`.
-    pub fn get_range<'range, Range: RangeBounds<Buffer<'range>> + Clone + Debug + 'static>(
+    pub fn get_range<'keys, KeyRangeBounds>(
         &self,
-        range: Range,
-    ) -> Result<Vec<(Buffer<'static>, Buffer<'static>)>, Error> {
+        range: &'keys KeyRangeBounds,
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error>
+    where
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + Clone + ?Sized,
+    {
         catch_compaction_and_retry(|| {
             let mut tree = self.open_for_read()?;
 
-            tree.get_range(range.clone(), false)
+            tree.get_range(range, false)
         })
     }
 
@@ -750,22 +756,22 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         feature = "tracing",
         tracing::instrument(skip(self, node_evaluator, key_evaluator, callback))
     )]
-    pub fn scan<'range, CallerError, Range, NodeEvaluator, KeyEvaluator, DataCallback>(
+    pub fn scan<'keys, CallerError, KeyRangeBounds, NodeEvaluator, KeyEvaluator, DataCallback>(
         &self,
-        range: Range,
+        range: &'keys KeyRangeBounds,
         forwards: bool,
         mut node_evaluator: NodeEvaluator,
         mut key_evaluator: KeyEvaluator,
         mut callback: DataCallback,
     ) -> Result<(), AbortError<CallerError>>
     where
-        Range: RangeBounds<Buffer<'range>> + Clone + Debug + 'static,
-        NodeEvaluator: FnMut(&Buffer<'static>, &Root::ReducedIndex, usize) -> bool,
-        KeyEvaluator: FnMut(&Buffer<'static>, &Root::Index) -> KeyEvaluation,
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + Clone + ?Sized,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> bool,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> KeyEvaluation,
         DataCallback: FnMut(
-            Buffer<'static>,
+            ArcBytes<'static>,
             &Root::Index,
-            Buffer<'static>,
+            ArcBytes<'static>,
         ) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
@@ -773,7 +779,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
             let mut tree = self.open_for_read()?;
 
             tree.scan(
-                range.clone(),
+                range,
                 forwards,
                 false,
                 &mut node_evaluator,
@@ -785,7 +791,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
 
     /// Returns the last key of the tree.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
-    pub fn last_key(&self) -> Result<Option<Buffer<'static>>, Error> {
+    pub fn last_key(&self) -> Result<Option<ArcBytes<'static>>, Error> {
         catch_compaction_and_retry(|| {
             let mut tree = self.open_for_read()?;
 
@@ -795,7 +801,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
 
     /// Returns the last key and value of the tree.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
-    pub fn last(&self) -> Result<Option<(Buffer<'static>, Buffer<'static>)>, Error> {
+    pub fn last(&self) -> Result<Option<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
         catch_compaction_and_retry(|| {
             let mut tree = self.open_for_read()?;
 
@@ -886,7 +892,7 @@ where
     where
         Range: Clone + RangeBounds<u64> + Debug + 'static,
         KeyEvaluator: FnMut(KeySequence) -> KeyEvaluation,
-        DataCallback: FnMut(KeySequence, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
+        DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
         catch_compaction_and_retry_abortable(|| {

@@ -28,7 +28,7 @@ use crate::{
         BTreeNode, PageHeader, Reducer, Root,
     },
     vault::AnyVault,
-    Buffer, ChunkCache, ErrorKind,
+    ArcBytes, ChunkCache, ErrorKind,
 };
 
 /// An unversioned tree with no additional indexed data.
@@ -67,7 +67,7 @@ where
 {
     fn modify_id_root<'a, 'w, File: ManagedFile>(
         &'a mut self,
-        mut modification: Modification<'_, Buffer<'static>>,
+        mut modification: Modification<'_, ArcBytes<'static>>,
         writer: &'a mut PagedWriter<'w, File>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
@@ -85,8 +85,8 @@ where
                 &ModificationContext {
                     current_order: by_id_order,
                     minimum_children,
-                    indexer: |key: &Buffer<'_>,
-                              value: Option<&Buffer<'static>>,
+                    indexer: |key: &ArcBytes<'_>,
+                              value: Option<&ArcBytes<'static>>,
                               _existing_index,
                               _changes,
                               writer: &mut PagedWriter<'_, File>| {
@@ -105,7 +105,7 @@ where
                         }
                     },
                     loader: |index, writer| match writer.read_chunk(index.position)? {
-                        CacheEntry::Buffer(buffer) => Ok(Some(buffer.clone())),
+                        CacheEntry::ArcBytes(buffer) => Ok(Some(buffer.clone())),
                         CacheEntry::Decoded(_) => unreachable!(),
                     },
                     _phantom: PhantomData,
@@ -153,7 +153,7 @@ where
         self.transaction_id = Some(0);
     }
 
-    fn deserialize(mut bytes: Buffer<'_>) -> Result<Self, Error> {
+    fn deserialize(mut bytes: ArcBytes<'_>) -> Result<Self, Error> {
         let transaction_id = Some(bytes.read_u64::<BigEndian>()?);
         let by_id_size = bytes.read_u32::<BigEndian>()? as usize;
         if by_id_size != bytes.len() {
@@ -201,7 +201,7 @@ where
 
     fn modify<File: ManagedFile>(
         &mut self,
-        modification: Modification<'_, Buffer<'static>>,
+        modification: Modification<'_, ArcBytes<'static>>,
         writer: &mut PagedWriter<'_, File>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
@@ -227,8 +227,8 @@ where
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
     where
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
+        KeyEvaluator: FnMut(&ArcBytes<'static>) -> KeyEvaluation,
+        KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
         Keys: Iterator<Item = &'keys [u8]>,
     {
         let mut positions_to_read = Vec::new();
@@ -253,7 +253,7 @@ where
         for (key, position) in positions_to_read {
             if position > 0 {
                 match read_chunk(position, false, file, vault, cache)? {
-                    CacheEntry::Buffer(contents) => {
+                    CacheEntry::ArcBytes(contents) => {
                         key_reader(key, contents)?;
                     }
                     CacheEntry::Decoded(_) => unreachable!(),
@@ -273,7 +273,7 @@ where
         DataCallback,
     >(
         &self,
-        range: &KeyRangeBounds,
+        range: &'keys KeyRangeBounds,
         args: &mut ScanArgs<
             Self::Index,
             Self::ReducedIndex,
@@ -287,13 +287,13 @@ where
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
     where
-        NodeEvaluator: FnMut(&Buffer<'static>, &Self::ReducedIndex, usize) -> bool,
-        KeyEvaluator: FnMut(&Buffer<'static>, &Self::Index) -> KeyEvaluation,
-        KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &Self::ReducedIndex, usize) -> bool,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Self::Index) -> KeyEvaluation,
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
         DataCallback: FnMut(
-            Buffer<'static>,
+            ArcBytes<'static>,
             &Self::Index,
-            Buffer<'static>,
+            ArcBytes<'static>,
         ) -> Result<(), AbortError<CallerError>>,
     {
         self.by_id_root.scan(range, args, file, vault, cache, 0)

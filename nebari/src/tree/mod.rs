@@ -1431,7 +1431,7 @@ fn dynamic_order(number_of_records: u64, max_order: Option<usize>) -> usize {
 }
 
 /// A range of u64 values that is able to be used as keys in a tree scan, once
-/// [borrowed](BorrowByteRange::borrow()).
+/// [borrowed](BorrowByteRange::borrow_as_bytes()).
 #[derive(Debug)]
 pub struct U64Range {
     start_bound: Bound<u64>,

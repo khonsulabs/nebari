@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.1
+
+### Fixed
+
+- Removing a key in a versioned tree would cause subsequent `scan()` operations
+  to fail if the key evaluator requested reading data from key that has no
+  current data. A safeguard has been put in place to ensure that even if
+  `KeyEvaluation::ReadData` is returned on an index that contains no position it
+  will skip the operation rather than attempting to read data from the start of
+  the file.
+
+  Updating the crate should restore access to any "broken" files.
+
 ## v0.2.0
 
 ### Breaking Changes

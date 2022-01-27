@@ -965,17 +965,19 @@ where
                     if range.contains(&child.key.as_slice()) {
                         match (args.key_evaluator)(&child.key, &child.index) {
                             KeyEvaluation::ReadData => {
-                                let data = match read_chunk(
-                                    child.index.position(),
-                                    false,
-                                    file,
-                                    vault,
-                                    cache,
-                                )? {
-                                    CacheEntry::ArcBytes(contents) => contents,
-                                    CacheEntry::Decoded(_) => unreachable!(),
-                                };
-                                (args.data_callback)(child.key.clone(), &child.index, data)?;
+                                if child.index.position() > 0 {
+                                    let data = match read_chunk(
+                                        child.index.position(),
+                                        false,
+                                        file,
+                                        vault,
+                                        cache,
+                                    )? {
+                                        CacheEntry::ArcBytes(contents) => contents,
+                                        CacheEntry::Decoded(_) => unreachable!(),
+                                    };
+                                    (args.data_callback)(child.key.clone(), &child.index, data)?;
+                                }
                             }
                             KeyEvaluation::Skip => {}
                             KeyEvaluation::Stop => return Ok(false),

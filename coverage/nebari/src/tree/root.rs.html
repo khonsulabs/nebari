@@ -22,8 +22,8 @@
         <div class="level-item has-text-centered">
         <div>
             <p class="heading">Functions</p>
-            <p class="title has-text-danger">
-                <abbr title="20 / 37">54.05 %</abbr></p>
+            <p class="title has-text-warning">
+                <abbr title="20 / 23">86.96 %</abbr></p>
         </div>
     </div>
 
@@ -307,7 +307,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    AbortError, Buffer, ChunkCache, Context, TransactionTree, Vault,</pre>
+                <pre class="has-background-white py-0 px-2">    AbortError, ArcBytes, ChunkCache, Context, TransactionTree, Vault,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -538,7 +538,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                6180
+                6181
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">    fn tree&lt;File: ManagedFile&gt;(name: impl Into&lt;Cow&lt;&#x27;static, str&gt;&gt;) -&gt; TreeRoot&lt;Self, File&gt; {</pre>
@@ -551,7 +551,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                6180
+                6181
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        TreeRoot {</pre>
@@ -564,7 +564,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                6180
+                6181
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">            name: name.into(),</pre>
@@ -577,7 +577,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                6180
+                6181
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">            vault: None,</pre>
@@ -590,7 +590,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                6180
+                6181
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">            _phantom: PhantomData,</pre>
@@ -603,7 +603,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                6180
+                6181
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        }</pre>
@@ -616,7 +616,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                6180
+                6181
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">    }</pre>
@@ -892,7 +892,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    fn deserialize(bytes: Buffer&lt;&#x27;_&gt;) -&gt; Result&lt;Self, Error&gt;;</pre>
+                <pre class="has-background-white py-0 px-2">    fn deserialize(bytes: ArcBytes&lt;&#x27;_&gt;) -&gt; Result&lt;Self, Error&gt;;</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -996,7 +996,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">        modification: Modification&lt;&#x27;_, Buffer&lt;&#x27;static&gt;&gt;,</pre>
+                <pre class="has-background-white py-0 px-2">        modification: Modification&lt;&#x27;_, ArcBytes&lt;&#x27;static&gt;&gt;,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -1256,7 +1256,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">        KeyEvaluator: FnMut(&amp;Buffer&lt;&#x27;static&gt;) -&gt; KeyEvaluation,</pre>
+                <pre class="has-background-white py-0 px-2">        KeyEvaluator: FnMut(&amp;ArcBytes&lt;&#x27;static&gt;) -&gt; KeyEvaluation,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -1269,7 +1269,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">        KeyReader: FnMut(Buffer&lt;&#x27;static&gt;, Buffer&lt;&#x27;static&gt;) -&gt; Result&lt;(), Error&gt;,</pre>
+                <pre class="has-background-white py-0 px-2">        KeyReader: FnMut(ArcBytes&lt;&#x27;static&gt;, ArcBytes&lt;&#x27;static&gt;) -&gt; Result&lt;(), Error&gt;,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -1490,7 +1490,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">        range: &amp;KeyRangeBounds,</pre>
+                <pre class="has-background-white py-0 px-2">        range: &amp;&#x27;keys KeyRangeBounds,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -1672,7 +1672,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">        NodeEvaluator: FnMut(&amp;Buffer&lt;&#x27;static&gt;, &amp;Self::ReducedIndex, usize) -&gt; bool,</pre>
+                <pre class="has-background-white py-0 px-2">        NodeEvaluator: FnMut(&amp;ArcBytes&lt;&#x27;static&gt;, &amp;Self::ReducedIndex, usize) -&gt; bool,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -1685,7 +1685,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">        KeyEvaluator: FnMut(&amp;Buffer&lt;&#x27;static&gt;, &amp;Self::Index) -&gt; KeyEvaluation,</pre>
+                <pre class="has-background-white py-0 px-2">        KeyEvaluator: FnMut(&amp;ArcBytes&lt;&#x27;static&gt;, &amp;Self::Index) -&gt; KeyEvaluation,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -1698,7 +1698,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">        KeyRangeBounds: RangeBounds&lt;Buffer&lt;&#x27;keys&gt;&gt; + Debug,</pre>
+                <pre class="has-background-white py-0 px-2">        KeyRangeBounds: RangeBounds&lt;&amp;&#x27;keys [u8]&gt; + Debug + ?Sized,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -1724,7 +1724,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">            Buffer&lt;&#x27;static&gt;,</pre>
+                <pre class="has-background-white py-0 px-2">            ArcBytes&lt;&#x27;static&gt;,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -1750,7 +1750,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">            Buffer&lt;&#x27;static&gt;,</pre>
+                <pre class="has-background-white py-0 px-2">            ArcBytes&lt;&#x27;static&gt;,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -2540,7 +2540,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                30787
+                30788
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">    fn name(&amp;self) -&gt; &amp;str {</pre>
@@ -2553,7 +2553,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                30787
+                30788
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        &amp;self.name</pre>
@@ -2566,7 +2566,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                30787
+                30788
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">    }</pre>
@@ -2592,7 +2592,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                10
+                11
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">    fn default_state(&amp;self) -&gt; Box&lt;dyn AnyTreeState&gt; {</pre>
@@ -2605,7 +2605,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                10
+                11
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        Box::new(State::&lt;R&gt;::default())</pre>
@@ -2618,7 +2618,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                10
+                11
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">    }</pre>
@@ -2964,7 +2964,7 @@
         </div></div>
         <footer class="footer">
             <div class="content has-text-centered">
-                <p class="heading">Date: 2022-01-15 00:18</p>
+                <p class="heading">Date: 2022-01-28 15:14</p>
             </div>
         </footer>
     </body>

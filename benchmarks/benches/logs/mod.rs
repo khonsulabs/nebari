@@ -128,7 +128,12 @@ pub fn inserts(c: &mut Criterion) {
             if sequential_ids { "seq" } else { "rdm" }
         ));
 
-        for entries_per_transaction in [1, 100, 1_000, 10_000] {
+        #[cfg(debug_assertions)]
+        let batches = [1, 100];
+        #[cfg(not(debug_assertions))]
+        let batches = [1, 100, 1_000, 10_000];
+
+        for entries_per_transaction in batches {
             let config = InsertConfig {
                 sequential_ids,
                 entries_per_transaction,
@@ -183,7 +188,11 @@ impl Display for InsertConfig {
 
 pub fn gets(c: &mut Criterion) {
     // Handle the single gets
-    for database_size in [Dataset::Small, Dataset::Medium, Dataset::Large] {
+    #[cfg(debug_assertions)]
+    let sizes = [Dataset::Small];
+    #[cfg(not(debug_assertions))]
+    let sizes = [Dataset::Small, Dataset::Medium, Dataset::Large];
+    for database_size in sizes {
         for sequential_ids in [true, false] {
             let mut group = c.benchmark_group(format!(
                 "logs-get-{}-{}",
@@ -337,6 +346,7 @@ impl GetMode {
 }
 
 #[derive(Copy, Clone)]
+#[cfg_attr(debug_assertions, allow(dead_code))]
 enum Dataset {
     Small,
     Medium,
@@ -365,7 +375,11 @@ impl Dataset {
 
 pub fn scans(c: &mut Criterion) {
     // Handle the single gets
-    for database_size in [Dataset::Small, Dataset::Medium, Dataset::Large] {
+    #[cfg(debug_assertions)]
+    let sizes = [Dataset::Small];
+    #[cfg(not(debug_assertions))]
+    let sizes = [Dataset::Small, Dataset::Medium, Dataset::Large];
+    for database_size in sizes {
         for sequential_ids in [true, false] {
             let mut group = c.benchmark_group(format!(
                 "logs-scan-{}-{}",

@@ -94,6 +94,13 @@ impl State {
     }
 
     fn fetch_tree_locks<'a>(&self, trees: impl Iterator<Item = &'a [u8]>, locks: &mut TreeLocks) {
+        // Sort the trees being locked to ensure no deadlocks can happen. For
+        // example, if writer a tries to lock (a, b) and writer b tries to lock
+        // (b, a), and both acquire their first lock, they would deadlock. By
+        // sorting, the order of locking will never have dependencies that
+        // cannot be met by blocking.
+        let mut trees = trees.collect::<Vec<_>>();
+        trees.sort_unstable();
         let mut tree_locks = self.state.tree_locks.lock();
         for tree in trees {
             if let Some(lock) = tree_locks.get(&Cow::Borrowed(tree)) {

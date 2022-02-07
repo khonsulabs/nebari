@@ -841,13 +841,20 @@
 <span id="840">840</span>
 <span id="841">841</span>
 <span id="842">842</span>
+<span id="843">843</span>
+<span id="844">844</span>
+<span id="845">845</span>
+<span id="846">846</span>
+<span id="847">847</span>
+<span id="848">848</span>
+<span id="849">849</span>
+<span id="850">850</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">borrow::Cow</span>,
     <span class="ident">cmp::Ordering</span>,
     <span class="ident">convert::TryFrom</span>,
     <span class="ident">fs::OpenOptions</span>,
     <span class="ident">io</span>::{<span class="ident">SeekFrom</span>, <span class="ident">Write</span>},
-    <span class="ident">marker::PhantomData</span>,
     <span class="ident">ops</span>::{<span class="ident">Bound</span>, <span class="ident">RangeBounds</span>},
     <span class="ident">path::Path</span>,
     <span class="ident">sync::Arc</span>,
@@ -858,7 +865,7 @@
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">State</span>, <span class="ident">TransactionHandle</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">error::Error</span>,
-    <span class="ident">io</span>::{<span class="ident">FileManager</span>, <span class="ident">FileOp</span>, <span class="ident">ManagedFile</span>, <span class="ident">OpenableFile</span>},
+    <span class="ident">io</span>::{<span class="ident">File</span>, <span class="ident">FileManager</span>, <span class="ident">FileOp</span>, <span class="ident">ManagedFile</span>, <span class="ident">OpenableFile</span>, <span class="ident">OperableFile</span>},
     <span class="ident">vault::AnyVault</span>,
     <span class="ident">ArcBytes</span>, <span class="ident">Context</span>, <span class="ident">ErrorKind</span>,
 };
@@ -941,7 +948,6 @@
             <span class="ident">state</span>,
             <span class="ident">log_length</span>,
             <span class="ident">vault</span>: <span class="ident">context</span>.<span class="ident">vault</span>(),
-            <span class="ident">_file</span>: <span class="ident">PhantomData</span>,
         })
     }
 
@@ -952,7 +958,6 @@
             <span class="ident">state</span>: <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">clone</span>(),
             <span class="ident">vault</span>: <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">clone</span>(),
             <span class="ident">transactions</span>: <span class="ident">handles</span>,
-            <span class="ident">_file</span>: <span class="ident">PhantomData</span>,
         })
     }
 
@@ -1011,16 +1016,14 @@
     }
 }
 
-<span class="kw">struct</span> <span class="ident">StateInitializer</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">F</span><span class="op">&gt;</span> {
+<span class="kw">struct</span> <span class="ident">StateInitializer</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
     <span class="ident">state</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">State</span>,
     <span class="ident">log_length</span>: <span class="ident">u64</span>,
     <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
-    <span class="ident">_file</span>: <span class="ident">PhantomData</span><span class="op">&lt;</span><span class="ident">F</span><span class="op">&gt;</span>,
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">F</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">FileOp</span><span class="op">&lt;</span><span class="ident">F</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">StateInitializer</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">F</span><span class="op">&gt;</span> {
-    <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="self">self</span>, <span class="ident">log</span>: <span class="kw-2">&amp;mut</span> <span class="ident">F</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+<span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="ident">FileOp</span><span class="op">&lt;</span><span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">StateInitializer</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="self">self</span>, <span class="ident">log</span>: <span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">File</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="comment">// Scan back block by block until we find a page header with a value of 1.</span>
         <span class="kw">let</span> <span class="ident">block_start</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">log_length</span> <span class="op">-</span> <span class="ident">PAGE_SIZE</span> <span class="kw">as</span> <span class="ident">u64</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">scratch_buffer</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
@@ -1054,8 +1057,8 @@
     },
 }
 
-<span class="kw">fn</span> <span class="ident">scan_for_transaction</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
-    <span class="ident">log</span>: <span class="kw-2">&amp;mut</span> <span class="ident">File</span>,
+<span class="kw">fn</span> <span class="ident">scan_for_transaction</span>(
+    <span class="ident">log</span>: <span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">File</span>,
     <span class="ident">scratch_buffer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
     <span class="kw-2">mut</span> <span class="ident">block_start</span>: <span class="ident">u64</span>,
     <span class="ident">scan_forward</span>: <span class="ident">bool</span>,
@@ -1124,16 +1127,15 @@
     <span class="kw">pub</span> <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">FileOp</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">EntryFetcher</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
-    <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">ScanResult</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="self">self</span>, <span class="ident">log</span>: <span class="kw-2">&amp;mut</span> <span class="ident">File</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">ScanResult</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+<span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="ident">FileOp</span><span class="op">&lt;</span><span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">ScanResult</span>, <span class="ident">Error</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">EntryFetcher</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="self">self</span>, <span class="ident">log</span>: <span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">File</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">ScanResult</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">scratch</span> <span class="op">=</span> <span class="ident">Vec::with_capacity</span>(<span class="ident">PAGE_SIZE</span>);
         <span class="ident">fetch_entry</span>(<span class="ident">log</span>, <span class="kw-2">&amp;mut</span> <span class="ident">scratch</span>, <span class="self">self</span>.<span class="ident">state</span>, <span class="self">self</span>.<span class="ident">id</span>, <span class="self">self</span>.<span class="ident">vault</span>)
     }
 }
 
-<span class="kw">fn</span> <span class="ident">fetch_entry</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
-    <span class="ident">log</span>: <span class="kw-2">&amp;mut</span> <span class="ident">File</span>,
+<span class="kw">fn</span> <span class="ident">fetch_entry</span>(
+    <span class="ident">log</span>: <span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">File</span>,
     <span class="ident">scratch_buffer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
     <span class="ident">state</span>: <span class="kw-2">&amp;</span><span class="ident">State</span>,
     <span class="ident">id</span>: <span class="ident">u64</span>,
@@ -1212,15 +1214,12 @@
     <span class="kw">pub</span> <span class="ident">callback</span>: <span class="ident">Callback</span>,
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span>
-        <span class="lifetime">&#39;a</span>,
-        <span class="ident">Range</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
-        <span class="ident">File</span>: <span class="ident">ManagedFile</span>,
-        <span class="ident">Callback</span>: <span class="ident">FnMut</span>(<span class="ident">LogEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="ident">bool</span>,
-    <span class="op">&gt;</span> <span class="ident">FileOp</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">EntryScanner</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Range</span>, <span class="ident">Callback</span><span class="op">&gt;</span>
+<span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Range</span>, <span class="ident">Callback</span><span class="op">&gt;</span> <span class="ident">FileOp</span><span class="op">&lt;</span><span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">EntryScanner</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Range</span>, <span class="ident">Callback</span><span class="op">&gt;</span>
+<span class="kw">where</span>
+    <span class="ident">Range</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
+    <span class="ident">Callback</span>: <span class="ident">FnMut</span>(<span class="ident">LogEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="ident">bool</span>,
 {
-    <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">log</span>: <span class="kw-2">&amp;mut</span> <span class="ident">File</span>) -&gt; <span class="ident"><span class="self">Self</span>::Output</span> {
+    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">log</span>: <span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">File</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">scratch</span> <span class="op">=</span> <span class="ident">Vec::with_capacity</span>(<span class="ident">PAGE_SIZE</span>);
         <span class="kw">let</span> (<span class="ident">start_location</span>, <span class="ident">start_transaction</span>, <span class="ident">start_length</span>) <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">ids</span>.<span class="ident">start_bound</span>() {
             <span class="ident">Bound::Included</span>(<span class="ident">start_key</span>) <span class="op">|</span> <span class="ident">Bound::Excluded</span>(<span class="ident">start_key</span>) =&gt; {
@@ -1265,16 +1264,14 @@
     (<span class="ident">position</span> <span class="op">+</span> <span class="ident">page_size</span> <span class="op">-</span> <span class="number">1</span>) <span class="op">/</span> <span class="ident">page_size</span> <span class="op">*</span> <span class="ident">page_size</span>
 }
 
-<span class="kw">struct</span> <span class="ident">LogWriter</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> {
+<span class="kw">struct</span> <span class="ident">LogWriter</span> {
     <span class="ident">state</span>: <span class="ident">State</span>,
     <span class="ident">transactions</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">LogEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    <span class="ident">_file</span>: <span class="ident">PhantomData</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span>,
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">FileOp</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">LogWriter</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> {
-    <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">log</span>: <span class="kw-2">&amp;mut</span> <span class="ident">File</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+<span class="kw">impl</span> <span class="ident">FileOp</span><span class="op">&lt;</span><span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">LogWriter</span> {
+    <span class="kw">fn</span> <span class="ident">execute</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">log</span>: <span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">File</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">log_position</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock_for_write</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">scratch</span> <span class="op">=</span> [<span class="number">0_u8</span>; <span class="ident">PAGE_SIZE</span>];
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">completed_transactions</span> <span class="op">=</span> <span class="ident">Vec::with_capacity</span>(<span class="self">self</span>.<span class="ident">transactions</span>.<span class="ident">len</span>());
@@ -1483,9 +1480,9 @@
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="kw">crate</span>::{
         <span class="ident">io</span>::{
+            <span class="ident">any::AnyFileManager</span>,
             <span class="ident">fs</span>::{<span class="ident">StdFile</span>, <span class="ident">StdFileManager</span>},
-            <span class="ident">memory::MemoryFile</span>,
-            <span class="ident">ManagedFile</span>,
+            <span class="ident">memory::MemoryFileManager</span>,
         },
         <span class="ident">test_util::RotatorVault</span>,
         <span class="ident">transaction::TransactionManager</span>,
@@ -1494,21 +1491,27 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">file_log_file_tests</span>() {
-        <span class="ident">log_file_tests</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span>(<span class="string">&quot;file_log_file&quot;</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
+        <span class="ident">log_file_tests</span>(<span class="string">&quot;file_log_file&quot;</span>, <span class="ident">StdFileManager::default</span>(), <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">memory_log_file_tests</span>() {
-        <span class="ident">log_file_tests</span>::<span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span>(<span class="string">&quot;memory_log_file&quot;</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
+        <span class="ident">log_file_tests</span>(<span class="string">&quot;memory_log_file&quot;</span>, <span class="ident">MemoryFileManager::default</span>(), <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
     }
 
-    <span class="kw">fn</span> <span class="ident">log_file_tests</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">any_log_file_tests</span>() {
+        <span class="ident">log_file_tests</span>(<span class="string">&quot;any_file_log_file&quot;</span>, <span class="ident">AnyFileManager::std</span>(), <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
+        <span class="ident">log_file_tests</span>(<span class="string">&quot;any_memory_log_file&quot;</span>, <span class="ident">AnyFileManager::memory</span>(), <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
+    }
+
+    <span class="kw">fn</span> <span class="ident">log_file_tests</span><span class="op">&lt;</span><span class="ident">Manager</span>: <span class="ident">FileManager</span><span class="op">&gt;</span>(
         <span class="ident">file_name</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>,
+        <span class="ident">file_manager</span>: <span class="ident">Manager</span>,
         <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
     ) {
         <span class="kw">let</span> <span class="ident">temp_dir</span> <span class="op">=</span> <span class="ident"><span class="kw">crate</span>::test_util::TestDirectory::new</span>(<span class="ident">file_name</span>);
-        <span class="kw">let</span> <span class="ident">file_manager</span> <span class="op">=</span> <span class="op">&lt;</span><span class="ident">File::Manager</span> <span class="kw">as</span> <span class="ident">Default</span><span class="op">&gt;</span><span class="ident">::default</span>();
         <span class="kw">let</span> <span class="ident">context</span> <span class="op">=</span> <span class="ident">Context</span> {
             <span class="ident">file_manager</span>,
             <span class="ident">vault</span>,
@@ -1522,9 +1525,9 @@
 
         <span class="kw">for</span> <span class="ident">id</span> <span class="kw">in</span> <span class="number">1</span>..<span class="op">=</span><span class="number">1_000</span> {
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State::from_path</span>(<span class="kw-2">&amp;</span><span class="ident">log_path</span>);
-            <span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="ident">::initialize_state</span>(<span class="kw-2">&amp;</span><span class="ident">state</span>, <span class="kw-2">&amp;</span><span class="ident">context</span>).<span class="ident">unwrap</span>();
+            <span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">Manager::File</span><span class="op">&gt;</span><span class="ident">::initialize_state</span>(<span class="kw-2">&amp;</span><span class="ident">state</span>, <span class="kw-2">&amp;</span><span class="ident">context</span>).<span class="ident">unwrap</span>();
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transactions</span> <span class="op">=</span>
-                <span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="ident">::open</span>(<span class="kw-2">&amp;</span><span class="ident">log_path</span>, <span class="ident">state</span>, <span class="ident">context</span>.<span class="ident">clone</span>()).<span class="ident">unwrap</span>();
+                <span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">Manager::File</span><span class="op">&gt;</span><span class="ident">::open</span>(<span class="kw-2">&amp;</span><span class="ident">log_path</span>, <span class="ident">state</span>, <span class="ident">context</span>.<span class="ident">clone</span>()).<span class="ident">unwrap</span>();
             <span class="macro">assert_eq!</span>(<span class="ident">transactions</span>.<span class="ident">current_transaction_id</span>(), <span class="ident">id</span>);
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tx</span> <span class="op">=</span> <span class="ident">transactions</span>.<span class="ident">new_transaction</span>([<span class="kw-2">&amp;</span><span class="string">b&quot;hello&quot;</span>[..]]);
 
@@ -1537,8 +1540,9 @@
         <span class="kw">if</span> <span class="ident">context</span>.<span class="ident">vault</span>.<span class="ident">is_some</span>() {
             <span class="comment">// Test that we can&#39;t open it without encryption</span>
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State::from_path</span>(<span class="kw-2">&amp;</span><span class="ident">temp_dir</span>);
-            <span class="macro">assert!</span>(<span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="ident">::initialize_state</span>(<span class="kw-2">&amp;</span><span class="ident">state</span>, <span class="kw-2">&amp;</span><span class="ident">context</span>).<span class="ident">is_err</span>());
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transactions</span> <span class="op">=</span> <span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="ident">::open</span>(<span class="kw-2">&amp;</span><span class="ident">log_path</span>, <span class="ident">state</span>, <span class="ident">context</span>).<span class="ident">unwrap</span>();
+            <span class="macro">assert!</span>(<span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">Manager::File</span><span class="op">&gt;</span><span class="ident">::initialize_state</span>(<span class="kw-2">&amp;</span><span class="ident">state</span>, <span class="kw-2">&amp;</span><span class="ident">context</span>).<span class="ident">is_err</span>());
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transactions</span> <span class="op">=</span>
+                <span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">Manager::File</span><span class="op">&gt;</span><span class="ident">::open</span>(<span class="kw-2">&amp;</span><span class="ident">log_path</span>, <span class="ident">state</span>, <span class="ident">context</span>).<span class="ident">unwrap</span>();
 
             <span class="kw">for</span> <span class="ident">id</span> <span class="kw">in</span> <span class="number">0</span>..<span class="number">1_000</span> {
                 <span class="kw">let</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">transactions</span>.<span class="ident">get</span>(<span class="ident">id</span>).<span class="ident">unwrap</span>();
@@ -1612,31 +1616,43 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">file_log_manager_tests</span>() {
-        <span class="ident">log_manager_tests</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span>(<span class="string">&quot;file_log_manager&quot;</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
+        <span class="ident">log_manager_tests</span>(<span class="string">&quot;file_log_manager&quot;</span>, <span class="ident">StdFileManager::default</span>(), <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">memory_log_manager_tests</span>() {
-        <span class="ident">log_manager_tests</span>::<span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span>(<span class="string">&quot;memory_log_manager&quot;</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
+        <span class="ident">log_manager_tests</span>(
+            <span class="string">&quot;memory_log_manager&quot;</span>,
+            <span class="ident">MemoryFileManager::default</span>(),
+            <span class="prelude-val">None</span>,
+            <span class="prelude-val">None</span>,
+        );
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">any_log_manager_tests</span>() {
+        <span class="ident">log_manager_tests</span>(<span class="string">&quot;any_log_manager&quot;</span>, <span class="ident">AnyFileManager::std</span>(), <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
+        <span class="ident">log_manager_tests</span>(<span class="string">&quot;any_log_manager&quot;</span>, <span class="ident">AnyFileManager::memory</span>(), <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">file_encrypted_log_manager_tests</span>() {
-        <span class="ident">log_manager_tests</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span>(
+        <span class="ident">log_manager_tests</span>(
             <span class="string">&quot;encrypted_file_log_manager&quot;</span>,
+            <span class="ident">MemoryFileManager::default</span>(),
             <span class="prelude-val">Some</span>(<span class="ident">Arc::new</span>(<span class="ident">RotatorVault::new</span>(<span class="number">13</span>))),
             <span class="prelude-val">None</span>,
         );
     }
 
-    <span class="kw">fn</span> <span class="ident">log_manager_tests</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">log_manager_tests</span><span class="op">&lt;</span><span class="ident">Manager</span>: <span class="ident">FileManager</span><span class="op">&gt;</span>(
         <span class="ident">file_name</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>,
+        <span class="ident">file_manager</span>: <span class="ident">Manager</span>,
         <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
     ) {
         <span class="kw">let</span> <span class="ident">temp_dir</span> <span class="op">=</span> <span class="ident"><span class="kw">crate</span>::test_util::TestDirectory::new</span>(<span class="ident">file_name</span>);
         <span class="ident">std::fs::create_dir</span>(<span class="kw-2">&amp;</span><span class="ident">temp_dir</span>).<span class="ident">unwrap</span>();
-        <span class="kw">let</span> <span class="ident">file_manager</span> <span class="op">=</span> <span class="op">&lt;</span><span class="ident">File::Manager</span> <span class="kw">as</span> <span class="ident">Default</span><span class="op">&gt;</span><span class="ident">::default</span>();
         <span class="kw">let</span> <span class="ident">context</span> <span class="op">=</span> <span class="ident">Context</span> {
             <span class="ident">file_manager</span>,
             <span class="ident">vault</span>,

@@ -341,7 +341,6 @@
 <span id="340">340</span>
 <span id="341">341</span>
 <span id="342">342</span>
-<span id="343">343</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
     <span class="ident">convert::TryFrom</span>,
@@ -363,7 +362,7 @@
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">chunk_cache::CacheEntry</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="ident">InternalError</span>},
-    <span class="ident">io::ManagedFile</span>,
+    <span class="ident">io::File</span>,
     <span class="ident">roots::AbortError</span>,
     <span class="ident">tree</span>::{
         <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">NodeInclusion</span>, <span class="ident">ScanArgs</span>},
@@ -409,10 +408,10 @@
 <span class="kw">where</span>
     <span class="ident">Index</span>: <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">Index</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident"><span class="kw">super</span>::EmbeddedIndex</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
 {
-    <span class="kw">fn</span> <span class="ident">modify_id_root</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="lifetime">&#39;w</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">modify_id_root</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="lifetime">&#39;w</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="kw-2">mut</span> <span class="ident">modification</span>: <span class="ident">Modification</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-        <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;w</span>, <span class="ident">File</span><span class="op">&gt;</span>,
+        <span class="ident">writer</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;w</span><span class="op">&gt;</span>,
         <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">modification</span>.<span class="ident">reverse</span>()<span class="question-mark">?</span>;
@@ -433,7 +432,7 @@
                               <span class="ident">value</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
                               <span class="ident">_existing_index</span>,
                               <span class="ident">_changes</span>,
-                              <span class="ident">writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="op">|</span> {
+                              <span class="ident">writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span><span class="op">|</span> {
                         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">value</span>) <span class="op">=</span> <span class="ident">value</span> {
                             <span class="kw">let</span> <span class="ident">position</span> <span class="op">=</span> <span class="ident">writer</span>.<span class="ident">write_chunk</span>(<span class="ident">value</span>, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
                             <span class="comment">// write_chunk errors if it can&#39;t fit within a u32</span>
@@ -518,9 +517,9 @@
         })
     }
 
-    <span class="kw">fn</span> <span class="ident">serialize</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">serialize</span>(
         <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
-        <span class="ident">paged_writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
+        <span class="ident">paged_writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
         <span class="ident">output</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">output</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(
@@ -543,10 +542,10 @@
         <span class="self">self</span>.<span class="ident">transaction_id</span>.<span class="ident">unwrap_or_default</span>()
     }
 
-    <span class="kw">fn</span> <span class="ident">modify</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">modify</span>(
         <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">modification</span>: <span class="ident">Modification</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-        <span class="ident">writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
+        <span class="ident">writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
         <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">transaction_id</span> <span class="op">=</span> <span class="ident">modification</span>.<span class="ident">transaction_id</span>;
@@ -561,12 +560,12 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">get_multiple</span><span class="op">&lt;</span><span class="lifetime">&#39;keys</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span>, <span class="ident">KeyEvaluator</span>, <span class="ident">KeyReader</span>, <span class="ident">Keys</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">get_multiple</span><span class="op">&lt;</span><span class="lifetime">&#39;keys</span>, <span class="ident">KeyEvaluator</span>, <span class="ident">KeyReader</span>, <span class="ident">Keys</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">keys</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Keys</span>,
         <span class="ident">key_evaluator</span>: <span class="kw-2">&amp;mut</span> <span class="ident">KeyEvaluator</span>,
         <span class="ident">key_reader</span>: <span class="kw-2">&amp;mut</span> <span class="ident">KeyReader</span>,
-        <span class="ident">file</span>: <span class="kw-2">&amp;mut</span> <span class="ident">File</span>,
+        <span class="ident">file</span>: <span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">File</span>,
         <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
         <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>
@@ -610,7 +609,6 @@
     <span class="kw">fn</span> <span class="ident">scan</span><span class="op">&lt;</span>
         <span class="lifetime">&#39;keys</span>,
         <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
-        <span class="ident">File</span>: <span class="ident">ManagedFile</span>,
         <span class="ident">NodeEvaluator</span>,
         <span class="ident">KeyRangeBounds</span>,
         <span class="ident">KeyEvaluator</span>,
@@ -626,7 +624,7 @@
             <span class="ident">KeyEvaluator</span>,
             <span class="ident">DataCallback</span>,
         <span class="op">&gt;</span>,
-        <span class="ident">file</span>: <span class="kw-2">&amp;mut</span> <span class="ident">File</span>,
+        <span class="ident">file</span>: <span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">File</span>,
         <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
         <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
@@ -643,12 +641,12 @@
         <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">scan</span>(<span class="ident">range</span>, <span class="ident">args</span>, <span class="ident">file</span>, <span class="ident">vault</span>, <span class="ident">cache</span>, <span class="number">0</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">copy_data_to</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">copy_data_to</span>(
         <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">include_nodes</span>: <span class="ident">bool</span>,
-        <span class="ident">file</span>: <span class="kw-2">&amp;mut</span> <span class="ident">File</span>,
+        <span class="ident">file</span>: <span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">File</span>,
         <span class="ident">copied_chunks</span>: <span class="kw-2">&amp;mut</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">u64</span><span class="op">&gt;</span>,
-        <span class="ident">writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
+        <span class="ident">writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
         <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">scratch</span> <span class="op">=</span> <span class="ident">Vec::new</span>();

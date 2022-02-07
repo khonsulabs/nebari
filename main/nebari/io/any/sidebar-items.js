@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["AnyFile","A file that can be either a [`StdFile`] or [`MemoryFile`]."],["AnyFileHandle","A handle to an open file that could be either an [`OpenStdFile`] or an [`OpenMemoryFile`]."],["AnyFileManager","A file manager that can either be a [`StdFileManager`] or a [`MemoryFileManager`]."]]});

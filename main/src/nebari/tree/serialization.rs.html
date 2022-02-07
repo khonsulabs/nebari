@@ -31,13 +31,13 @@
 <span id="30">30</span>
 <span id="31">31</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident"><span class="kw">super</span>::PagedWriter</span>;
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">io::ManagedFile</span>, <span class="ident">ArcBytes</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">ArcBytes</span>};
 
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">BinarySerialization</span>: <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Sized</span> {
-    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">serialize_to</span>(
         <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
-        <span class="ident">paged_writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
+        <span class="ident">paged_writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
     <span class="kw">fn</span> <span class="ident">deserialize_from</span>(
         <span class="ident">reader</span>: <span class="kw-2">&amp;mut</span> <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
@@ -46,10 +46,10 @@
 }
 
 <span class="kw">impl</span> <span class="ident">BinarySerialization</span> <span class="kw">for</span> () {
-    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">serialize_to</span>(
         <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">_writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
-        <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
+        <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }

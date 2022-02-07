@@ -275,7 +275,7 @@
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">byteorder</span>::{<span class="ident">BigEndian</span>, <span class="ident">ReadBytesExt</span>, <span class="ident">WriteBytesExt</span>};
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">btree_entry::Reducer</span>, <span class="ident">BinarySerialization</span>, <span class="ident">PagedWriter</span>};
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">io::ManagedFile</span>, <span class="ident">tree::key_entry::ValueIndex</span>, <span class="ident">ArcBytes</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">tree::key_entry::ValueIndex</span>, <span class="ident">ArcBytes</span>};
 
 <span class="doccomment">/// The index stored within [`VersionedTreeRoot::by_id_root`](crate::tree::VersionedTreeRoot::by_id_root).</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
@@ -294,10 +294,10 @@
 <span class="kw">where</span>
     <span class="ident">EmbeddedIndex</span>: <span class="ident"><span class="kw">super</span>::EmbeddedIndex</span>,
 {
-    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">serialize_to</span>(
         <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
-        <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
+        <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">sequence_id</span>)<span class="question-mark">?</span>;
         <span class="ident">writer</span>.<span class="ident">write_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">value_length</span>)<span class="question-mark">?</span>;
@@ -342,10 +342,10 @@
 <span class="kw">where</span>
     <span class="ident">EmbeddedIndex</span>: <span class="ident"><span class="kw">super</span>::EmbeddedIndex</span>,
 {
-    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">serialize_to</span>(
         <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
-        <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
+        <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">writer</span>.<span class="ident">write_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">value_length</span>)<span class="question-mark">?</span>;
         <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">position</span>)<span class="question-mark">?</span>;
@@ -397,10 +397,10 @@
 <span class="kw">where</span>
     <span class="ident">EmbeddedStats</span>: <span class="ident"><span class="kw">super</span>::Serializable</span>,
 {
-    <span class="kw">fn</span> <span class="ident">serialize_to</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">serialize_to</span>(
         <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
-        <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">File</span><span class="op">&gt;</span>,
+        <span class="ident">_paged_writer</span>: <span class="kw-2">&amp;mut</span> <span class="ident">PagedWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">alive_keys</span>)<span class="question-mark">?</span>;
         <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">deleted_keys</span>)<span class="question-mark">?</span>;

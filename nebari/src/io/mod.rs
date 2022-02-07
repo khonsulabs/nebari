@@ -104,7 +104,7 @@ pub trait OpenableFile<F: ManagedFile>: Debug + Sized + Send + Sync {
     /// Replaces the current file with the file located at `path` atomically.
     fn replace_with<C: FnOnce(u64)>(
         self,
-        path: &Path,
+        replacement: F,
         manager: &F::Manager,
         publish_callback: C,
     ) -> Result<Self, Error>;
@@ -138,15 +138,19 @@ pub struct PathIds {
 }
 
 impl PathIds {
-    fn file_id_for_path(&self, path: &Path) -> u64 {
+    fn file_id_for_path(&self, path: &Path, insert_if_not_found: bool) -> Option<u64> {
         let file_ids = self.file_ids.upgradable_read();
         if let Some(id) = file_ids.get(path) {
-            *id
-        } else {
+            Some(*id)
+        } else if insert_if_not_found {
             let mut file_ids = RwLockUpgradableReadGuard::upgrade(file_ids);
-            *file_ids
-                .entry(path.to_path_buf())
-                .or_insert_with(|| self.file_id_counter.fetch_add(1, Ordering::SeqCst))
+            Some(
+                *file_ids
+                    .entry(path.to_path_buf())
+                    .or_insert_with(|| self.file_id_counter.fetch_add(1, Ordering::SeqCst)),
+            )
+        } else {
+            None
         }
     }
 

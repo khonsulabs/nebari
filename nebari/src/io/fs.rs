@@ -128,7 +128,7 @@ impl FileManager for StdFileManager {
     type FileHandle = OpenStdFile;
     fn append(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error> {
         let path = path.as_ref();
-        let file_id = self.file_ids.file_id_for_path(path);
+        let file_id = self.file_ids.file_id_for_path(path, true).unwrap();
         let mut open_files = self.open_files.lock();
         if let Some(open_file) = open_files.get_mut(&file_id) {
             let mut file = FileSlot::Taken;
@@ -171,7 +171,7 @@ impl FileManager for StdFileManager {
 
     fn read(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error> {
         let path = path.as_ref();
-        let file_id = self.file_ids.file_id_for_path(path);
+        let file_id = self.file_ids.file_id_for_path(path, true).unwrap();
 
         let mut reader_files = self.reader_files.lock();
         let files = reader_files.entry(file_id).or_default();
@@ -282,12 +282,14 @@ impl OpenableFile<StdFile> for OpenStdFile {
 
     fn replace_with<C: FnOnce(u64)>(
         self,
-        path: &Path,
+        replacement: StdFile,
         manager: &StdFileManager,
         publish_callback: C,
     ) -> Result<Self, Error> {
         let current_path = self.file.as_ref().unwrap().path.clone();
         self.close()?;
+        let path = replacement.path.clone();
+        replacement.close()?;
 
         std::fs::rename(path, &current_path)?;
         manager.close_handles(&current_path, publish_callback);

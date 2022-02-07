@@ -191,9 +191,16 @@ impl MemoryFileManager {
         &self,
         path: impl AsRef<Path>,
         create_if_needed: bool,
-        id: u64,
+        id: Option<u64>,
     ) -> Result<Option<Arc<Mutex<MemoryFile>>>, Error> {
         let path = path.as_ref();
+        let id = match id {
+            Some(id) => id,
+            None => match self.file_ids.file_id_for_path(path, create_if_needed) {
+                Some(id) => id,
+                None => return Ok(None),
+            },
+        };
         let mut open_files = self.open_files.lock();
         if let Some(open_file) = open_files.get(&id) {
             Ok(Some(open_file.clone()))
@@ -215,7 +222,7 @@ impl FileManager for MemoryFileManager {
 
     fn append(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error> {
         let path = path.as_ref();
-        let id = self.file_ids.file_id_for_path(path);
+        let id = self.file_ids.file_id_for_path(path, true);
         self.lookup_file(path, true, id)
             .map(|file| OpenMemoryFile(file.unwrap()))
     }
@@ -225,7 +232,7 @@ impl FileManager for MemoryFileManager {
     }
 
     fn file_length(&self, path: impl AsRef<Path>) -> Result<u64, Error> {
-        let file = self.lookup_file(path, false, 0)?.ok_or_else(|| {
+        let file = self.lookup_file(path, false, None)?.ok_or_else(|| {
             ErrorKind::Io(io::Error::new(
                 io::ErrorKind::NotFound,
                 ErrorKind::message("not found"),
@@ -237,7 +244,7 @@ impl FileManager for MemoryFileManager {
     }
 
     fn exists(&self, path: impl AsRef<Path>) -> Result<bool, Error> {
-        Ok(self.lookup_file(path, false, 0)?.is_some())
+        Ok(self.lookup_file(path, false, None)?.is_some())
     }
 
     fn delete(&self, path: impl AsRef<Path>) -> Result<bool, Error> {
@@ -264,7 +271,7 @@ impl FileManager for MemoryFileManager {
     fn close_handles<F: FnOnce(u64)>(&self, path: impl AsRef<Path>, publish_callback: F) {
         let path = path.as_ref();
         drop(self.delete(path));
-        let new_id = self.file_ids.file_id_for_path(path);
+        let new_id = self.file_ids.file_id_for_path(path, true).unwrap();
         publish_callback(new_id);
     }
 }
@@ -299,26 +306,26 @@ impl OpenableFile<MemoryFile> for OpenMemoryFile {
 
     fn replace_with<C: FnOnce(u64)>(
         self,
-        path: &Path,
+        replacement: MemoryFile,
         manager: &MemoryFileManager,
         publish_callback: C,
     ) -> Result<Self, Error> {
-        let path_buffer = lookup_buffer(path, false).expect("replacement buffer not found");
+        let weak_buffer = Arc::downgrade(&replacement.buffer);
         let my_path = {
-            let mut file = self.0.lock();
-            file.buffer = path_buffer;
-            file.path.clone()
+            let mut open_buffers = OPEN_BUFFERS.lock();
+            open_buffers.remove(replacement.path());
+            let my_path = {
+                let mut file = self.0.lock();
+                file.buffer = replacement.buffer;
+                file.path.clone()
+            };
+            open_buffers.insert(my_path.clone(), weak_buffer);
+            my_path
         };
 
-        let mut files = manager.open_files.lock();
-        if let Some(id) = manager.file_ids.remove_file_id_for_path(&my_path) {
-            files.remove(&id);
-        }
-        let new_id = manager.file_ids.file_id_for_path(&my_path);
-        files.insert(new_id, self.0.clone());
-        publish_callback(new_id);
+        manager.close_handles(&my_path, publish_callback);
 
-        Ok(self)
+        manager.append(&my_path)
     }
 
     fn close(self) -> Result<(), Error> {

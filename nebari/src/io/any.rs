@@ -218,16 +218,21 @@ impl OpenableFile<AnyFile> for AnyFileHandle {
 
     fn replace_with<C: FnOnce(u64)>(
         self,
-        path: &std::path::Path,
+        replacement: AnyFile,
         manager: &<AnyFile as ManagedFile>::Manager,
         publish_callback: C,
     ) -> Result<Self, crate::Error> {
-        match (self, manager) {
-            (AnyFileHandle::Std(file), AnyFileManager::Std(manager)) => file
-                .replace_with(path, manager, publish_callback)
-                .map(AnyFileHandle::Std),
-            (AnyFileHandle::Memory(file), AnyFileManager::Memory(manager)) => file
-                .replace_with(path, manager, publish_callback)
+        match (self, replacement, manager) {
+            (AnyFileHandle::Std(file), AnyFile::Std(replacement), AnyFileManager::Std(manager)) => {
+                file.replace_with(replacement, manager, publish_callback)
+                    .map(AnyFileHandle::Std)
+            }
+            (
+                AnyFileHandle::Memory(file),
+                AnyFile::Memory(replacement),
+                AnyFileManager::Memory(manager),
+            ) => file
+                .replace_with(replacement, manager, publish_callback)
                 .map(AnyFileHandle::Memory),
             _ => Err(crate::Error::from("incompatible file and manager")),
         }

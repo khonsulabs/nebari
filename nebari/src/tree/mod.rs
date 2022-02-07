@@ -45,7 +45,7 @@ use std::{
     io::SeekFrom,
     marker::PhantomData,
     ops::{Bound, Deref, DerefMut, Range, RangeBounds},
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
 };
 
@@ -589,7 +589,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         file_manager: &File::Manager,
         transactions: Option<TransactableCompaction<'_, File::Manager>>,
     ) -> Result<Self, Error> {
-        let (compacted_path, finisher) = self.file.execute(TreeCompactor {
+        let (compacted_file, finisher) = self.file.execute(TreeCompactor {
             state: &self.state,
             manager: file_manager,
             vault: self.vault.as_deref(),
@@ -598,7 +598,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         })?;
         self.file = self
             .file
-            .replace_with(&compacted_path, file_manager, |file_id| {
+            .replace_with(compacted_file, file_manager, |file_id| {
                 finisher.finish(file_id);
             })?;
         Ok(self)
@@ -670,7 +670,7 @@ struct TreeCompactor<'a, Root: root::Root, Manager: FileManager> {
     transactions: Option<TransactableCompaction<'a, Manager>>,
     scratch: &'a mut Vec<u8>,
 }
-impl<'a, Root, Manager> FileOp<Result<(PathBuf, TreeCompactionFinisher<'a, Root>), Error>>
+impl<'a, Root, Manager> FileOp<Result<(Manager::File, TreeCompactionFinisher<'a, Root>), Error>>
     for TreeCompactor<'a, Root, Manager>
 where
     Root: root::Root,
@@ -679,7 +679,7 @@ where
     fn execute(
         self,
         file: &mut dyn File,
-    ) -> Result<(PathBuf, TreeCompactionFinisher<'a, Root>), Error> {
+    ) -> Result<(Manager::File, TreeCompactionFinisher<'a, Root>), Error> {
         let current_path = file.path().to_path_buf();
         let file_name = current_path
             .file_name()
@@ -724,7 +724,7 @@ where
         // file.
 
         Ok((
-            compacted_path,
+            new_file,
             TreeCompactionFinisher {
                 write_state,
                 state: self.state,
@@ -1987,11 +1987,11 @@ mod tests {
         assert_eq!(&all_records, &all_through_scan);
     }
 
-    fn compact<R: Root>(label: &str) {
+    fn compact<R: Root, M: FileManager>(label: &str, file_manager: M) {
         const ORDER: usize = 4;
         let mut rng = Pcg64::new_seed(1);
         let context = Context {
-            file_manager: StdFileManager::default(),
+            file_manager,
             vault: None,
             cache: None,
         };
@@ -2000,11 +2000,11 @@ mod tests {
         let file_path = temp_dir.join("tree");
         let mut ids = HashSet::new();
         for _ in 0..5 {
-            insert_one_record::<R, StdFile>(&context, &file_path, &mut ids, &mut rng, Some(ORDER));
+            insert_one_record::<R, M::File>(&context, &file_path, &mut ids, &mut rng, Some(ORDER));
         }
 
         let mut tree =
-            TreeFile::<R, StdFile>::write(&file_path, State::default(), &context, None).unwrap();
+            TreeFile::<R, M::File>::write(&file_path, State::default(), &context, None).unwrap();
         let pre_compact_size = context.file_manager.file_length(&file_path).unwrap();
         tree = tree.compact(&context.file_manager, None).unwrap();
         let after_compact_size = context.file_manager.file_length(&file_path).unwrap();
@@ -2023,13 +2023,35 @@ mod tests {
     }
 
     #[test]
-    fn compact_versioned() {
-        compact::<Versioned>("versioned");
+    fn std_compact_versioned() {
+        compact::<Versioned, _>("versioned", StdFileManager::default());
     }
 
     #[test]
-    fn compact_unversioned() {
-        compact::<Unversioned>("unversioned");
+    fn std_compact_unversioned() {
+        compact::<Unversioned, _>("unversioned", StdFileManager::default());
+    }
+
+    #[test]
+    fn memory_compact_versioned() {
+        compact::<Versioned, _>("versioned", MemoryFileManager::default());
+    }
+
+    #[test]
+    fn memory_compact_unversioned() {
+        compact::<Unversioned, _>("unversioned", MemoryFileManager::default());
+    }
+
+    #[test]
+    fn any_compact_versioned() {
+        compact::<Versioned, _>("any-versioned", AnyFileManager::std());
+        compact::<Versioned, _>("any-versioned", AnyFileManager::memory());
+    }
+
+    #[test]
+    fn any_compact_unversioned() {
+        compact::<Unversioned, _>("any-unversioned", AnyFileManager::std());
+        compact::<Unversioned, _>("any-unversioned", AnyFileManager::memory());
     }
 
     #[test]

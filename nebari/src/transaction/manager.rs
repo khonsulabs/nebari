@@ -12,7 +12,7 @@ use parking_lot::Mutex;
 use super::{log::EntryFetcher, LogEntry, State, TransactionLog};
 use crate::{
     error::{Error, InternalError},
-    io::{FileManager, ManagedFile, OpenableFile},
+    io::{FileManager, ManagedFile, OperableFile},
     transaction::log::ScanResult,
     Context, ErrorKind,
 };
@@ -25,7 +25,10 @@ pub struct TransactionManager<Manager: FileManager> {
     context: Context<Manager>,
 }
 
-impl<Manager: FileManager> TransactionManager<Manager> {
+impl<Manager> TransactionManager<Manager>
+where
+    Manager: FileManager,
+{
     /// Spawns a new transaction manager. The transaction manager runs its own
     /// thread that writes to the transaction log.
     pub fn spawn(directory: &Path, context: Context<Manager>) -> Result<Self, Error> {

@@ -13,7 +13,7 @@ use super::{
 use crate::{
     chunk_cache::CacheEntry,
     error::Error,
-    io::ManagedFile,
+    io::File,
     tree::{btree_entry::NodeInclusion, key_entry::ValueIndex},
     vault::AnyVault,
     AbortError, ArcBytes, ChunkCache, ErrorKind,
@@ -73,9 +73,9 @@ impl<
     /// Attempts to load the node from disk. If the node is already loaded, this
     /// function does nothing.
     #[allow(clippy::missing_panics_doc)] // Currently the only panic is if the types don't match, which shouldn't happen due to these nodes always being accessed through a root.
-    pub fn load<File: ManagedFile>(
+    pub fn load(
         &mut self,
-        file: &mut File,
+        file: &mut dyn File,
         validate_crc: bool,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
@@ -141,14 +141,13 @@ impl<
     pub fn map_loaded_entry<
         Output,
         CallerError: Display + Debug,
-        File: ManagedFile,
         Cb: FnOnce(
             &BTreeEntry<Index, ReducedIndex>,
-            &mut File,
+            &mut dyn File,
         ) -> Result<Output, AbortError<CallerError>>,
     >(
         &self,
-        file: &mut File,
+        file: &mut dyn File,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
         current_order: Option<usize>,
@@ -185,24 +184,23 @@ impl<
     > Interior<Index, ReducedIndex>
 {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn copy_data_to<File, Callback>(
+    pub(crate) fn copy_data_to<Callback>(
         &mut self,
         include_nodes: NodeInclusion,
-        file: &mut File,
+        file: &mut dyn File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
         vault: Option<&dyn AnyVault>,
         scratch: &mut Vec<u8>,
         index_callback: &mut Callback,
     ) -> Result<bool, Error>
     where
-        File: ManagedFile,
         Callback: FnMut(
             &ArcBytes<'static>,
             &mut Index,
-            &mut File,
+            &mut dyn File,
             &mut HashMap<u64, u64>,
-            &mut PagedWriter<'_, File>,
+            &mut PagedWriter<'_>,
             Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,
     {
@@ -242,10 +240,10 @@ impl<
         ReducedIndex: Reducer<Index> + Clone + BinarySerialization + Debug + 'static,
     > BinarySerialization for Interior<Index, ReducedIndex>
 {
-    fn serialize_to<File: ManagedFile>(
+    fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        paged_writer: &mut PagedWriter<'_, File>,
+        paged_writer: &mut PagedWriter<'_>,
     ) -> Result<usize, Error> {
         let mut pointer = Pointer::OnDisk(0);
         std::mem::swap(&mut pointer, &mut self.position);

@@ -3,7 +3,7 @@ use std::{collections::HashMap, convert::TryFrom};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{serialization::BinarySerialization, PagedWriter};
-use crate::{error::Error, io::ManagedFile, vault::AnyVault, ArcBytes, ErrorKind};
+use crate::{error::Error, io::File, vault::AnyVault, ArcBytes, ErrorKind};
 
 /// An entry for a key. Stores a single index value for a single key.
 #[derive(Debug, Clone)]
@@ -21,22 +21,21 @@ pub trait ValueIndex {
 }
 
 impl<Index: ValueIndex + BinarySerialization> KeyEntry<Index> {
-    pub(crate) fn copy_data_to<File, Callback>(
+    pub(crate) fn copy_data_to<Callback>(
         &mut self,
-        file: &mut File,
+        file: &mut dyn File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
         vault: Option<&dyn AnyVault>,
         index_callback: &mut Callback,
     ) -> Result<bool, Error>
     where
-        File: ManagedFile,
         Callback: FnMut(
             &ArcBytes<'static>,
             &mut Index,
-            &mut File,
+            &mut dyn File,
             &mut HashMap<u64, u64>,
-            &mut PagedWriter<'_, File>,
+            &mut PagedWriter<'_>,
             Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,
     {
@@ -52,10 +51,10 @@ impl<Index: ValueIndex + BinarySerialization> KeyEntry<Index> {
 }
 
 impl<Index: BinarySerialization> BinarySerialization for KeyEntry<Index> {
-    fn serialize_to<File: ManagedFile>(
+    fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        paged_writer: &mut PagedWriter<'_, File>,
+        paged_writer: &mut PagedWriter<'_>,
     ) -> Result<usize, Error> {
         let mut bytes_written = 0;
         // Write the key

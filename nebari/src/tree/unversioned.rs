@@ -19,7 +19,7 @@ use super::{
 use crate::{
     chunk_cache::CacheEntry,
     error::{Error, InternalError},
-    io::ManagedFile,
+    io::File,
     roots::AbortError,
     tree::{
         btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
@@ -65,10 +65,10 @@ impl<Index> UnversionedTreeRoot<Index>
 where
     Index: Clone + Reducer<Index> + super::EmbeddedIndex + Debug + 'static,
 {
-    fn modify_id_root<'a, 'w, File: ManagedFile>(
+    fn modify_id_root<'a, 'w>(
         &'a mut self,
         mut modification: Modification<'_, ArcBytes<'static>>,
-        writer: &'a mut PagedWriter<'w, File>,
+        writer: &'a mut PagedWriter<'w>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
         modification.reverse()?;
@@ -89,7 +89,7 @@ where
                               value: Option<&ArcBytes<'static>>,
                               _existing_index,
                               _changes,
-                              writer: &mut PagedWriter<'_, File>| {
+                              writer: &mut PagedWriter<'_>| {
                         if let Some(value) = value {
                             let position = writer.write_chunk(value, false)?;
                             // write_chunk errors if it can't fit within a u32
@@ -174,9 +174,9 @@ where
         })
     }
 
-    fn serialize<File: ManagedFile>(
+    fn serialize(
         &mut self,
-        paged_writer: &mut PagedWriter<'_, File>,
+        paged_writer: &mut PagedWriter<'_>,
         output: &mut Vec<u8>,
     ) -> Result<(), Error> {
         output.write_u64::<BigEndian>(
@@ -199,10 +199,10 @@ where
         self.transaction_id.unwrap_or_default()
     }
 
-    fn modify<File: ManagedFile>(
+    fn modify(
         &mut self,
         modification: Modification<'_, ArcBytes<'static>>,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
         let transaction_id = modification.transaction_id;
@@ -217,12 +217,12 @@ where
         Ok(())
     }
 
-    fn get_multiple<'keys, File: ManagedFile, KeyEvaluator, KeyReader, Keys>(
+    fn get_multiple<'keys, KeyEvaluator, KeyReader, Keys>(
         &self,
         keys: &mut Keys,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut File,
+        file: &mut dyn File,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
@@ -266,7 +266,6 @@ where
     fn scan<
         'keys,
         CallerError: Display + Debug,
-        File: ManagedFile,
         NodeEvaluator,
         KeyRangeBounds,
         KeyEvaluator,
@@ -282,7 +281,7 @@ where
             KeyEvaluator,
             DataCallback,
         >,
-        file: &mut File,
+        file: &mut dyn File,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
@@ -299,12 +298,12 @@ where
         self.by_id_root.scan(range, args, file, vault, cache, 0)
     }
 
-    fn copy_data_to<File: ManagedFile>(
+    fn copy_data_to(
         &mut self,
         include_nodes: bool,
-        file: &mut File,
+        file: &mut dyn File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
         vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error> {
         let mut scratch = Vec::new();

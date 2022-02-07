@@ -19,31 +19,27 @@ use parking_lot::{RwLock, RwLockUpgradableReadGuard, RwLockWriteGuard};
 
 use crate::error::Error;
 
+/// A wrapper type for any file type.
+pub mod any;
 /// Filesystem IO provided by `std::fs`.
 pub mod fs;
 /// A virtual memory-based filesystem.
 pub mod memory;
 
-/// A file that can be interacted with using async operations.
-///
-/// This trait is an abstraction that mimics `tokio-uring`'s File type, allowing
-/// for a non-uring implementation to be provided as well. This is why the
-/// read/write APIs take ownership of the buffer -- to satisfy the requirements
-/// of tokio-uring.
-pub trait ManagedFile: Debug + Send + Sync + Seek + Read + Write + Sized + 'static {
+/// A file that is managed by a [`FileManager`].
+pub trait ManagedFile: File {
     /// The file manager that synchronizes file access across threads.
     type Manager: FileManager<File = Self>;
+}
 
-    /// Returns the unique ID of this file. Only unique within [`Self::Manager`].
+/// A generic file trait.
+pub trait File: Debug + Send + Sync + Seek + Read + Write + 'static {
+    /// Returns the unique ID of this file. Only unique within the manager it
+    /// was opened from.
     fn id(&self) -> Option<u64>;
 
     /// Returns the path to the file.
     fn path(&self) -> &Path;
-
-    /// Opens a file at `path` with read-only permission.
-    fn open_for_read(path: impl AsRef<Path> + Send, id: Option<u64>) -> Result<Self, Error>;
-    /// Opens or creates a file at `path`, positioning the cursor at the end of the file.
-    fn open_for_append(path: impl AsRef<Path> + Send, id: Option<u64>) -> Result<Self, Error>;
 
     /// Returns the length of the file.
     fn length(&self) -> Result<u64, Error>;
@@ -52,12 +48,30 @@ pub trait ManagedFile: Debug + Send + Sync + Seek + Read + Write + Sized + 'stat
     fn close(self) -> Result<(), Error>;
 }
 
+/// A type that can open managed files.
+pub trait ManagedFileOpener<File>
+where
+    File: ManagedFile,
+{
+    /// Opens a file at `path` with read-only permission.
+    fn open_for_read(&self, path: impl AsRef<Path> + Send, id: Option<u64>) -> Result<File, Error>;
+
+    /// Opens or creates a file at `path`, positioning the cursor at the end of the file.
+    fn open_for_append(
+        &self,
+        path: impl AsRef<Path> + Send,
+        id: Option<u64>,
+    ) -> Result<File, Error>;
+}
+
 /// A manager that is responsible for controlling write access to a file.
-pub trait FileManager: Send + Sync + Clone + Default + Debug + 'static {
-    /// The [`ManagedFile`] that this manager is for.
+pub trait FileManager:
+    ManagedFileOpener<Self::File> + Default + Clone + Debug + Send + Sync + 'static
+{
+    /// The type of file managed by this manager.
     type File: ManagedFile<Manager = Self>;
     /// A file handle type, which can have operations executed against it.
-    type FileHandle: OpenableFile<Self::File>;
+    type FileHandle: OpenableFile<Self::File> + OperableFile<Self::File>;
 
     /// Returns a file handle that can be used for reading operations.
     fn read(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error>;
@@ -66,17 +80,10 @@ pub trait FileManager: Send + Sync + Clone + Default + Debug + 'static {
     fn append(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error>;
 
     /// Returns the length of the file.
-    fn file_length(&self, path: impl AsRef<Path>) -> Result<u64, Error> {
-        path.as_ref()
-            .metadata()
-            .map_err(Error::from)
-            .map(|metadata| metadata.len())
-    }
+    fn file_length(&self, path: impl AsRef<Path>) -> Result<u64, Error>;
 
     /// Check if the file exists.
-    fn exists(&self, path: impl AsRef<Path>) -> Result<bool, Error> {
-        Ok(path.as_ref().exists())
-    }
+    fn exists(&self, path: impl AsRef<Path>) -> Result<bool, Error>;
 
     /// Closes all open handles for `path`, and calls `publish_callback` before
     /// unlocking any locks aquired during the operation.
@@ -94,9 +101,6 @@ pub trait OpenableFile<F: ManagedFile>: Debug + Sized + Send + Sync {
     /// Returns the id of the file assigned from the file manager.
     fn id(&self) -> Option<u64>;
 
-    /// Executes an operation.
-    fn execute<W: FileOp<F>>(&mut self, operator: W) -> W::Output;
-
     /// Replaces the current file with the file located at `path` atomically.
     fn replace_with<C: FnOnce(u64)>(
         self,
@@ -111,13 +115,19 @@ pub trait OpenableFile<F: ManagedFile>: Debug + Sized + Send + Sync {
     fn close(self) -> Result<(), Error>;
 }
 
-/// An operation to perform on a file.
-pub trait FileOp<F: ManagedFile> {
-    /// The output type of the operation.
-    type Output;
+/// A file that can have an operation performed against it.
+pub trait OperableFile<File>
+where
+    File: ManagedFile,
+{
+    /// Executes an operation and returns the results.
+    fn execute<Output, Op: FileOp<Output>>(&mut self, operator: Op) -> Output;
+}
 
+/// An operation to perform on a file.
+pub trait FileOp<Output> {
     /// Executes the operation and returns the result.
-    fn execute(self, file: &mut F) -> Self::Output;
+    fn execute(self, file: &mut dyn File) -> Output;
 }
 
 /// Converts between paths and unique IDs.

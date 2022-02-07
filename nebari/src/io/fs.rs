@@ -9,7 +9,10 @@ use std::{
 use parking_lot::Mutex;
 
 use super::{FileManager, FileOp, ManagedFile, OpenableFile};
-use crate::{error::Error, io::PathIds};
+use crate::{
+    error::Error,
+    io::{File as _, ManagedFileOpener, OperableFile, PathIds},
+};
 
 /// An open file that uses [`std::fs`].
 #[derive(Debug)]
@@ -21,41 +24,15 @@ pub struct StdFile {
 
 impl ManagedFile for StdFile {
     type Manager = StdFileManager;
+}
+
+impl super::File for StdFile {
     fn id(&self) -> Option<u64> {
         self.id
     }
 
     fn path(&self) -> &Path {
         &self.path
-    }
-
-    fn open_for_read(
-        path: impl AsRef<std::path::Path> + Send,
-        id: Option<u64>,
-    ) -> Result<Self, Error> {
-        let path = path.as_ref();
-        Ok(Self {
-            file: File::open(path)?,
-            path: path.to_path_buf(),
-            id,
-        })
-    }
-
-    fn open_for_append(
-        path: impl AsRef<std::path::Path> + Send,
-        id: Option<u64>,
-    ) -> Result<Self, Error> {
-        let path = path.as_ref();
-        Ok(Self {
-            file: OpenOptions::new()
-                .write(true)
-                .append(true)
-                .read(true)
-                .create(true)
-                .open(path)?,
-            path: path.to_path_buf(),
-            id,
-        })
     }
 
     fn length(&self) -> Result<u64, Error> {
@@ -66,6 +43,42 @@ impl ManagedFile for StdFile {
     fn close(mut self) -> Result<(), Error> {
         // Closing is done by just dropping it
         self.flush().map_err(Error::from)
+    }
+}
+
+/// A [`ManagedFileOpener`] implementation that produces [`StdFile`]s.
+pub struct StdFileOpener;
+
+impl ManagedFileOpener<StdFile> for StdFileOpener {
+    fn open_for_read(
+        &self,
+        path: impl AsRef<std::path::Path> + Send,
+        id: Option<u64>,
+    ) -> Result<StdFile, Error> {
+        let path = path.as_ref();
+        Ok(StdFile {
+            file: File::open(path)?,
+            path: path.to_path_buf(),
+            id,
+        })
+    }
+
+    fn open_for_append(
+        &self,
+        path: impl AsRef<std::path::Path> + Send,
+        id: Option<u64>,
+    ) -> Result<StdFile, Error> {
+        let path = path.as_ref();
+        Ok(StdFile {
+            file: OpenOptions::new()
+                .write(true)
+                .append(true)
+                .read(true)
+                .create(true)
+                .open(path)?,
+            path: path.to_path_buf(),
+            id,
+        })
     }
 }
 
@@ -146,7 +159,7 @@ impl FileManager for StdFileManager {
                 manager: Some(self.clone()),
             })
         } else {
-            let file = StdFile::open_for_append(path, Some(file_id))?;
+            let file = self.open_for_append(path, Some(file_id))?;
             open_files.insert(file_id, FileSlot::Taken);
             Ok(OpenStdFile {
                 file: Some(file),
@@ -171,7 +184,7 @@ impl FileManager for StdFileManager {
             });
         }
 
-        let file = StdFile::open_for_read(path, Some(file_id))?;
+        let file = StdFileOpener.open_for_read(path, Some(file_id))?;
         Ok(OpenStdFile {
             file: Some(file),
             manager: Some(self.clone()),
@@ -223,6 +236,35 @@ impl FileManager for StdFileManager {
             publish_callback(result.new_id);
         }
     }
+
+    fn exists(&self, path: impl AsRef<std::path::Path>) -> Result<bool, crate::Error> {
+        Ok(path.as_ref().exists())
+    }
+
+    fn file_length(&self, path: impl AsRef<Path>) -> Result<u64, Error> {
+        path.as_ref()
+            .metadata()
+            .map_err(Error::from)
+            .map(|metadata| metadata.len())
+    }
+}
+
+impl ManagedFileOpener<StdFile> for StdFileManager {
+    fn open_for_read(
+        &self,
+        path: impl AsRef<Path> + Send,
+        id: Option<u64>,
+    ) -> Result<StdFile, Error> {
+        StdFileOpener.open_for_read(path, id)
+    }
+
+    fn open_for_append(
+        &self,
+        path: impl AsRef<Path> + Send,
+        id: Option<u64>,
+    ) -> Result<StdFile, Error> {
+        StdFileOpener.open_for_append(path, id)
+    }
 }
 
 /// An open [`StdFile`] that belongs to a [`StdFileManager`].
@@ -236,10 +278,6 @@ pub struct OpenStdFile {
 impl OpenableFile<StdFile> for OpenStdFile {
     fn id(&self) -> Option<u64> {
         self.file.as_ref().and_then(StdFile::id)
-    }
-
-    fn execute<W: FileOp<StdFile>>(&mut self, writer: W) -> W::Output {
-        writer.execute(self.file.as_mut().unwrap())
     }
 
     fn replace_with<C: FnOnce(u64)>(
@@ -259,6 +297,12 @@ impl OpenableFile<StdFile> for OpenStdFile {
     fn close(self) -> Result<(), Error> {
         drop(self);
         Ok(())
+    }
+}
+
+impl OperableFile<StdFile> for OpenStdFile {
+    fn execute<Output, Op: FileOp<Output>>(&mut self, operator: Op) -> Output {
+        operator.execute(self.file.as_mut().unwrap())
     }
 }
 

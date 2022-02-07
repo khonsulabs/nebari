@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     error::Error,
-    io::ManagedFile,
+    io::{File, ManagedFile},
     roots::AnyTransactionTree,
     transaction::TransactionManager,
     tree::{
@@ -56,9 +56,9 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
 
     /// Serialize the root and return the bytes. Writes any additional data to
     /// `paged_writer` in the process of serialization.
-    fn serialize<File: ManagedFile>(
+    fn serialize(
         &mut self,
-        paged_writer: &mut PagedWriter<'_, File>,
+        paged_writer: &mut PagedWriter<'_>,
         output: &mut Vec<u8>,
     ) -> Result<(), Error>;
 
@@ -69,10 +69,10 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     fn transaction_id(&self) -> u64;
 
     /// Modifies the tree.
-    fn modify<'a, 'w, File: ManagedFile>(
+    fn modify<'a, 'w>(
         &'a mut self,
         modification: Modification<'_, ArcBytes<'static>>,
-        writer: &'a mut PagedWriter<'w, File>,
+        writer: &'a mut PagedWriter<'w>,
         max_order: Option<usize>,
     ) -> Result<(), Error>;
 
@@ -81,12 +81,12 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     /// decisions on how to handle each key. `key_reader` will be invoked for
     /// each key that is requested to be read, but it might be invoked at a
     /// later time and in a different order.
-    fn get_multiple<'keys, File: ManagedFile, KeyEvaluator, KeyReader, Keys>(
+    fn get_multiple<'keys, KeyEvaluator, KeyReader, Keys>(
         &self,
         keys: &mut Keys,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut File,
+        file: &mut dyn File,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
@@ -102,7 +102,6 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     fn scan<
         'keys,
         CallerError: Display + Debug,
-        File: ManagedFile,
         NodeEvaluator,
         KeyRangeBounds,
         KeyEvaluator,
@@ -118,7 +117,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
             KeyEvaluator,
             ScanDataCallback,
         >,
-        file: &mut File,
+        file: &mut dyn File,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
@@ -134,12 +133,12 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
 
     /// Copies all data from `file` into `writer`, updating `self` with the new
     /// file positions.
-    fn copy_data_to<File: ManagedFile>(
+    fn copy_data_to(
         &mut self,
         include_nodes: bool,
-        file: &mut File,
+        file: &mut dyn File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
         vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error>;
 }

@@ -11,16 +11,31 @@ use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 
 use super::{FileManager, FileOp, ManagedFile, OpenableFile};
-use crate::{error::Error, io::PathIds, ErrorKind};
+use crate::{
+    error::Error,
+    io::{File, ManagedFileOpener, OperableFile, PathIds},
+    ErrorKind,
+};
 
 /// A fake "file" represented by an in-memory buffer. This should only be used
 /// in testing, as this database format is not optimized for memory efficiency.
-#[derive(Debug)]
 pub struct MemoryFile {
     id: Option<u64>,
     path: PathBuf,
     buffer: Arc<RwLock<Vec<u8>>>,
     position: usize,
+}
+
+impl std::fmt::Debug for MemoryFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let buffer = self.buffer.read();
+        f.debug_struct("MemoryFile")
+            .field("id", &self.id)
+            .field("path", &self.path)
+            .field("buffer", &buffer.len())
+            .field("position", &self.position)
+            .finish()
+    }
 }
 
 type OpenBuffers = Arc<Mutex<HashMap<PathBuf, Weak<RwLock<Vec<u8>>>>>>;
@@ -43,46 +58,18 @@ fn lookup_buffer(
     }
 }
 
-#[allow(clippy::cast_possible_truncation)]
 impl ManagedFile for MemoryFile {
     type Manager = MemoryFileManager;
+}
+
+#[allow(clippy::cast_possible_truncation)]
+impl super::File for MemoryFile {
     fn id(&self) -> Option<u64> {
         self.id
     }
 
     fn path(&self) -> &Path {
         &self.path
-    }
-
-    fn open_for_read(
-        path: impl AsRef<std::path::Path> + Send,
-        id: Option<u64>,
-    ) -> Result<Self, Error> {
-        let path = path.as_ref();
-        Ok(Self {
-            id,
-            path: path.to_path_buf(),
-            buffer: lookup_buffer(path, true).unwrap(),
-            position: 0,
-        })
-    }
-
-    fn open_for_append(
-        path: impl AsRef<std::path::Path> + Send,
-        id: Option<u64>,
-    ) -> Result<Self, Error> {
-        let path = path.as_ref();
-        let buffer = lookup_buffer(path, true).unwrap();
-        let position = {
-            let buffer = buffer.read();
-            buffer.len()
-        };
-        Ok(Self {
-            id,
-            buffer,
-            position,
-            path: path.to_path_buf(),
-        })
     }
 
     fn length(&self) -> Result<u64, Error> {
@@ -92,6 +79,44 @@ impl ManagedFile for MemoryFile {
 
     fn close(self) -> Result<(), Error> {
         Ok(())
+    }
+}
+
+/// A [`ManagedFileOpener`] implementation that produces [`MemoryFile`]s.
+pub struct MemoryFileOpener;
+
+impl ManagedFileOpener<MemoryFile> for MemoryFileOpener {
+    fn open_for_read(
+        &self,
+        path: impl AsRef<std::path::Path> + Send,
+        id: Option<u64>,
+    ) -> Result<MemoryFile, Error> {
+        let path = path.as_ref();
+        Ok(MemoryFile {
+            id,
+            path: path.to_path_buf(),
+            buffer: lookup_buffer(path, true).unwrap(),
+            position: 0,
+        })
+    }
+
+    fn open_for_append(
+        &self,
+        path: impl AsRef<std::path::Path> + Send,
+        id: Option<u64>,
+    ) -> Result<MemoryFile, Error> {
+        let path = path.as_ref();
+        let buffer = lookup_buffer(path, true).unwrap();
+        let position = {
+            let buffer = buffer.read();
+            buffer.len()
+        };
+        Ok(MemoryFile {
+            id,
+            buffer,
+            position,
+            path: path.to_path_buf(),
+        })
     }
 }
 
@@ -173,7 +198,9 @@ impl MemoryFileManager {
         if let Some(open_file) = open_files.get(&id) {
             Ok(Some(open_file.clone()))
         } else if create_if_needed {
-            let file = Arc::new(Mutex::new(MemoryFile::open_for_append(path, Some(id))?));
+            let file = Arc::new(Mutex::new(
+                MemoryFileOpener.open_for_append(path, Some(id))?,
+            ));
             open_files.insert(id, file.clone());
             Ok(Some(file))
         } else {
@@ -242,6 +269,24 @@ impl FileManager for MemoryFileManager {
     }
 }
 
+impl ManagedFileOpener<MemoryFile> for MemoryFileManager {
+    fn open_for_read(
+        &self,
+        path: impl AsRef<Path> + Send,
+        id: Option<u64>,
+    ) -> Result<MemoryFile, Error> {
+        MemoryFileOpener.open_for_read(path, id)
+    }
+
+    fn open_for_append(
+        &self,
+        path: impl AsRef<Path> + Send,
+        id: Option<u64>,
+    ) -> Result<MemoryFile, Error> {
+        MemoryFileOpener.open_for_append(path, id)
+    }
+}
+
 /// An open [`MemoryFile`] that is owned by a [`MemoryFileManager`].
 #[derive(Debug)]
 pub struct OpenMemoryFile(Arc<Mutex<MemoryFile>>);
@@ -250,11 +295,6 @@ impl OpenableFile<MemoryFile> for OpenMemoryFile {
     fn id(&self) -> Option<u64> {
         let f = self.0.lock();
         f.id()
-    }
-
-    fn execute<W: FileOp<MemoryFile>>(&mut self, writer: W) -> W::Output {
-        let mut file = self.0.lock();
-        writer.execute(&mut file)
     }
 
     fn replace_with<C: FnOnce(u64)>(
@@ -284,5 +324,12 @@ impl OpenableFile<MemoryFile> for OpenMemoryFile {
     fn close(self) -> Result<(), Error> {
         drop(self);
         Ok(())
+    }
+}
+
+impl OperableFile<MemoryFile> for OpenMemoryFile {
+    fn execute<Output, Op: FileOp<Output>>(&mut self, operator: Op) -> Output {
+        let mut file = self.0.lock();
+        operator.execute(&mut *file)
     }
 }

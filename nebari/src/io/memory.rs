@@ -11,16 +11,31 @@ use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 
 use super::{FileManager, FileOp, ManagedFile, OpenableFile};
-use crate::{error::Error, io::PathIds, ErrorKind};
+use crate::{
+    error::Error,
+    io::{File, ManagedFileOpener, OperableFile, PathIds},
+    ErrorKind,
+};
 
 /// A fake "file" represented by an in-memory buffer. This should only be used
 /// in testing, as this database format is not optimized for memory efficiency.
-#[derive(Debug)]
 pub struct MemoryFile {
     id: Option<u64>,
     path: PathBuf,
     buffer: Arc<RwLock<Vec<u8>>>,
     position: usize,
+}
+
+impl std::fmt::Debug for MemoryFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let buffer = self.buffer.read();
+        f.debug_struct("MemoryFile")
+            .field("id", &self.id)
+            .field("path", &self.path)
+            .field("buffer", &buffer.len())
+            .field("position", &self.position)
+            .finish()
+    }
 }
 
 type OpenBuffers = Arc<Mutex<HashMap<PathBuf, Weak<RwLock<Vec<u8>>>>>>;
@@ -43,46 +58,18 @@ fn lookup_buffer(
     }
 }
 
-#[allow(clippy::cast_possible_truncation)]
 impl ManagedFile for MemoryFile {
     type Manager = MemoryFileManager;
+}
+
+#[allow(clippy::cast_possible_truncation)]
+impl super::File for MemoryFile {
     fn id(&self) -> Option<u64> {
         self.id
     }
 
     fn path(&self) -> &Path {
         &self.path
-    }
-
-    fn open_for_read(
-        path: impl AsRef<std::path::Path> + Send,
-        id: Option<u64>,
-    ) -> Result<Self, Error> {
-        let path = path.as_ref();
-        Ok(Self {
-            id,
-            path: path.to_path_buf(),
-            buffer: lookup_buffer(path, true).unwrap(),
-            position: 0,
-        })
-    }
-
-    fn open_for_append(
-        path: impl AsRef<std::path::Path> + Send,
-        id: Option<u64>,
-    ) -> Result<Self, Error> {
-        let path = path.as_ref();
-        let buffer = lookup_buffer(path, true).unwrap();
-        let position = {
-            let buffer = buffer.read();
-            buffer.len()
-        };
-        Ok(Self {
-            id,
-            buffer,
-            position,
-            path: path.to_path_buf(),
-        })
     }
 
     fn length(&self) -> Result<u64, Error> {
@@ -92,6 +79,44 @@ impl ManagedFile for MemoryFile {
 
     fn close(self) -> Result<(), Error> {
         Ok(())
+    }
+}
+
+/// A [`ManagedFileOpener`] implementation that produces [`MemoryFile`]s.
+pub struct MemoryFileOpener;
+
+impl ManagedFileOpener<MemoryFile> for MemoryFileOpener {
+    fn open_for_read(
+        &self,
+        path: impl AsRef<std::path::Path> + Send,
+        id: Option<u64>,
+    ) -> Result<MemoryFile, Error> {
+        let path = path.as_ref();
+        Ok(MemoryFile {
+            id,
+            path: path.to_path_buf(),
+            buffer: lookup_buffer(path, true).unwrap(),
+            position: 0,
+        })
+    }
+
+    fn open_for_append(
+        &self,
+        path: impl AsRef<std::path::Path> + Send,
+        id: Option<u64>,
+    ) -> Result<MemoryFile, Error> {
+        let path = path.as_ref();
+        let buffer = lookup_buffer(path, true).unwrap();
+        let position = {
+            let buffer = buffer.read();
+            buffer.len()
+        };
+        Ok(MemoryFile {
+            id,
+            buffer,
+            position,
+            path: path.to_path_buf(),
+        })
     }
 }
 
@@ -166,14 +191,23 @@ impl MemoryFileManager {
         &self,
         path: impl AsRef<Path>,
         create_if_needed: bool,
-        id: u64,
+        id: Option<u64>,
     ) -> Result<Option<Arc<Mutex<MemoryFile>>>, Error> {
         let path = path.as_ref();
+        let id = match id {
+            Some(id) => id,
+            None => match self.file_ids.file_id_for_path(path, create_if_needed) {
+                Some(id) => id,
+                None => return Ok(None),
+            },
+        };
         let mut open_files = self.open_files.lock();
         if let Some(open_file) = open_files.get(&id) {
             Ok(Some(open_file.clone()))
         } else if create_if_needed {
-            let file = Arc::new(Mutex::new(MemoryFile::open_for_append(path, Some(id))?));
+            let file = Arc::new(Mutex::new(
+                MemoryFileOpener.open_for_append(path, Some(id))?,
+            ));
             open_files.insert(id, file.clone());
             Ok(Some(file))
         } else {
@@ -188,7 +222,7 @@ impl FileManager for MemoryFileManager {
 
     fn append(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error> {
         let path = path.as_ref();
-        let id = self.file_ids.file_id_for_path(path);
+        let id = self.file_ids.file_id_for_path(path, true);
         self.lookup_file(path, true, id)
             .map(|file| OpenMemoryFile(file.unwrap()))
     }
@@ -198,7 +232,7 @@ impl FileManager for MemoryFileManager {
     }
 
     fn file_length(&self, path: impl AsRef<Path>) -> Result<u64, Error> {
-        let file = self.lookup_file(path, false, 0)?.ok_or_else(|| {
+        let file = self.lookup_file(path, false, None)?.ok_or_else(|| {
             ErrorKind::Io(io::Error::new(
                 io::ErrorKind::NotFound,
                 ErrorKind::message("not found"),
@@ -210,7 +244,7 @@ impl FileManager for MemoryFileManager {
     }
 
     fn exists(&self, path: impl AsRef<Path>) -> Result<bool, Error> {
-        Ok(self.lookup_file(path, false, 0)?.is_some())
+        Ok(self.lookup_file(path, false, None)?.is_some())
     }
 
     fn delete(&self, path: impl AsRef<Path>) -> Result<bool, Error> {
@@ -237,8 +271,26 @@ impl FileManager for MemoryFileManager {
     fn close_handles<F: FnOnce(u64)>(&self, path: impl AsRef<Path>, publish_callback: F) {
         let path = path.as_ref();
         drop(self.delete(path));
-        let new_id = self.file_ids.file_id_for_path(path);
+        let new_id = self.file_ids.file_id_for_path(path, true).unwrap();
         publish_callback(new_id);
+    }
+}
+
+impl ManagedFileOpener<MemoryFile> for MemoryFileManager {
+    fn open_for_read(
+        &self,
+        path: impl AsRef<Path> + Send,
+        id: Option<u64>,
+    ) -> Result<MemoryFile, Error> {
+        MemoryFileOpener.open_for_read(path, id)
+    }
+
+    fn open_for_append(
+        &self,
+        path: impl AsRef<Path> + Send,
+        id: Option<u64>,
+    ) -> Result<MemoryFile, Error> {
+        MemoryFileOpener.open_for_append(path, id)
     }
 }
 
@@ -252,37 +304,39 @@ impl OpenableFile<MemoryFile> for OpenMemoryFile {
         f.id()
     }
 
-    fn execute<W: FileOp<MemoryFile>>(&mut self, writer: W) -> W::Output {
-        let mut file = self.0.lock();
-        writer.execute(&mut file)
-    }
-
     fn replace_with<C: FnOnce(u64)>(
         self,
-        path: &Path,
+        replacement: MemoryFile,
         manager: &MemoryFileManager,
         publish_callback: C,
     ) -> Result<Self, Error> {
-        let path_buffer = lookup_buffer(path, false).expect("replacement buffer not found");
+        let weak_buffer = Arc::downgrade(&replacement.buffer);
         let my_path = {
-            let mut file = self.0.lock();
-            file.buffer = path_buffer;
-            file.path.clone()
+            let mut open_buffers = OPEN_BUFFERS.lock();
+            open_buffers.remove(replacement.path());
+            let my_path = {
+                let mut file = self.0.lock();
+                file.buffer = replacement.buffer;
+                file.path.clone()
+            };
+            open_buffers.insert(my_path.clone(), weak_buffer);
+            my_path
         };
 
-        let mut files = manager.open_files.lock();
-        if let Some(id) = manager.file_ids.remove_file_id_for_path(&my_path) {
-            files.remove(&id);
-        }
-        let new_id = manager.file_ids.file_id_for_path(&my_path);
-        files.insert(new_id, self.0.clone());
-        publish_callback(new_id);
+        manager.close_handles(&my_path, publish_callback);
 
-        Ok(self)
+        manager.append(&my_path)
     }
 
     fn close(self) -> Result<(), Error> {
         drop(self);
         Ok(())
+    }
+}
+
+impl OperableFile<MemoryFile> for OpenMemoryFile {
+    fn execute<Output, Op: FileOp<Output>>(&mut self, operator: Op) -> Output {
+        let mut file = self.0.lock();
+        operator.execute(&mut *file)
     }
 }

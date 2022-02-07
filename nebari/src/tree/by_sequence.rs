@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};
-use crate::{error::Error, io::ManagedFile, tree::key_entry::ValueIndex, ArcBytes, ErrorKind};
+use crate::{error::Error, tree::key_entry::ValueIndex, ArcBytes, ErrorKind};
 
 /// The index stored within [`VersionedTreeRoot::by_sequence_root`](crate::tree::VersionedTreeRoot::by_sequence_root).
 #[derive(Clone, Debug)]
@@ -19,10 +19,10 @@ pub struct BySequenceIndex {
 }
 
 impl BinarySerialization for BySequenceIndex {
-    fn serialize_to<File: ManagedFile>(
+    fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_, File>,
+        _paged_writer: &mut PagedWriter<'_>,
     ) -> Result<usize, Error> {
         let mut bytes_written = 0;
         writer.write_u32::<BigEndian>(self.value_length)?;
@@ -84,10 +84,10 @@ pub struct BySequenceStats {
 }
 
 impl BinarySerialization for BySequenceStats {
-    fn serialize_to<File: ManagedFile>(
+    fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_, File>,
+        _paged_writer: &mut PagedWriter<'_>,
     ) -> Result<usize, Error> {
         writer.write_u64::<BigEndian>(self.total_sequences)?;
         Ok(8)

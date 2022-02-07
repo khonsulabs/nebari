@@ -20,7 +20,7 @@ use super::{
 use crate::{
     chunk_cache::CacheEntry,
     error::{Error, InternalError},
-    io::ManagedFile,
+    io::File,
     roots::AbortError,
     tree::{
         btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
@@ -88,10 +88,10 @@ impl<EmbeddedIndex> VersionedTreeRoot<EmbeddedIndex>
 where
     EmbeddedIndex: super::EmbeddedIndex + Reducer<EmbeddedIndex> + Clone + Debug + 'static,
 {
-    fn modify_sequence_root<File: ManagedFile>(
+    fn modify_sequence_root(
         &mut self,
         mut modification: Modification<'_, BySequenceIndex>,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
         // Reverse so that pop is efficient.
@@ -115,12 +115,10 @@ where
                               value: Option<&BySequenceIndex>,
                               _existing_index: Option<&BySequenceIndex>,
                               _changes: &mut EntryChanges,
-                              _writer: &mut PagedWriter<'_, File>| {
+                              _writer: &mut PagedWriter<'_>| {
                         Ok(KeyOperation::Set(value.unwrap().clone()))
                     },
-                    loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_, File>| {
-                        Ok(None)
-                    },
+                    loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_>| Ok(None),
                     _phantom: PhantomData,
                 },
                 None,
@@ -139,11 +137,11 @@ where
         Ok(())
     }
 
-    fn modify_id_root<File: ManagedFile>(
+    fn modify_id_root(
         &mut self,
         mut modification: Modification<'_, ArcBytes<'static>>,
         changes: &mut EntryChanges,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
         modification.reverse()?;
@@ -166,7 +164,7 @@ where
                               value: Option<&ArcBytes<'static>>,
                               existing_index: Option<&VersionedByIdIndex<EmbeddedIndex>>,
                               changes: &mut EntryChanges,
-                              writer: &mut PagedWriter<'_, File>| {
+                              writer: &mut PagedWriter<'_>| {
                         let (position, value_size) = if let Some(value) = value {
                             let new_position = writer.write_chunk(value, false)?;
                             // write_chunk errors if it can't fit within a u32
@@ -284,9 +282,9 @@ where
         })
     }
 
-    fn serialize<File: ManagedFile>(
+    fn serialize(
         &mut self,
-        paged_writer: &mut PagedWriter<'_, File>,
+        paged_writer: &mut PagedWriter<'_>,
         output: &mut Vec<u8>,
     ) -> Result<(), Error> {
         output.reserve(PAGE_SIZE);
@@ -315,10 +313,10 @@ where
         self.transaction_id
     }
 
-    fn modify<File: ManagedFile>(
+    fn modify(
         &mut self,
         modification: Modification<'_, ArcBytes<'static>>,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
         let transaction_id = modification.transaction_id;
@@ -361,12 +359,12 @@ where
         Ok(())
     }
 
-    fn get_multiple<'keys, File: ManagedFile, KeyEvaluator, KeyReader, Keys>(
+    fn get_multiple<'keys, KeyEvaluator, KeyReader, Keys>(
         &self,
         keys: &mut Keys,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut File,
+        file: &mut dyn File,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
@@ -410,7 +408,6 @@ where
     fn scan<
         'keys,
         CallerError: Display + Debug,
-        File: ManagedFile,
         NodeEvaluator,
         KeyRangeBounds,
         KeyEvaluator,
@@ -426,7 +423,7 @@ where
             KeyEvaluator,
             ScanDataCallback,
         >,
-        file: &mut File,
+        file: &mut dyn File,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
@@ -443,12 +440,12 @@ where
         self.by_id_root.scan(range, args, file, vault, cache, 0)
     }
 
-    fn copy_data_to<File: ManagedFile>(
+    fn copy_data_to(
         &mut self,
         include_nodes: bool,
-        file: &mut File,
+        file: &mut dyn File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
         vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error> {
         // Copy all of the data using the ID root.
@@ -522,10 +519,10 @@ where
                           value: Option<&BySequenceIndex>,
                           _existing_index: Option<&BySequenceIndex>,
                           _changes: &mut EntryChanges,
-                          _writer: &mut PagedWriter<'_, File>| {
+                          _writer: &mut PagedWriter<'_>| {
                     Ok(KeyOperation::Set(value.unwrap().clone()))
                 },
-                loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_, File>| unreachable!(),
+                loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_>| unreachable!(),
                 _phantom: PhantomData,
             },
             None,

@@ -19,7 +19,7 @@ use super::{
 use crate::{
     chunk_cache::CacheEntry,
     error::Error,
-    io::ManagedFile,
+    io::File,
     tree::{key_entry::ValueIndex, read_chunk, versioned::Children, KeyEvaluation},
     vault::AnyVault,
     AbortError, ArcBytes, ChunkCache, ErrorKind,
@@ -82,22 +82,22 @@ impl<Index> Reducer<Index> for () {
     fn rereduce(_reductions: &[&Self]) -> Self {}
 }
 
-pub struct ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>
+pub struct ModificationContext<IndexedType, Index, Context, Indexer, Loader>
 where
     Indexer: Fn(
         &ArcBytes<'_>,
         Option<&IndexedType>,
         Option<&Index>,
         &mut Context,
-        &mut PagedWriter<'_, File>,
+        &mut PagedWriter<'_>,
     ) -> Result<KeyOperation<Index>, Error>,
-    Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
+    Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
 {
     pub current_order: usize,
     pub minimum_children: usize,
     pub indexer: Indexer,
     pub loader: Loader,
-    pub _phantom: PhantomData<(IndexedType, File, Index, Context)>,
+    pub _phantom: PhantomData<(IndexedType, Index, Context)>,
 }
 
 impl<Index, ReducedIndex> BTreeEntry<Index, ReducedIndex>
@@ -105,24 +105,23 @@ where
     Index: ValueIndex + Clone + BinarySerialization + Debug + 'static,
     ReducedIndex: Clone + Reducer<Index> + BinarySerialization + Debug + 'static,
 {
-    pub(crate) fn modify<File, IndexedType, Context, Indexer, Loader>(
+    pub(crate) fn modify<IndexedType, Context, Indexer, Loader>(
         &mut self,
         modification: &mut Modification<'_, IndexedType>,
-        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
+        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
         max_key: Option<&ArcBytes<'_>>,
         changes: &mut Context,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
     ) -> Result<ChangeResult, Error>
     where
-        File: ManagedFile,
         Indexer: Fn(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
-            &mut PagedWriter<'_, File>,
+            &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
-        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         match &mut self.node {
             BTreeNode::Leaf(children) => {
@@ -198,24 +197,23 @@ where
     }
 
     #[allow(clippy::too_many_lines)] // TODO refactor, too many lines
-    fn modify_leaf<File, IndexedType, Context, Indexer, Loader>(
+    fn modify_leaf<IndexedType, Context, Indexer, Loader>(
         children: &mut Vec<KeyEntry<Index>>,
         modification: &mut Modification<'_, IndexedType>,
-        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
+        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
         max_key: Option<&ArcBytes<'_>>,
         changes: &mut Context,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
     ) -> Result<bool, Error>
     where
-        File: ManagedFile,
         Indexer: Fn(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
-            &mut PagedWriter<'_, File>,
+            &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
-        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut last_index = 0;
         let mut any_changes = false;
@@ -348,24 +346,23 @@ where
         Ok(any_changes)
     }
 
-    fn modify_interior<File, IndexedType, Context, Indexer, Loader>(
+    fn modify_interior<IndexedType, Context, Indexer, Loader>(
         children: &mut Vec<Interior<Index, ReducedIndex>>,
         modification: &mut Modification<'_, IndexedType>,
-        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
+        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
         max_key: Option<&ArcBytes<'_>>,
         changes: &mut Context,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
     ) -> Result<ChangeResult, Error>
     where
-        File: ManagedFile,
         Indexer: Fn(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
-            &mut PagedWriter<'_, File>,
+            &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
-        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut last_index = 0;
         let mut any_changes = false;
@@ -437,23 +434,22 @@ where
         })
     }
 
-    fn process_interior_change_result<File, IndexedType, Context, Indexer, Loader>(
+    fn process_interior_change_result<IndexedType, Context, Indexer, Loader>(
         result: ChangeResult,
         child_index: usize,
         children: &mut Vec<Interior<Index, ReducedIndex>>,
-        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
-        writer: &mut PagedWriter<'_, File>,
+        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
+        writer: &mut PagedWriter<'_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
-        File: ManagedFile,
         Indexer: Fn(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
-            &mut PagedWriter<'_, File>,
+            &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
-        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let can_absorb = children.len() > 1;
         match (result, can_absorb) {
@@ -479,22 +475,21 @@ where
         }
     }
 
-    fn process_absorb<File, IndexedType, Context, Indexer, Loader>(
+    fn process_absorb<IndexedType, Context, Indexer, Loader>(
         child_index: usize,
         children: &mut Vec<Interior<Index, ReducedIndex>>,
-        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
-        writer: &mut PagedWriter<'_, File>,
+        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
+        writer: &mut PagedWriter<'_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
-        File: ManagedFile,
         Indexer: Fn(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
-            &mut PagedWriter<'_, File>,
+            &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
-        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let (insert_on_top, sponge_index) = if child_index > 0 {
             (true, child_index - 1)
@@ -547,22 +542,21 @@ where
         }
     }
 
-    fn process_interior_split<File, IndexedType, Context, Indexer, Loader>(
+    fn process_interior_split<IndexedType, Context, Indexer, Loader>(
         child_index: usize,
         children: &mut Vec<Interior<Index, ReducedIndex>>,
-        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
-        writer: &mut PagedWriter<'_, File>,
+        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
+        writer: &mut PagedWriter<'_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
-        File: ManagedFile,
         Indexer: Fn(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
-            &mut PagedWriter<'_, File>,
+            &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
-        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         // Before adding a new node, we want to first try to use neighboring
         // nodes to absorb enough such that a split is no longer needed. With
@@ -615,22 +609,21 @@ where
         Ok((ChangeResult::Changed, false))
     }
 
-    fn steal_children_from_start<File, IndexedType, Context, Indexer, Loader>(
+    fn steal_children_from_start<IndexedType, Context, Indexer, Loader>(
         child_index: usize,
         children: &mut Vec<Interior<Index, ReducedIndex>>,
-        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
-        writer: &mut PagedWriter<'_, File>,
+        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
+        writer: &mut PagedWriter<'_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
-        File: ManagedFile,
         Indexer: Fn(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
-            &mut PagedWriter<'_, File>,
+            &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
-        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut should_backup = false;
         // Check the previous child to see if it can accept any of this child.
@@ -704,22 +697,21 @@ where
         Ok((ChangeResult::Unchanged, should_backup))
     }
 
-    fn steal_children_from_end<File, IndexedType, Context, Indexer, Loader>(
+    fn steal_children_from_end<IndexedType, Context, Indexer, Loader>(
         child_index: usize,
         children: &mut Vec<Interior<Index, ReducedIndex>>,
-        context: &ModificationContext<IndexedType, File, Index, Context, Indexer, Loader>,
-        writer: &mut PagedWriter<'_, File>,
+        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
+        writer: &mut PagedWriter<'_>,
     ) -> Result<ChangeResult, Error>
     where
-        File: ManagedFile,
         Indexer: Fn(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
             &mut Context,
-            &mut PagedWriter<'_, File>,
+            &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
-        Loader: Fn(&Index, &mut PagedWriter<'_, File>) -> Result<Option<IndexedType>, Error>,
+        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         // Check the previous child to see if it can accept any of this child.
         children[child_index + 1].position.load(
@@ -798,13 +790,13 @@ where
         }
     }
 
-    fn absorb<File: ManagedFile>(
+    fn absorb(
         &mut self,
         children: Children<Index, ReducedIndex>,
         insert_at_top: bool,
         current_order: usize,
         minimum_children: usize,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
     ) -> Result<ChangeResult, Error> {
         self.dirty = true;
         match (&mut self.node, children) {
@@ -928,7 +920,6 @@ where
         'k,
         'keys,
         CallerError: Display + Debug,
-        File: ManagedFile,
         KeyRangeBounds,
         NodeEvaluator,
         KeyEvaluator,
@@ -944,7 +935,7 @@ where
             KeyEvaluator,
             ScanDataCallback,
         >,
-        file: &mut File,
+        file: &mut dyn File,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
         current_depth: usize,
@@ -1057,12 +1048,12 @@ where
         feature = "tracing",
         tracing::instrument(skip(self, key_evaluator, keys, key_reader, file, vault, cache))
     )]
-    pub(crate) fn get<'keys, File: ManagedFile, KeyEvaluator, KeyReader, Keys>(
+    pub(crate) fn get<'keys, KeyEvaluator, KeyReader, Keys>(
         &self,
         keys: &mut KeyRange<'keys, Keys>,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut File,
+        file: &mut dyn File,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, Error>
@@ -1144,24 +1135,23 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn copy_data_to<File, Callback>(
+    pub(crate) fn copy_data_to<Callback>(
         &mut self,
         include_nodes: NodeInclusion,
-        file: &mut File,
+        file: &mut dyn File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
         vault: Option<&dyn AnyVault>,
         scratch: &mut Vec<u8>,
         index_callback: &mut Callback,
     ) -> Result<bool, Error>
     where
-        File: ManagedFile,
         Callback: FnMut(
             &ArcBytes<'static>,
             &mut Index,
-            &mut File,
+            &mut dyn File,
             &mut HashMap<u64, u64>,
-            &mut PagedWriter<'_, File>,
+            &mut PagedWriter<'_>,
             Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,
     {
@@ -1221,10 +1211,10 @@ impl<
         ReducedIndex: Reducer<Index> + Clone + BinarySerialization + Debug + 'static,
     > BinarySerialization for BTreeEntry<Index, ReducedIndex>
 {
-    fn serialize_to<File: ManagedFile>(
+    fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        paged_writer: &mut PagedWriter<'_, File>,
+        paged_writer: &mut PagedWriter<'_>,
     ) -> Result<usize, Error> {
         self.dirty = false;
         let mut bytes_written = 0;

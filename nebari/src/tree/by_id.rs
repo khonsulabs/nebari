@@ -1,7 +1,7 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};
-use crate::{error::Error, io::ManagedFile, tree::key_entry::ValueIndex, ArcBytes};
+use crate::{error::Error, tree::key_entry::ValueIndex, ArcBytes};
 
 /// The index stored within [`VersionedTreeRoot::by_id_root`](crate::tree::VersionedTreeRoot::by_id_root).
 #[derive(Clone, Debug)]
@@ -20,10 +20,10 @@ impl<EmbeddedIndex> BinarySerialization for VersionedByIdIndex<EmbeddedIndex>
 where
     EmbeddedIndex: super::EmbeddedIndex,
 {
-    fn serialize_to<File: ManagedFile>(
+    fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_, File>,
+        _paged_writer: &mut PagedWriter<'_>,
     ) -> Result<usize, Error> {
         writer.write_u64::<BigEndian>(self.sequence_id)?;
         writer.write_u32::<BigEndian>(self.value_length)?;
@@ -68,10 +68,10 @@ impl<EmbeddedIndex> BinarySerialization for UnversionedByIdIndex<EmbeddedIndex>
 where
     EmbeddedIndex: super::EmbeddedIndex,
 {
-    fn serialize_to<File: ManagedFile>(
+    fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_, File>,
+        _paged_writer: &mut PagedWriter<'_>,
     ) -> Result<usize, Error> {
         writer.write_u32::<BigEndian>(self.value_length)?;
         writer.write_u64::<BigEndian>(self.position)?;
@@ -123,10 +123,10 @@ impl<EmbeddedStats> BinarySerialization for ByIdStats<EmbeddedStats>
 where
     EmbeddedStats: super::Serializable,
 {
-    fn serialize_to<File: ManagedFile>(
+    fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_, File>,
+        _paged_writer: &mut PagedWriter<'_>,
     ) -> Result<usize, Error> {
         writer.write_u64::<BigEndian>(self.alive_keys)?;
         writer.write_u64::<BigEndian>(self.deleted_keys)?;

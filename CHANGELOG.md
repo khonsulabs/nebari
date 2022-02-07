@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Breaking Changes
+
+- `ManagedFile` has had its metadata functions moved to a new trait `File` which
+  `ManagedFile` must be an implementor of. This allows `dyn File` to be used
+  internally. As a result, `PagedWriter` no longer takes a file type generic
+  parameter.
+- `ManagedFile` has had its functions `open_for_read` and `open_for_append` have
+  been moved to a new trait, `ManagedFileOpener`.
+- `FileManager::replace_with` now takes the replacement file itself instead of
+  the file's Path.
+
+### Added
+
+- `AnyFileManager` has been added to make it easy to select between memory or
+  standard files at runtime.
+
+### Fixed
+
+- Memory files now can be compacted.
+
 ## v0.2.2
 
 ### Fixed

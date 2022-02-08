@@ -71,7 +71,7 @@ impl<B: NebariBenchmark> SimpleBench for InsertBlobs<B> {
             let blob = self.blob.next().unwrap();
             let start = Instant::now();
             self.tree
-                .push(None, ArcBytes::from(blob.0.to_be_bytes()), blob.1.clone())?;
+                .set(None, ArcBytes::from(blob.0.to_be_bytes()), blob.1.clone())?;
             total_duration += Instant::now() - start;
         }
         Ok(total_duration)

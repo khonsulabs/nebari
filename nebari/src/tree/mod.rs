@@ -295,12 +295,14 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         Ok(())
     }
 
-    /// Pushes a key/value pair. Replaces any previous value if set.
-    pub fn push(
+    /// Sets a key/value pair. Replaces any previous value if set. If you wish
+    /// to retrieve the previously stored value, use
+    /// [`replace()`](Self::replace) instead.
+    pub fn set(
         &mut self,
         transaction_id: Option<u64>,
-        key: ArcBytes<'static>,
-        value: ArcBytes<'static>,
+        key: impl Into<ArcBytes<'static>>,
+        value: impl Into<ArcBytes<'static>>,
     ) -> Result<(), Error> {
         self.file.execute(TreeModifier {
             state: &self.state,
@@ -308,8 +310,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             cache: self.cache.as_ref(),
             modification: Some(Modification {
                 transaction_id,
-                keys: vec![key],
-                operation: Operation::Set(value),
+                keys: vec![key.into()],
+                operation: Operation::Set(value.into()),
             }),
             scratch: &mut self.scratch,
         })
@@ -335,7 +337,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     pub fn compare_and_swap(
         &mut self,
         key: &[u8],
-        old: Option<&ArcBytes<'_>>,
+        old: Option<&[u8]>,
         mut new: Option<ArcBytes<'_>>,
         transaction_id: Option<u64>,
     ) -> Result<(), CompareAndSwapError> {
@@ -343,8 +345,11 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         self.modify(Modification {
             transaction_id,
             keys: vec![ArcBytes::from(key)],
-            operation: Operation::CompareSwap(CompareSwap::new(&mut |_key, value| {
-                if value.as_ref() == old {
+            operation: Operation::CompareSwap(CompareSwap::new(&mut |_key,
+                                                                     value: Option<
+                ArcBytes<'_>,
+            >| {
+                if value.as_deref() == old {
                     match new.take() {
                         Some(new) => KeyOperation::Set(new.into_owned()),
                         None => KeyOperation::Remove,
@@ -517,6 +522,53 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             _phantom: PhantomData,
         })?;
         Ok(())
+    }
+
+    /// Returns the last key of the tree.
+    pub fn first_key(&mut self, in_transaction: bool) -> Result<Option<ArcBytes<'static>>, Error> {
+        let mut result = None;
+        self.scan(
+            &(..),
+            true,
+            in_transaction,
+            &mut |_, _, _| true,
+            &mut |key, _index| {
+                result = Some(key.clone());
+                KeyEvaluation::Stop
+            },
+            &mut |_key, _index, _value| Ok(()),
+        )?;
+
+        Ok(result)
+    }
+
+    /// Returns the first key and value of the tree.
+    pub fn first(
+        &mut self,
+        in_transaction: bool,
+    ) -> Result<Option<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
+        let mut result = None;
+        let mut key_requested = false;
+        self.scan(
+            &(..),
+            true,
+            in_transaction,
+            &mut |_, _, _| true,
+            &mut |_, _| {
+                if key_requested {
+                    KeyEvaluation::Stop
+                } else {
+                    key_requested = true;
+                    KeyEvaluation::ReadData
+                }
+            },
+            &mut |key, _index, value| {
+                result = Some((key, value));
+                Ok(())
+            },
+        )?;
+
+        Ok(result)
     }
 
     /// Returns the last key of the tree.
@@ -1656,7 +1708,7 @@ mod tests {
             let mut tree =
                 TreeFile::<R, F>::write(file_path, State::new(None, max_order), context, None)
                     .unwrap();
-            tree.push(None, id_buffer.clone(), ArcBytes::from(b"hello world"))
+            tree.set(None, id_buffer.clone(), ArcBytes::from(b"hello world"))
                 .unwrap();
 
             // This shouldn't have to scan the file, as the data fits in memory.
@@ -1852,7 +1904,7 @@ mod tests {
         let mut tree = TreeFile::<R, F>::write(file_path, state, &context, None).unwrap();
         for (_index, id) in ids.enumerate() {
             let id_buffer = ArcBytes::from(id.to_be_bytes().to_vec());
-            tree.push(None, id_buffer.clone(), ArcBytes::from(b"hello world"))
+            tree.set(None, id_buffer.clone(), ArcBytes::from(b"hello world"))
                 .unwrap();
         }
     }
@@ -1943,7 +1995,7 @@ mod tests {
         let mut ids = Vec::new();
         for id in 0..3_u32.pow(4) {
             let id_buffer = ArcBytes::from(id.to_be_bytes().to_vec());
-            tree.push(None, id_buffer.clone(), id_buffer.clone())
+            tree.set(None, id_buffer.clone(), id_buffer.clone())
                 .unwrap();
             ids.push(id_buffer);
         }
@@ -2067,11 +2119,11 @@ mod tests {
             TreeFile::<Versioned, StdFile>::write(tempfile.path(), state, &context, None).unwrap();
 
         // Store three versions of the same key.
-        tree.push(None, ArcBytes::from(b"a"), ArcBytes::from(b"0"))
+        tree.set(None, ArcBytes::from(b"a"), ArcBytes::from(b"0"))
             .unwrap();
-        tree.push(None, ArcBytes::from(b"a"), ArcBytes::from(b"1"))
+        tree.set(None, ArcBytes::from(b"a"), ArcBytes::from(b"1"))
             .unwrap();
-        tree.push(None, ArcBytes::from(b"a"), ArcBytes::from(b"2"))
+        tree.set(None, ArcBytes::from(b"a"), ArcBytes::from(b"2"))
             .unwrap();
 
         // Retrieve the sequences
@@ -2097,5 +2149,218 @@ mod tests {
         assert_eq!(sequences[0].1, b"0");
         assert_eq!(sequences[1].1, b"1");
         assert_eq!(sequences[2].1, b"2");
+    }
+
+    struct ExtendToPageBoundaryPlus(u64);
+
+    impl FileOp<()> for ExtendToPageBoundaryPlus {
+        #[allow(clippy::cast_possible_truncation)]
+        fn execute(self, file: &mut dyn File) {
+            let length = file.length().unwrap();
+            let bytes = vec![42_u8; (length - (length % PAGE_SIZE as u64) + self.0) as usize];
+            file.write_all(&bytes).unwrap();
+        }
+    }
+
+    #[test]
+    fn header_incompatible() {
+        let context = Context {
+            file_manager: MemoryFileManager::default(),
+            vault: None,
+            cache: None,
+        };
+        let temp_dir = crate::test_util::TestDirectory::new("header_incompatible");
+        std::fs::create_dir(&temp_dir).unwrap();
+        let file_path = temp_dir.join("tree");
+
+        // Write some data using unversioned
+        {
+            let state = State::default();
+            let mut tree =
+                TreeFile::<Unversioned, MemoryFile>::write(&file_path, state, &context, None)
+                    .unwrap();
+            tree.set(
+                None,
+                ArcBytes::from(b"test"),
+                ArcBytes::from(b"hello world"),
+            )
+            .unwrap();
+        }
+        // Try reading it as versioned.
+        let mut file = context.file_manager.append(&file_path).unwrap();
+        file.execute(ExtendToPageBoundaryPlus(3));
+        let state = State::default();
+        assert!(matches!(
+            TreeFile::<Versioned, MemoryFile>::write(&file_path, state, &context, None)
+                .unwrap_err()
+                .kind,
+            ErrorKind::DataIntegrity(_)
+        ));
+    }
+
+    #[test]
+    fn file_length_page_offset_plus_a_little() {
+        let context = Context {
+            file_manager: MemoryFileManager::default(),
+            vault: None,
+            cache: None,
+        };
+        let temp_dir = crate::test_util::TestDirectory::new("page-header-edge-cases");
+        std::fs::create_dir(&temp_dir).unwrap();
+        let file_path = temp_dir.join("tree");
+
+        // Write some data.
+        {
+            let state = State::default();
+            let mut tree =
+                TreeFile::<Unversioned, MemoryFile>::write(&file_path, state, &context, None)
+                    .unwrap();
+            tree.set(
+                None,
+                ArcBytes::from(b"test"),
+                ArcBytes::from(b"hello world"),
+            )
+            .unwrap();
+        }
+        // Test when the file is of a length that is less than 4 bytes longer than a multiple of a PAGE_SIZE.
+        let mut file = context.file_manager.append(&file_path).unwrap();
+        file.execute(ExtendToPageBoundaryPlus(3));
+        let state = State::default();
+        let mut tree =
+            TreeFile::<Unversioned, MemoryFile>::write(&file_path, state, &context, None).unwrap();
+
+        assert_eq!(tree.get(b"test", false).unwrap().unwrap(), b"hello world");
+    }
+
+    fn edit_keys<R: Root, M: FileManager>(label: &str, file_manager: M) {
+        let context = Context {
+            file_manager,
+            vault: None,
+            cache: None,
+        };
+        let temp_dir = crate::test_util::TestDirectory::new(format!("edit-keys-{}", label));
+        std::fs::create_dir(&temp_dir).unwrap();
+        let file_path = temp_dir.join("tree");
+
+        let mut tree =
+            TreeFile::<R, M::File>::write(&file_path, State::default(), &context, None).unwrap();
+        assert!(matches!(
+            tree.compare_and_swap(b"test", Some(b"won't match"), None, None)
+                .unwrap_err(),
+            CompareAndSwapError::Conflict(_)
+        ));
+        tree.compare_and_swap(b"test", None, Some(ArcBytes::from(b"first")), None)
+            .unwrap();
+        assert!(matches!(
+            tree.compare_and_swap(b"test", Some(b"won't match"), None, None)
+                .unwrap_err(),
+            CompareAndSwapError::Conflict(_)
+        ));
+        tree.compare_and_swap(
+            b"test",
+            Some(b"first"),
+            Some(ArcBytes::from(b"second")),
+            None,
+        )
+        .unwrap();
+
+        let stored = tree.replace(b"test", b"third", None).unwrap().unwrap();
+        assert_eq!(stored, b"second");
+
+        tree.compare_and_swap(b"test", Some(b"third"), None, None)
+            .unwrap();
+        assert!(tree.get(b"test", false).unwrap().is_none());
+    }
+
+    #[test]
+    fn std_edit_keys_versioned() {
+        edit_keys::<Versioned, _>("versioned", StdFileManager::default());
+    }
+
+    #[test]
+    fn std_edit_keys_unversioned() {
+        edit_keys::<Unversioned, _>("unversioned", StdFileManager::default());
+    }
+
+    #[test]
+    fn memory_edit_keys_versioned() {
+        edit_keys::<Versioned, _>("versioned", MemoryFileManager::default());
+    }
+
+    #[test]
+    fn memory_edit_keys_unversioned() {
+        edit_keys::<Unversioned, _>("unversioned", MemoryFileManager::default());
+    }
+
+    #[test]
+    fn any_edit_keys_versioned() {
+        edit_keys::<Versioned, _>("any-versioned", AnyFileManager::std());
+        edit_keys::<Versioned, _>("any-versioned", AnyFileManager::memory());
+    }
+
+    #[test]
+    fn any_edit_keys_unversioned() {
+        edit_keys::<Unversioned, _>("any-unversioned", AnyFileManager::std());
+        edit_keys::<Unversioned, _>("any-unversioned", AnyFileManager::memory());
+    }
+
+    fn first_last<R: Root, M: FileManager>(label: &str, file_manager: M) {
+        let context = Context {
+            file_manager,
+            vault: None,
+            cache: None,
+        };
+        let temp_dir = crate::test_util::TestDirectory::new(format!("first-last-{}", label));
+        std::fs::create_dir(&temp_dir).unwrap();
+        let file_path = temp_dir.join("tree");
+
+        let mut tree =
+            TreeFile::<R, M::File>::write(&file_path, State::default(), &context, None).unwrap();
+        tree.set(None, ArcBytes::from(b"a"), ArcBytes::from(b"first"))
+            .unwrap();
+        tree.set(None, ArcBytes::from(b"z"), ArcBytes::from(b"last"))
+            .unwrap();
+
+        assert_eq!(tree.first_key(false).unwrap().unwrap(), b"a");
+        let (key, value) = tree.first(false).unwrap().unwrap();
+        assert_eq!(key, b"a");
+        assert_eq!(value, b"first");
+
+        assert_eq!(tree.last_key(false).unwrap().unwrap(), b"z");
+        let (key, value) = tree.last(false).unwrap().unwrap();
+        assert_eq!(key, b"z");
+        assert_eq!(value, b"last");
+    }
+
+    #[test]
+    fn std_first_last_versioned() {
+        first_last::<Versioned, _>("versioned", StdFileManager::default());
+    }
+
+    #[test]
+    fn std_first_last_unversioned() {
+        first_last::<Unversioned, _>("unversioned", StdFileManager::default());
+    }
+
+    #[test]
+    fn memory_first_last_versioned() {
+        first_last::<Versioned, _>("versioned", MemoryFileManager::default());
+    }
+
+    #[test]
+    fn memory_first_last_unversioned() {
+        first_last::<Unversioned, _>("unversioned", MemoryFileManager::default());
+    }
+
+    #[test]
+    fn any_first_last_versioned() {
+        first_last::<Versioned, _>("any-versioned", AnyFileManager::std());
+        first_last::<Versioned, _>("any-versioned", AnyFileManager::memory());
+    }
+
+    #[test]
+    fn any_first_last_unversioned() {
+        first_last::<Unversioned, _>("any-unversioned", AnyFileManager::std());
+        first_last::<Unversioned, _>("any-unversioned", AnyFileManager::memory());
     }
 }

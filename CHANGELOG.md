@@ -17,11 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   been moved to a new trait, `ManagedFileOpener`.
 - `FileManager::replace_with` now takes the replacement file itself instead of
   the file's Path.
+- `compare_and_swap` has had the `old` parameter loosened to `&[u8]`, avoiding
+  an extra allocation.
+- `TreeFile::push()` has been renamed `TreeFile::set()` and now accepts any type
+  that can convert to `ArcBytes<'static>.
+
+### Changed
 
 ### Added
 
 - `AnyFileManager` has been added to make it easy to select between memory or
   standard files at runtime.
+- `Tree::first[_key]()`, `TransactionTree::first[_key]()`, and
+  `TreeFile::first[_key]()` have been added, pairing the functionality provided
+  by `last()` and `last_key()`.
 
 ### Fixed
 

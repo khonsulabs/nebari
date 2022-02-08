@@ -412,7 +412,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     pub fn compare_and_swap(
         &mut self,
         key: &[u8],
-        old: Option<&ArcBytes<'_>>,
+        old: Option<&[u8]>,
         new: Option<ArcBytes<'_>>,
     ) -> Result<(), CompareAndSwapError> {
         self.tree
@@ -478,7 +478,19 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
         )
     }
 
-    /// Returns the last  of the tree.
+    /// Returns the first key of the tree.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    pub fn first_key(&mut self) -> Result<Option<ArcBytes<'static>>, Error> {
+        self.tree.first_key(true)
+    }
+
+    /// Returns the first key and value of the tree.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    pub fn first(&mut self) -> Result<Option<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
+        self.tree.first(true)
+    }
+
+    /// Returns the last key of the tree.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn last_key(&mut self) -> Result<Option<ArcBytes<'static>>, Error> {
         self.tree.last_key(true)
@@ -719,7 +731,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     pub fn compare_and_swap(
         &self,
         key: &[u8],
-        old: Option<&ArcBytes<'_>>,
+        old: Option<&[u8]>,
         new: Option<ArcBytes<'_>>,
     ) -> Result<(), CompareAndSwapError> {
         let mut transaction = self.begin_transaction()?;
@@ -799,6 +811,26 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
                 &mut key_evaluator,
                 &mut callback,
             )
+        })
+    }
+
+    /// Returns the first key of the tree.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    pub fn first_key(&self) -> Result<Option<ArcBytes<'static>>, Error> {
+        catch_compaction_and_retry(|| {
+            let mut tree = self.open_for_read()?;
+
+            tree.first_key(false)
+        })
+    }
+
+    /// Returns the first key and value of the tree.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    pub fn first(&self) -> Result<Option<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
+        catch_compaction_and_retry(|| {
+            let mut tree = self.open_for_read()?;
+
+            tree.first(false)
         })
     }
 

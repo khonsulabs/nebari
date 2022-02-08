@@ -514,6 +514,19 @@ pub struct Config<File: ManagedFile> {
     _file: PhantomData<File>,
 }
 
+impl<File: ManagedFile> Clone for Config<File> {
+    fn clone(&self) -> Self {
+        Self {
+            path: self.path.clone(),
+            vault: self.vault.clone(),
+            cache: self.cache.clone(),
+            file_manager: self.file_manager.clone(),
+            thread_pool: self.thread_pool.clone(),
+            _file: PhantomData,
+        }
+    }
+}
+
 impl<File: ManagedFile> Config<File> {
     /// Creates a new config to open a database located at `path`.
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
@@ -1304,6 +1317,52 @@ mod tests {
                 .tree(Versioned::tree("test").with_vault(RotatorVault::new(13)))
                 .unwrap();
             assert_eq!(bad_tree.get(b"test").unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn too_large_transaction() {
+        let tempdir = tempdir().unwrap();
+
+        let config = Config::<StdFile>::new(tempdir.path());
+        {
+            let roots = config.clone().open().unwrap();
+
+            let mut transaction = roots.transaction(&[Versioned::tree("test")]).unwrap();
+
+            // Write some data to the tree.
+            transaction
+                .tree::<Versioned>(0)
+                .unwrap()
+                .set(b"test", vec![0; 16 * 1024 * 1024])
+                .unwrap();
+
+            // Issue a transaction that's too large.
+            assert!(matches!(
+                transaction
+                    .entry_mut()
+                    .set_data(vec![0; 16 * 1024 * 1024 - 7])
+                    .unwrap_err()
+                    .kind,
+                ErrorKind::ValueTooLarge
+            ));
+            // Roll the transaction back
+            drop(transaction);
+        }
+        // Ensure that we can still write to the tree.
+        {
+            let roots = config.open().unwrap();
+
+            let mut transaction = roots.transaction(&[Versioned::tree("test")]).unwrap();
+
+            // Write some data to the tree
+            transaction
+                .tree::<Versioned>(0)
+                .unwrap()
+                .set(b"test", b"updated value")
+                .unwrap();
+
+            transaction.commit().unwrap();
         }
     }
 }

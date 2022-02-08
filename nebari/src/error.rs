@@ -1,6 +1,7 @@
 use std::{convert::Infallible, fmt::Display};
 
 use backtrace::Backtrace;
+use parking_lot::{Mutex, MutexGuard};
 use thiserror::Error;
 
 use crate::AbortError;
@@ -11,16 +12,22 @@ pub struct Error {
     /// The error that occurred.
     pub kind: ErrorKind,
 
-    /// Where the error occurred.
-    pub backtrace: Backtrace,
+    backtrace: Mutex<Backtrace>,
 }
 
 impl Error {
     pub(crate) fn data_integrity(error: impl Into<Self>) -> Self {
         Self {
             kind: ErrorKind::DataIntegrity(Box::new(error.into())),
-            backtrace: Backtrace::new(),
+            backtrace: Mutex::new(Backtrace::new_unresolved()),
         }
+    }
+
+    /// Returns the backtrace of where this error was created.
+    pub fn backtrace(&self) -> MutexGuard<'_, Backtrace> {
+        let mut backtrace = self.backtrace.lock();
+        backtrace.resolve();
+        backtrace
     }
 }
 
@@ -37,7 +44,10 @@ impl Display for Error {
         #[cfg(debug_assertions)]
         {
             f.write_str("\nstack backtrace:")?;
-            for (index, frame) in self.backtrace.frames().iter().enumerate() {
+            let mut backtrace = self.backtrace.lock();
+            backtrace.resolve();
+
+            for (index, frame) in backtrace.frames().iter().enumerate() {
                 write!(f, "\n#{}: {:?}", index, frame)?;
             }
         }
@@ -50,7 +60,7 @@ impl From<ErrorKind> for Error {
     fn from(kind: ErrorKind) -> Self {
         Self {
             kind,
-            backtrace: Backtrace::new(),
+            backtrace: Mutex::new(Backtrace::new_unresolved()),
         }
     }
 }
@@ -65,7 +75,7 @@ impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
         Self {
             kind: ErrorKind::from(err),
-            backtrace: Backtrace::new(),
+            backtrace: Mutex::new(Backtrace::new_unresolved()),
         }
     }
 }
@@ -74,7 +84,7 @@ impl From<&'static str> for Error {
     fn from(message: &'static str) -> Self {
         Self {
             kind: ErrorKind::message(message),
-            backtrace: Backtrace::new(),
+            backtrace: Mutex::new(Backtrace::new_unresolved()),
         }
     }
 }
@@ -83,7 +93,7 @@ impl From<flume::RecvError> for Error {
     fn from(_err: flume::RecvError) -> Self {
         Self {
             kind: ErrorKind::Internal(InternalError::InternalCommunication),
-            backtrace: Backtrace::new(),
+            backtrace: Mutex::new(Backtrace::new_unresolved()),
         }
     }
 }
@@ -92,7 +102,7 @@ impl<T> From<flume::SendError<T>> for Error {
     fn from(_err: flume::SendError<T>) -> Self {
         Self {
             kind: ErrorKind::Internal(InternalError::InternalCommunication),
-            backtrace: Backtrace::new(),
+            backtrace: Mutex::new(Backtrace::new_unresolved()),
         }
     }
 }
@@ -101,7 +111,7 @@ impl From<String> for Error {
     fn from(message: String) -> Self {
         Self {
             kind: ErrorKind::message(message),
-            backtrace: Backtrace::new(),
+            backtrace: Mutex::new(Backtrace::new_unresolved()),
         }
     }
 }

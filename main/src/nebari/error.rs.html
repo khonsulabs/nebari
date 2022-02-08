@@ -204,9 +204,20 @@
 <span id="203">203</span>
 <span id="204">204</span>
 <span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">convert::Infallible</span>, <span class="ident">fmt::Display</span>};
 
 <span class="kw">use</span> <span class="ident">backtrace::Backtrace</span>;
+<span class="kw">use</span> <span class="ident">parking_lot</span>::{<span class="ident">Mutex</span>, <span class="ident">MutexGuard</span>};
 <span class="kw">use</span> <span class="ident">thiserror::Error</span>;
 
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::AbortError</span>;
@@ -217,16 +228,22 @@
     <span class="doccomment">/// The error that occurred.</span>
     <span class="kw">pub</span> <span class="ident">kind</span>: <span class="ident">ErrorKind</span>,
 
-    <span class="doccomment">/// Where the error occurred.</span>
-    <span class="kw">pub</span> <span class="ident">backtrace</span>: <span class="ident">Backtrace</span>,
+    <span class="ident">backtrace</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">Backtrace</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Error</span> {
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">data_integrity</span>(<span class="ident">error</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">kind</span>: <span class="ident">ErrorKind::DataIntegrity</span>(<span class="ident">Box::new</span>(<span class="ident">error</span>.<span class="ident">into</span>())),
-            <span class="ident">backtrace</span>: <span class="ident">Backtrace::new</span>(),
+            <span class="ident">backtrace</span>: <span class="ident">Mutex::new</span>(<span class="ident">Backtrace::new_unresolved</span>()),
         }
+    }
+
+    <span class="doccomment">/// Returns the backtrace of where this error was created.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">backtrace</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">MutexGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Backtrace</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">backtrace</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">backtrace</span>.<span class="ident">lock</span>();
+        <span class="ident">backtrace</span>.<span class="ident">resolve</span>();
+        <span class="ident">backtrace</span>
     }
 }
 
@@ -243,7 +260,10 @@
         <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">debug_assertions</span>)]</span>
         {
             <span class="ident">f</span>.<span class="ident">write_str</span>(<span class="string">&quot;\nstack backtrace:&quot;</span>)<span class="question-mark">?</span>;
-            <span class="kw">for</span> (<span class="ident">index</span>, <span class="ident">frame</span>) <span class="kw">in</span> <span class="self">self</span>.<span class="ident">backtrace</span>.<span class="ident">frames</span>().<span class="ident">iter</span>().<span class="ident">enumerate</span>() {
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">backtrace</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">backtrace</span>.<span class="ident">lock</span>();
+            <span class="ident">backtrace</span>.<span class="ident">resolve</span>();
+
+            <span class="kw">for</span> (<span class="ident">index</span>, <span class="ident">frame</span>) <span class="kw">in</span> <span class="ident">backtrace</span>.<span class="ident">frames</span>().<span class="ident">iter</span>().<span class="ident">enumerate</span>() {
                 <span class="macro">write!</span>(<span class="ident">f</span>, <span class="string">&quot;\n#{}: {:?}&quot;</span>, <span class="ident">index</span>, <span class="ident">frame</span>)<span class="question-mark">?</span>;
             }
         }
@@ -256,7 +276,7 @@
     <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">kind</span>: <span class="ident">ErrorKind</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">kind</span>,
-            <span class="ident">backtrace</span>: <span class="ident">Backtrace::new</span>(),
+            <span class="ident">backtrace</span>: <span class="ident">Mutex::new</span>(<span class="ident">Backtrace::new_unresolved</span>()),
         }
     }
 }
@@ -271,7 +291,7 @@
     <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">err</span>: <span class="ident">std::io::Error</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">kind</span>: <span class="ident">ErrorKind::from</span>(<span class="ident">err</span>),
-            <span class="ident">backtrace</span>: <span class="ident">Backtrace::new</span>(),
+            <span class="ident">backtrace</span>: <span class="ident">Mutex::new</span>(<span class="ident">Backtrace::new_unresolved</span>()),
         }
     }
 }
@@ -280,7 +300,7 @@
     <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">message</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">str</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">kind</span>: <span class="ident">ErrorKind::message</span>(<span class="ident">message</span>),
-            <span class="ident">backtrace</span>: <span class="ident">Backtrace::new</span>(),
+            <span class="ident">backtrace</span>: <span class="ident">Mutex::new</span>(<span class="ident">Backtrace::new_unresolved</span>()),
         }
     }
 }
@@ -289,7 +309,7 @@
     <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">_err</span>: <span class="ident">flume::RecvError</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">kind</span>: <span class="ident">ErrorKind::Internal</span>(<span class="ident">InternalError::InternalCommunication</span>),
-            <span class="ident">backtrace</span>: <span class="ident">Backtrace::new</span>(),
+            <span class="ident">backtrace</span>: <span class="ident">Mutex::new</span>(<span class="ident">Backtrace::new_unresolved</span>()),
         }
     }
 }
@@ -298,7 +318,7 @@
     <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">_err</span>: <span class="ident">flume::SendError</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">kind</span>: <span class="ident">ErrorKind::Internal</span>(<span class="ident">InternalError::InternalCommunication</span>),
-            <span class="ident">backtrace</span>: <span class="ident">Backtrace::new</span>(),
+            <span class="ident">backtrace</span>: <span class="ident">Mutex::new</span>(<span class="ident">Backtrace::new_unresolved</span>()),
         }
     }
 }
@@ -307,7 +327,7 @@
     <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">message</span>: <span class="ident">String</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">kind</span>: <span class="ident">ErrorKind::message</span>(<span class="ident">message</span>),
-            <span class="ident">backtrace</span>: <span class="ident">Backtrace::new</span>(),
+            <span class="ident">backtrace</span>: <span class="ident">Mutex::new</span>(<span class="ident">Backtrace::new_unresolved</span>()),
         }
     }
 }

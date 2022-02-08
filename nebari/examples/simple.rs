@@ -1,5 +1,4 @@
 use nebari::{
-    io::fs::StdFile,
     tree::{Root, Versioned},
     Error,
 };
@@ -10,7 +9,7 @@ fn main() -> Result<(), Error> {
     // nomenclature "file" is used, Nebari is written atop an abstraction layer
     // that allows using a memory-backed simulated file system and could be used
     // to implement non-traditional storage backends.
-    let roots = nebari::Config::<StdFile>::default_for("simple-database.nebari").open()?;
+    let roots = nebari::Config::default_for("simple-database.nebari").open()?;
 
     // Each tree contains a unique set of keys and values, and can be written
     // using a versioned or unversioned tree root.

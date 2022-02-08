@@ -17,12 +17,15 @@ use crate::{
     ErrorKind,
 };
 
+type FileBuffer = Arc<RwLock<Vec<u8>>>;
+
 /// A fake "file" represented by an in-memory buffer. This should only be used
 /// in testing, as this database format is not optimized for memory efficiency.
+#[derive(Clone)]
 pub struct MemoryFile {
     id: Option<u64>,
     path: PathBuf,
-    buffer: Arc<RwLock<Vec<u8>>>,
+    buffer: FileBuffer,
     position: usize,
 }
 
@@ -183,7 +186,7 @@ impl std::io::Write for MemoryFile {
 #[derive(Debug, Default, Clone)]
 pub struct MemoryFileManager {
     file_ids: PathIds,
-    open_files: Arc<Mutex<HashMap<u64, Arc<Mutex<MemoryFile>>>>>,
+    open_files: Arc<Mutex<HashMap<u64, FileBuffer>>>,
 }
 
 impl MemoryFileManager {
@@ -192,7 +195,7 @@ impl MemoryFileManager {
         path: impl AsRef<Path>,
         create_if_needed: bool,
         id: Option<u64>,
-    ) -> Result<Option<Arc<Mutex<MemoryFile>>>, Error> {
+    ) -> Result<Option<MemoryFile>, Error> {
         let path = path.as_ref();
         let id = match id {
             Some(id) => id,
@@ -203,15 +206,27 @@ impl MemoryFileManager {
         };
         let mut open_files = self.open_files.lock();
         if let Some(open_file) = open_files.get(&id) {
-            Ok(Some(open_file.clone()))
+            Ok(Some(MemoryFile {
+                id: Some(id),
+                buffer: open_file.clone(),
+                path: path.to_path_buf(),
+                position: 0,
+            }))
         } else if create_if_needed {
-            let file = Arc::new(Mutex::new(
-                MemoryFileOpener.open_for_append(path, Some(id))?,
-            ));
-            open_files.insert(id, file.clone());
+            let file = MemoryFileOpener.open_for_append(path, Some(id))?;
+            open_files.insert(id, file.buffer.clone());
             Ok(Some(file))
         } else {
             Ok(None)
+        }
+    }
+
+    fn forget_file(&self, path: &Path) -> bool {
+        if let Some(id) = self.file_ids.remove_file_id_for_path(path) {
+            let mut open_files = self.open_files.lock();
+            open_files.remove(&id).is_some()
+        } else {
+            false
         }
     }
 }
@@ -223,8 +238,10 @@ impl FileManager for MemoryFileManager {
     fn append(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error> {
         let path = path.as_ref();
         let id = self.file_ids.file_id_for_path(path, true);
-        self.lookup_file(path, true, id)
-            .map(|file| OpenMemoryFile(file.unwrap()))
+        self.lookup_file(path, true, id).map(|file| OpenMemoryFile {
+            file: file.unwrap(),
+            manager: self.clone(),
+        })
     }
 
     fn read(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error> {
@@ -238,9 +255,7 @@ impl FileManager for MemoryFileManager {
                 ErrorKind::message("not found"),
             ))
         })?;
-        let file = file.lock();
-        let buffer = file.buffer.read();
-        Ok(buffer.len() as u64)
+        file.length()
     }
 
     fn exists(&self, path: impl AsRef<Path>) -> Result<bool, Error> {
@@ -249,12 +264,11 @@ impl FileManager for MemoryFileManager {
 
     fn delete(&self, path: impl AsRef<Path>) -> Result<bool, Error> {
         let path = path.as_ref();
-        if let Some(id) = self.file_ids.remove_file_id_for_path(path) {
-            let mut open_files = self.open_files.lock();
-            Ok(open_files.remove(&id).is_some())
-        } else {
-            Ok(false)
+        {
+            let mut open_buffers = OPEN_BUFFERS.lock();
+            open_buffers.remove(path);
         }
+        Ok(self.forget_file(path))
     }
 
     fn delete_directory(&self, path: impl AsRef<Path>) -> Result<(), Error> {
@@ -270,7 +284,7 @@ impl FileManager for MemoryFileManager {
 
     fn close_handles<F: FnOnce(u64)>(&self, path: impl AsRef<Path>, publish_callback: F) {
         let path = path.as_ref();
-        drop(self.delete(path));
+        self.forget_file(path);
         let new_id = self.file_ids.file_id_for_path(path, true).unwrap();
         publish_callback(new_id);
     }
@@ -296,12 +310,14 @@ impl ManagedFileOpener<MemoryFile> for MemoryFileManager {
 
 /// An open [`MemoryFile`] that is owned by a [`MemoryFileManager`].
 #[derive(Debug)]
-pub struct OpenMemoryFile(Arc<Mutex<MemoryFile>>);
+pub struct OpenMemoryFile {
+    file: MemoryFile,
+    manager: MemoryFileManager,
+}
 
 impl OpenableFile<MemoryFile> for OpenMemoryFile {
     fn id(&self) -> Option<u64> {
-        let f = self.0.lock();
-        f.id()
+        self.file.id
     }
 
     fn replace_with<C: FnOnce(u64)>(
@@ -311,21 +327,19 @@ impl OpenableFile<MemoryFile> for OpenMemoryFile {
         publish_callback: C,
     ) -> Result<Self, Error> {
         let weak_buffer = Arc::downgrade(&replacement.buffer);
-        let my_path = {
+        drop(self.manager.delete(replacement.path()));
+        {
             let mut open_buffers = OPEN_BUFFERS.lock();
-            open_buffers.remove(replacement.path());
-            let my_path = {
-                let mut file = self.0.lock();
-                file.buffer = replacement.buffer;
-                file.path.clone()
-            };
-            open_buffers.insert(my_path.clone(), weak_buffer);
-            my_path
-        };
+            open_buffers.insert(self.file.path.clone(), weak_buffer);
+        }
 
-        manager.close_handles(&my_path, publish_callback);
+        manager.close_handles(&self.file.path, publish_callback);
 
-        manager.append(&my_path)
+        let new_file = manager.append(&self.file.path)?;
+        {
+            assert!(Arc::ptr_eq(&new_file.file.buffer, &replacement.buffer));
+        }
+        Ok(new_file)
     }
 
     fn close(self) -> Result<(), Error> {
@@ -336,7 +350,6 @@ impl OpenableFile<MemoryFile> for OpenMemoryFile {
 
 impl OperableFile<MemoryFile> for OpenMemoryFile {
     fn execute<Output, Op: FileOp<Output>>(&mut self, operator: Op) -> Output {
-        let mut file = self.0.lock();
-        operator.execute(&mut *file)
+        operator.execute(&mut self.file)
     }
 }

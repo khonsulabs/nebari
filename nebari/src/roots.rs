@@ -5,7 +5,6 @@ use std::{
     convert::Infallible,
     fmt::{Debug, Display},
     fs,
-    marker::PhantomData,
     ops::RangeBounds,
     path::{Path, PathBuf},
     sync::{
@@ -21,7 +20,7 @@ use parking_lot::Mutex;
 use crate::{
     context::Context,
     error::Error,
-    io::{FileManager, ManagedFile},
+    io::{fs::StdFileManager, FileManager, ManagedFile},
     transaction::{LogEntry, TransactionHandle, TransactionManager},
     tree::{
         self, root::AnyTreeRoot, state::AnyTreeState, EmbeddedIndex, KeyEvaluation, KeySequence,
@@ -517,16 +516,15 @@ pub enum CompareAndSwapError {
 /// A database configuration used to open a database.
 #[derive(Debug)]
 #[must_use]
-pub struct Config<File: ManagedFile> {
+pub struct Config<M: FileManager = StdFileManager> {
     path: PathBuf,
     vault: Option<Arc<dyn AnyVault>>,
     cache: Option<ChunkCache>,
-    file_manager: Option<File::Manager>,
-    thread_pool: Option<ThreadPool<File>>,
-    _file: PhantomData<File>,
+    file_manager: Option<M>,
+    thread_pool: Option<ThreadPool<M::File>>,
 }
 
-impl<File: ManagedFile> Clone for Config<File> {
+impl<M: FileManager> Clone for Config<M> {
     fn clone(&self) -> Self {
         Self {
             path: self.path.clone(),
@@ -534,12 +532,11 @@ impl<File: ManagedFile> Clone for Config<File> {
             cache: self.cache.clone(),
             file_manager: self.file_manager.clone(),
             thread_pool: self.thread_pool.clone(),
-            _file: PhantomData,
         }
     }
 }
 
-impl<File: ManagedFile> Config<File> {
+impl Config<StdFileManager> {
     /// Creates a new config to open a database located at `path`.
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
         Self {
@@ -548,9 +545,9 @@ impl<File: ManagedFile> Config<File> {
             cache: None,
             thread_pool: None,
             file_manager: None,
-            _file: PhantomData,
         }
     }
+
     /// Returns a default configuration to open a database located at `path`.
     pub fn default_for<P: AsRef<Path>>(path: P) -> Self {
         Self {
@@ -559,10 +556,27 @@ impl<File: ManagedFile> Config<File> {
             cache: Some(ChunkCache::new(2000, 65536)),
             thread_pool: Some(ThreadPool::default()),
             file_manager: None,
-            _file: PhantomData,
         }
     }
 
+    /// Sets the file manager.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if called after a shared thread pool has been set.
+    pub fn file_manager<M: FileManager>(self, file_manager: M) -> Config<M> {
+        assert!(self.thread_pool.is_none());
+        Config {
+            path: self.path,
+            vault: self.vault,
+            cache: self.cache,
+            file_manager: Some(file_manager),
+            thread_pool: None,
+        }
+    }
+}
+
+impl<M: FileManager> Config<M> {
     /// Sets the vault to use for this database.
     pub fn vault<V: AnyVault>(mut self, vault: V) -> Self {
         self.vault = Some(Arc::new(vault));
@@ -575,22 +589,16 @@ impl<File: ManagedFile> Config<File> {
         self
     }
 
-    /// Sets the file manager.
-    pub fn file_manager(mut self, file_manager: File::Manager) -> Self {
-        self.file_manager = Some(file_manager);
-        self
-    }
-
     /// Uses the `thread_pool` provided instead of creating its own. This will
     /// allow a single thread pool to manage multiple [`Roots`] instances'
     /// transactions.
-    pub fn shared_thread_pool(mut self, thread_pool: &ThreadPool<File>) -> Self {
+    pub fn shared_thread_pool(mut self, thread_pool: &ThreadPool<M::File>) -> Self {
         self.thread_pool = Some(thread_pool.clone());
         self
     }
 
     /// Opens the database, or creates one if the target path doesn't exist.
-    pub fn open(self) -> Result<Roots<File>, Error> {
+    pub fn open(self) -> Result<Roots<M::File>, Error> {
         Roots::open(
             self.path,
             Context {
@@ -1133,14 +1141,17 @@ mod tests {
 
     use super::*;
     use crate::{
-        io::{fs::StdFile, memory::MemoryFile, ManagedFile},
+        io::{any::AnyFileManager, fs::StdFileManager, memory::MemoryFileManager},
         test_util::RotatorVault,
         tree::{Root, Unversioned, Versioned},
     };
 
-    fn basic_get_set<File: ManagedFile>() {
+    fn basic_get_set<M: FileManager>(file_manager: M) {
         let tempdir = tempdir().unwrap();
-        let roots = Config::<File>::new(tempdir.path()).open().unwrap();
+        let roots = Config::new(tempdir.path())
+            .file_manager(file_manager)
+            .open()
+            .unwrap();
 
         let tree = roots.tree(Versioned::tree("test")).unwrap();
         tree.set(b"test", b"value").unwrap();
@@ -1151,19 +1162,21 @@ mod tests {
 
     #[test]
     fn memory_basic_get_set() {
-        basic_get_set::<MemoryFile>();
+        basic_get_set(MemoryFileManager::default());
     }
 
     #[test]
     fn std_basic_get_set() {
-        basic_get_set::<StdFile>();
+        basic_get_set(StdFileManager::default());
     }
 
     #[test]
     fn basic_transaction_isolation_test() {
         let tempdir = tempdir().unwrap();
 
-        let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
+        let roots = Config::<StdFileManager>::new(tempdir.path())
+            .open()
+            .unwrap();
         let tree = roots.tree(Versioned::tree("test")).unwrap();
         tree.set(b"test", b"value").unwrap();
 
@@ -1202,7 +1215,9 @@ mod tests {
     fn basic_transaction_rollback_test() {
         let tempdir = tempdir().unwrap();
 
-        let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
+        let roots = Config::<StdFileManager>::new(tempdir.path())
+            .open()
+            .unwrap();
         let tree = roots.tree(Versioned::tree("test")).unwrap();
         tree.set(b"test", b"value").unwrap();
 
@@ -1236,21 +1251,46 @@ mod tests {
     }
 
     #[test]
-    fn compact_test_versioned() {
-        compact_test::<Versioned>();
+    fn std_compact_test_versioned() {
+        compact_test::<Versioned, _>(StdFileManager::default());
     }
 
     #[test]
-    fn compact_test_unversioned() {
-        compact_test::<Unversioned>();
+    fn std_compact_test_unversioned() {
+        compact_test::<Unversioned, _>(StdFileManager::default());
     }
 
-    fn compact_test<R: Root>() {
+    #[test]
+    fn memory_compact_test_versioned() {
+        compact_test::<Versioned, _>(MemoryFileManager::default());
+    }
+
+    #[test]
+    fn memory_compact_test_unversioned() {
+        compact_test::<Unversioned, _>(MemoryFileManager::default());
+    }
+
+    #[test]
+    fn any_compact_test_versioned() {
+        compact_test::<Versioned, _>(AnyFileManager::std());
+        compact_test::<Versioned, _>(AnyFileManager::memory());
+    }
+
+    #[test]
+    fn any_compact_test_unversioned() {
+        compact_test::<Unversioned, _>(AnyFileManager::std());
+        compact_test::<Unversioned, _>(AnyFileManager::memory());
+    }
+
+    fn compact_test<R: Root, M: FileManager>(file_manager: M) {
         const OPERATION_COUNT: usize = 256;
         const WORKER_COUNT: usize = 4;
         let tempdir = tempdir().unwrap();
 
-        let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
+        let roots = Config::new(dbg!(tempdir.path()))
+            .file_manager(file_manager)
+            .open()
+            .unwrap();
         let tree = roots.tree(R::tree("test")).unwrap();
         tree.set("foo", b"bar").unwrap();
 
@@ -1306,7 +1346,7 @@ mod tests {
 
         // Encrypt a tree using default encryption via the context
         {
-            let roots = Config::<StdFile>::new(tempdir.path())
+            let roots = Config::<StdFileManager>::new(tempdir.path())
                 .vault(RotatorVault::new(13))
                 .open()
                 .unwrap();
@@ -1319,7 +1359,7 @@ mod tests {
         }
         // Try to access the tree with the vault again.
         {
-            let roots = Config::<StdFile>::new(tempdir.path())
+            let roots = Config::<StdFileManager>::new(tempdir.path())
                 .vault(RotatorVault::new(13))
                 .open()
                 .unwrap();
@@ -1339,7 +1379,9 @@ mod tests {
             assert_eq!(value.as_deref(), Some(&b"other"[..]));
         }
         {
-            let roots = Config::<StdFile>::new(tempdir.path()).open().unwrap();
+            let roots = Config::<StdFileManager>::new(tempdir.path())
+                .open()
+                .unwrap();
             // Try to access roots without the vault.
             let bad_tree = roots.tree(Versioned::tree("test")).unwrap();
             assert!(bad_tree.get(b"test").is_err());
@@ -1356,7 +1398,7 @@ mod tests {
     fn too_large_transaction() {
         let tempdir = tempdir().unwrap();
 
-        let config = Config::<StdFile>::new(tempdir.path());
+        let config = Config::<StdFileManager>::new(tempdir.path());
         {
             let roots = config.clone().open().unwrap();
 

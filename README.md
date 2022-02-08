@@ -25,13 +25,12 @@ Inserting a key-value pair in an on-disk tree with full revision history:
 
 ```rust
 use nebari::{
-    io::fs::StdFile,
     tree::{Root, Versioned},
     Config,
 };
 
 let database_folder = tempfile::tempdir().unwrap();
-let roots = Config::<StdFile>::default_for(database_folder.path())
+let roots = Config::default_for(database_folder.path())
     .open()
     .unwrap();
 let tree = roots.tree(Versioned::tree("a-tree")).unwrap();
@@ -130,6 +129,7 @@ Nebari provides APIs that perform compaction, but currently delegates scheduling
 and automation to consumers of this library.
 
 [bonsaidb]: https://bonsaidb.io/
+
 ## Open-source Licenses
 
 This project, like all projects from [Khonsu Labs](https://khonsulabs.com/), are

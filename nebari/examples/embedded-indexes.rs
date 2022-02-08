@@ -3,13 +3,12 @@ use std::convert::Infallible;
 use byteorder::BigEndian;
 use nanorand::{Pcg64, Rng};
 use nebari::{
-    io::fs::StdFile,
     tree::{EmbeddedIndex, KeyEvaluation, Reducer, Root, Serializable, VersionedTreeRoot},
     Error,
 };
 
 fn main() -> Result<(), Error> {
-    let roots = nebari::Config::<StdFile>::default_for("embedded-indexes.nebari").open()?;
+    let roots = nebari::Config::default_for("embedded-indexes.nebari").open()?;
 
     // Nebari provides a way to embed data within the B-Tree directly through a
     // `EmbeddedIndex` and `EmbeddedStats` generics on either

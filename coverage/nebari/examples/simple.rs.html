@@ -60,7 +60,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    io::fs::StdFile,</pre>
+                <pre class="has-background-white py-0 px-2">    tree::{Root, Versioned},</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -73,7 +73,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    tree::{Root, Versioned},</pre>
+                <pre class="has-background-white py-0 px-2">    Error,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -86,7 +86,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    Error,</pre>
+                <pre class="has-background-white py-0 px-2">};</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -99,7 +99,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">};</pre>
+                <pre class="has-background-white py-0 px-2"></pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -108,11 +108,11 @@
                 <a href="#6">6</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
                 
             </div>
-            <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2"></pre>
+            <div class="column has-background-danger-light p-0">
+                <pre class="has-background-danger-light py-0 px-2">fn main() -&gt; Result&lt;(), Error&gt; {</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -121,11 +121,11 @@
                 <a href="#7">7</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
                 
             </div>
-            <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">fn main() -&gt; Result&lt;(), Error&gt; {</pre>
+            <div class="column has-background-white p-0">
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; The Roots type creates a multi-&quot;tree&quot; database by creating a folder at</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -138,7 +138,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; The Roots type creates a multi-&quot;tree&quot; database by creating a folder at</pre>
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; the path provided and creating individual files within. While the</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -151,7 +151,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; the path provided and creating individual files within. While the</pre>
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; nomenclature &quot;file&quot; is used, Nebari is written atop an abstraction layer</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -164,7 +164,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; nomenclature &quot;file&quot; is used, Nebari is written atop an abstraction layer</pre>
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; that allows using a memory-backed simulated file system and could be used</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -177,7 +177,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; that allows using a memory-backed simulated file system and could be used</pre>
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; to implement non-traditional storage backends.</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -186,11 +186,11 @@
                 <a href="#12">12</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
                 
             </div>
-            <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; to implement non-traditional storage backends.</pre>
+            <div class="column has-background-danger-light p-0">
+                <pre class="has-background-danger-light py-0 px-2">    let roots = nebari::Config::default_for(&quot;simple-database.nebari&quot;).open()?;</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -199,11 +199,11 @@
                 <a href="#13">13</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
                 
             </div>
-            <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">    let roots = nebari::Config::&lt;StdFile&gt;::default_for(&quot;simple-database.nebari&quot;).open()?;</pre>
+            <div class="column has-background-white p-0">
+                <pre class="has-background-white py-0 px-2"></pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -216,7 +216,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2"></pre>
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; Each tree contains a unique set of keys and values, and can be written</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -229,7 +229,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; Each tree contains a unique set of keys and values, and can be written</pre>
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; using a versioned or unversioned tree root.</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -238,11 +238,11 @@
                 <a href="#16">16</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
                 
             </div>
-            <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; using a versioned or unversioned tree root.</pre>
+            <div class="column has-background-danger-light p-0">
+                <pre class="has-background-danger-light py-0 px-2">    let tree_one = roots.tree(Versioned::tree(&quot;one&quot;))?;</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -255,7 +255,7 @@
                 
             </div>
             <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">    let tree_one = roots.tree(Versioned::tree(&quot;one&quot;))?;</pre>
+                <pre class="has-background-danger-light py-0 px-2">    tree_one.set(&quot;hello&quot;, &quot;world&quot;)?;</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -268,7 +268,7 @@
                 
             </div>
             <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">    tree_one.set(&quot;hello&quot;, &quot;world&quot;)?;</pre>
+                <pre class="has-background-danger-light py-0 px-2">    let tree_two = roots.tree(Versioned::tree(&quot;two&quot;))?;</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -281,7 +281,7 @@
                 
             </div>
             <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">    let tree_two = roots.tree(Versioned::tree(&quot;two&quot;))?;</pre>
+                <pre class="has-background-danger-light py-0 px-2">    assert!(tree_two.get(&quot;hello&quot;.as_bytes())?.is_none());</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -290,11 +290,11 @@
                 <a href="#20">20</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
                 
             </div>
-            <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">    assert!(tree_two.get(&quot;hello&quot;.as_bytes())?.is_none());</pre>
+            <div class="column has-background-white p-0">
+                <pre class="has-background-white py-0 px-2"></pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -307,7 +307,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2"></pre>
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; Each operation on a Tree is executed within an ACID-compliant</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -320,7 +320,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; Each operation on a Tree is executed within an ACID-compliant</pre>
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; transaction. If you want to execute multiple operations in a single</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -333,7 +333,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; transaction. If you want to execute multiple operations in a single</pre>
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; transaction, you can do that as well:</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -342,11 +342,11 @@
                 <a href="#24">24</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
                 
             </div>
-            <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; transaction, you can do that as well:</pre>
+            <div class="column has-background-danger-light p-0">
+                <pre class="has-background-danger-light py-0 px-2">    let mut transaction = roots.transaction(&amp;[Versioned::tree(&quot;one&quot;), Versioned::tree(&quot;two&quot;)])?;</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -355,11 +355,11 @@
                 <a href="#25">25</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
                 
             </div>
-            <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">    let mut transaction = roots.transaction(&amp;[Versioned::tree(&quot;one&quot;), Versioned::tree(&quot;two&quot;)])?;</pre>
+            <div class="column has-background-white p-0">
+                <pre class="has-background-white py-0 px-2"></pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -372,7 +372,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2"></pre>
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; This API isn&#x27;t as ergonomic as it should be. The trees are accessible in</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -385,7 +385,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; This API isn&#x27;t as ergonomic as it should be. The trees are accessible in</pre>
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; the same order in which they&#x27;re specified in the transaction call:</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -394,11 +394,11 @@
                 <a href="#28">28</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
                 
             </div>
-            <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; the same order in which they&#x27;re specified in the transaction call:</pre>
+            <div class="column has-background-danger-light p-0">
+                <pre class="has-background-danger-light py-0 px-2">    let tx_tree_one = transaction.tree::&lt;Versioned&gt;(0).unwrap();</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -411,7 +411,7 @@
                 
             </div>
             <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">    let tx_tree_one = transaction.tree::&lt;Versioned&gt;(0).unwrap();</pre>
+                <pre class="has-background-danger-light py-0 px-2">    tx_tree_one.set(&quot;hello&quot;, &quot;everyone&quot;)?;</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -420,11 +420,11 @@
                 <a href="#30">30</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
                 
             </div>
-            <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">    tx_tree_one.set(&quot;hello&quot;, &quot;everyone&quot;)?;</pre>
+            <div class="column has-background-white p-0">
+                <pre class="has-background-white py-0 px-2"></pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -437,7 +437,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2"></pre>
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; The operation above is not visible to trees outside of the transaction:</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -446,11 +446,11 @@
                 <a href="#32">32</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
                 
             </div>
-            <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; The operation above is not visible to trees outside of the transaction:</pre>
+            <div class="column has-background-danger-light p-0">
+                <pre class="has-background-danger-light py-0 px-2">    assert_eq!(</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -463,7 +463,7 @@
                 
             </div>
             <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">    assert_eq!(</pre>
+                <pre class="has-background-danger-light py-0 px-2">        tree_one.get(&quot;hello&quot;.as_bytes())?.as_deref(),</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -476,7 +476,7 @@
                 
             </div>
             <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">        tree_one.get(&quot;hello&quot;.as_bytes())?.as_deref(),</pre>
+                <pre class="has-background-danger-light py-0 px-2">        Some(&quot;world&quot;.as_bytes())</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -485,11 +485,11 @@
                 <a href="#35">35</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
                 
             </div>
-            <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">        Some(&quot;world&quot;.as_bytes())</pre>
+            <div class="column has-background-white p-0">
+                <pre class="has-background-white py-0 px-2">    );</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -502,7 +502,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    );</pre>
+                <pre class="has-background-white py-0 px-2"></pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -511,11 +511,11 @@
                 <a href="#37">37</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
                 
             </div>
-            <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2"></pre>
+            <div class="column has-background-danger-light p-0">
+                <pre class="has-background-danger-light py-0 px-2">    let tx_tree_two = transaction.tree::&lt;Versioned&gt;(1).unwrap();</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -528,7 +528,7 @@
                 
             </div>
             <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">    let tx_tree_two = transaction.tree::&lt;Versioned&gt;(1).unwrap();</pre>
+                <pre class="has-background-danger-light py-0 px-2">    tx_tree_two.set(&quot;another tree&quot;, &quot;another value&quot;)?;</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -537,11 +537,11 @@
                 <a href="#39">39</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
                 
             </div>
-            <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">    tx_tree_two.set(&quot;another tree&quot;, &quot;another value&quot;)?;</pre>
+            <div class="column has-background-white p-0">
+                <pre class="has-background-white py-0 px-2"></pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -554,7 +554,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2"></pre>
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; If you drop the transaction before calling commit, the transaction will be rolled back.</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -563,11 +563,11 @@
                 <a href="#41">41</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
                 
             </div>
-            <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; If you drop the transaction before calling commit, the transaction will be rolled back.</pre>
+            <div class="column has-background-danger-light p-0">
+                <pre class="has-background-danger-light py-0 px-2">    transaction.commit()?;</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -576,11 +576,11 @@
                 <a href="#42">42</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
                 
             </div>
-            <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">    transaction.commit()?;</pre>
+            <div class="column has-background-white p-0">
+                <pre class="has-background-white py-0 px-2"></pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -593,7 +593,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2"></pre>
+                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; Now the changes are visible:</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -602,11 +602,11 @@
                 <a href="#44">44</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
                 
             </div>
-            <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    &#x2F;&#x2F; Now the changes are visible:</pre>
+            <div class="column has-background-danger-light p-0">
+                <pre class="has-background-danger-light py-0 px-2">    assert_eq!(</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -619,7 +619,7 @@
                 
             </div>
             <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">    assert_eq!(</pre>
+                <pre class="has-background-danger-light py-0 px-2">        tree_one.get(&quot;hello&quot;.as_bytes())?.as_deref(),</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -632,7 +632,7 @@
                 
             </div>
             <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">        tree_one.get(&quot;hello&quot;.as_bytes())?.as_deref(),</pre>
+                <pre class="has-background-danger-light py-0 px-2">        Some(&quot;everyone&quot;.as_bytes())</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -641,11 +641,11 @@
                 <a href="#47">47</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
                 
             </div>
-            <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">        Some(&quot;everyone&quot;.as_bytes())</pre>
+            <div class="column has-background-white p-0">
+                <pre class="has-background-white py-0 px-2">    );</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -658,7 +658,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    );</pre>
+                <pre class="has-background-white py-0 px-2"></pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -667,11 +667,11 @@
                 <a href="#49">49</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
+                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
                 
             </div>
-            <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2"></pre>
+            <div class="column has-background-danger-light p-0">
+                <pre class="has-background-danger-light py-0 px-2">    Ok(())</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -684,25 +684,12 @@
                 
             </div>
             <div class="column has-background-danger-light p-0">
-                <pre class="has-background-danger-light py-0 px-2">    Ok(())</pre>
-            </div>
-        </div><div class="columns p-0 m-0">
-            <div
-                class="column is-1 is-narrow p-0 has-text-centered"
-                id="51">
-                <a href="#51">51</a>
-            </div>
-            <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
-                
-            </div>
-            <div class="column has-background-danger-light p-0">
                 <pre class="has-background-danger-light py-0 px-2">}</pre>
             </div>
         </div></div>
         <footer class="footer">
             <div class="content has-text-centered">
-                <p class="heading">Date: 2022-02-08 18:55</p>
+                <p class="heading">Date: 2022-02-09 05:27</p>
             </div>
         </footer>
     </body>

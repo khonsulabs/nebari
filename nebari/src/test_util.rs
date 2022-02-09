@@ -1,5 +1,4 @@
 use std::{
-    convert::Infallible,
     io::ErrorKind,
     ops::Deref,
     path::{Path, PathBuf},
@@ -57,19 +56,30 @@ impl RotatorVault {
 }
 
 impl Vault for RotatorVault {
-    type Error = Infallible;
-    fn encrypt(&self, payload: &[u8]) -> Result<Vec<u8>, Infallible> {
-        println!("Encrypting with key: {}", self.rotation_amount);
-        let mut output = Vec::with_capacity(payload.len());
+    type Error = NotEncrypted;
+    fn encrypt(&self, payload: &[u8]) -> Result<Vec<u8>, NotEncrypted> {
+        let mut output = Vec::with_capacity(payload.len() + 4);
+        output.extend(b"rotv");
         output.extend(payload.iter().map(|c| c.wrapping_add(self.rotation_amount)));
         Ok(output)
     }
 
-    fn decrypt(&self, payload: &[u8]) -> Result<Vec<u8>, Infallible> {
-        println!("Decrypting with key: {}", self.rotation_amount);
+    fn decrypt(&self, payload: &[u8]) -> Result<Vec<u8>, NotEncrypted> {
+        if payload.len() < 4 {
+            return Err(NotEncrypted);
+        }
+        let (header, payload) = payload.split_at(4);
+        if header != b"rotv" {
+            return Err(NotEncrypted);
+        }
+
         Ok(payload
             .iter()
             .map(|c| c.wrapping_sub(self.rotation_amount))
             .collect())
     }
 }
+
+#[derive(thiserror::Error, Debug)]
+#[error("not an encrypted payload")]
+pub struct NotEncrypted;

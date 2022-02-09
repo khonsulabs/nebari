@@ -641,11 +641,23 @@ mod tests {
     #[test]
     fn file_log_file_tests() {
         log_file_tests("file_log_file", StdFileManager::default(), None, None);
+        log_file_tests(
+            "file_log_file_encrypted",
+            StdFileManager::default(),
+            Some(Arc::new(RotatorVault::new(13))),
+            None,
+        );
     }
 
     #[test]
     fn memory_log_file_tests() {
         log_file_tests("memory_log_file", MemoryFileManager::default(), None, None);
+        log_file_tests(
+            "memory_log_file",
+            MemoryFileManager::default(),
+            Some(Arc::new(RotatorVault::new(13))),
+            None,
+        );
     }
 
     #[test]
@@ -686,41 +698,55 @@ mod tests {
             transactions.close().unwrap();
         }
 
-        if context.vault.is_some() {
-            // Test that we can't open it without encryption
-            let state = State::from_path(&temp_dir);
-            assert!(TransactionLog::<Manager::File>::initialize_state(&state, &context).is_err());
-            let mut transactions =
-                TransactionLog::<Manager::File>::open(&log_path, state, context).unwrap();
+        let state = State::from_path(&log_path);
+        if context.vault.is_none() {
+            // Test that we can't open it with encryption. Without
+            // https://github.com/khonsulabs/nebari/issues/35, the inverse isn't
+            // able to be tested.
+            assert!(TransactionLog::<Manager::File>::initialize_state(
+                &state,
+                &Context {
+                    file_manager: context.file_manager.clone(),
+                    vault: Some(Arc::new(RotatorVault::new(13))),
+                    cache: None
+                }
+            )
+            .is_err());
+        }
 
-            for id in 0..1_000 {
-                let transaction = transactions.get(id).unwrap();
-                match transaction {
-                    Some(transaction) => assert_eq!(transaction.id, id),
-                    None => {
-                        unreachable!("failed to fetch transaction {}", id)
-                    }
+        TransactionLog::<Manager::File>::initialize_state(&state, &context).unwrap();
+        let mut transactions =
+            TransactionLog::<Manager::File>::open(&log_path, state, context).unwrap();
+
+        assert!(transactions.get(0).unwrap().is_none());
+        for id in 1..=1_000 {
+            let transaction = transactions.get(id).unwrap();
+            match transaction {
+                Some(transaction) => assert_eq!(transaction.id, id),
+                None => {
+                    unreachable!("failed to fetch transaction {}", id)
                 }
             }
-
-            // Test scanning
-            let mut first_ten = Vec::new();
-            transactions
-                .scan(.., |entry| {
-                    first_ten.push(entry);
-                    first_ten.len() < 10
-                })
-                .unwrap();
-            assert_eq!(first_ten.len(), 10);
-            let mut after_first = None;
-            transactions
-                .scan(first_ten[0].id + 1.., |entry| {
-                    after_first = Some(entry);
-                    false
-                })
-                .unwrap();
-            assert_eq!(after_first.as_ref(), first_ten.get(1));
         }
+        assert!(transactions.get(1001).unwrap().is_none());
+
+        // Test scanning
+        let mut first_ten = Vec::new();
+        transactions
+            .scan(.., |entry| {
+                first_ten.push(entry);
+                first_ten.len() < 10
+            })
+            .unwrap();
+        assert_eq!(first_ten.len(), 10);
+        let mut after_first = None;
+        transactions
+            .scan(first_ten[0].id + 1.., |entry| {
+                after_first = Some(entry);
+                false
+            })
+            .unwrap();
+        assert_eq!(after_first.as_ref(), first_ten.get(1));
     }
 
     #[test]

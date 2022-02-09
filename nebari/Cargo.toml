@@ -1,6 +1,6 @@
 [package]
 name = "nebari"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2018"
 description = "ACID-compliant database storage implementation using an append-only file format."
 repository = "https://github.com/khonsulabs/nebari"
@@ -13,19 +13,19 @@ readme = "../README.md"
 default = []
 
 [dependencies]
-thiserror = "1"
-byteorder = "1"
-flume = "0.10"
-crc = "2"
-once_cell = "1"
-lru = "0.7"
-parking_lot = "0.12"
-tracing = { version = "0.1", optional = true }
-num_cpus = "1.13"
-backtrace = "0.3"
-arc-bytes = "0.3"
+thiserror = "1.0.30"
+byteorder = "1.4.3"
+flume = "0.10.10"
+crc = "2.1.0"
+once_cell = "1.9.0"
+lru = "0.7.0"
+parking_lot = "0.12.0"
+tracing = { version = "0.1.30", optional = true }
+num_cpus = "1.13.1"
+backtrace = "0.3.64"
+arc-bytes = "0.3.2"
 
 [dev-dependencies]
-nanorand = "0.6"
-anyhow = "1"
-tempfile = "3"
+nanorand = "0.6.1"
+anyhow = "1.0.53"
+tempfile = "3.3.0"

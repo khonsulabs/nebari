@@ -341,6 +341,19 @@
 <span id="340">340</span>
 <span id="341">341</span>
 <span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
     <span class="ident">convert::TryFrom</span>,
@@ -360,12 +373,15 @@
     <span class="ident">ErrorKind</span>,
 };
 
+<span class="kw">type</span> <span class="ident">FileBuffer</span> <span class="op">=</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>;
+
 <span class="doccomment">/// A fake &quot;file&quot; represented by an in-memory buffer. This should only be used</span>
 <span class="doccomment">/// in testing, as this database format is not optimized for memory efficiency.</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">MemoryFile</span> {
     <span class="ident">id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
     <span class="ident">path</span>: <span class="ident">PathBuf</span>,
-    <span class="ident">buffer</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="ident">buffer</span>: <span class="ident">FileBuffer</span>,
     <span class="ident">position</span>: <span class="ident">usize</span>,
 }
 
@@ -526,7 +542,7 @@
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Default</span>, <span class="ident">Clone</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">MemoryFileManager</span> {
     <span class="ident">file_ids</span>: <span class="ident">PathIds</span>,
-    <span class="ident">open_files</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="ident">open_files</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">FileBuffer</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">MemoryFileManager</span> {
@@ -535,7 +551,7 @@
         <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>,
         <span class="ident">create_if_needed</span>: <span class="ident">bool</span>,
         <span class="ident">id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
-    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_ref</span>();
         <span class="kw">let</span> <span class="ident">id</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">id</span> {
             <span class="prelude-val">Some</span>(<span class="ident">id</span>) =&gt; <span class="ident">id</span>,
@@ -546,15 +562,27 @@
         };
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">open_files</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">open_files</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">open_file</span>) <span class="op">=</span> <span class="ident">open_files</span>.<span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="ident">id</span>) {
-            <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">open_file</span>.<span class="ident">clone</span>()))
+            <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">MemoryFile</span> {
+                <span class="ident">id</span>: <span class="prelude-val">Some</span>(<span class="ident">id</span>),
+                <span class="ident">buffer</span>: <span class="ident">open_file</span>.<span class="ident">clone</span>(),
+                <span class="ident">path</span>: <span class="ident">path</span>.<span class="ident">to_path_buf</span>(),
+                <span class="ident">position</span>: <span class="number">0</span>,
+            }))
         } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">create_if_needed</span> {
-            <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(
-                <span class="ident">MemoryFileOpener</span>.<span class="ident">open_for_append</span>(<span class="ident">path</span>, <span class="prelude-val">Some</span>(<span class="ident">id</span>))<span class="question-mark">?</span>,
-            ));
-            <span class="ident">open_files</span>.<span class="ident">insert</span>(<span class="ident">id</span>, <span class="ident">file</span>.<span class="ident">clone</span>());
+            <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">MemoryFileOpener</span>.<span class="ident">open_for_append</span>(<span class="ident">path</span>, <span class="prelude-val">Some</span>(<span class="ident">id</span>))<span class="question-mark">?</span>;
+            <span class="ident">open_files</span>.<span class="ident">insert</span>(<span class="ident">id</span>, <span class="ident">file</span>.<span class="ident">buffer</span>.<span class="ident">clone</span>());
             <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">file</span>))
         } <span class="kw">else</span> {
             <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
+        }
+    }
+
+    <span class="kw">fn</span> <span class="ident">forget_file</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw-2">&amp;</span><span class="ident">Path</span>) -&gt; <span class="ident">bool</span> {
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">id</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">file_ids</span>.<span class="ident">remove_file_id_for_path</span>(<span class="ident">path</span>) {
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">open_files</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">open_files</span>.<span class="ident">lock</span>();
+            <span class="ident">open_files</span>.<span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="ident">id</span>).<span class="ident">is_some</span>()
+        } <span class="kw">else</span> {
+            <span class="bool-val">false</span>
         }
     }
 }
@@ -566,8 +594,10 @@
     <span class="kw">fn</span> <span class="ident">append</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::FileHandle</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_ref</span>();
         <span class="kw">let</span> <span class="ident">id</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">file_ids</span>.<span class="ident">file_id_for_path</span>(<span class="ident">path</span>, <span class="bool-val">true</span>);
-        <span class="self">self</span>.<span class="ident">lookup_file</span>(<span class="ident">path</span>, <span class="bool-val">true</span>, <span class="ident">id</span>)
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">file</span><span class="op">|</span> <span class="ident">OpenMemoryFile</span>(<span class="ident">file</span>.<span class="ident">unwrap</span>()))
+        <span class="self">self</span>.<span class="ident">lookup_file</span>(<span class="ident">path</span>, <span class="bool-val">true</span>, <span class="ident">id</span>).<span class="ident">map</span>(<span class="op">|</span><span class="ident">file</span><span class="op">|</span> <span class="ident">OpenMemoryFile</span> {
+            <span class="ident">file</span>: <span class="ident">file</span>.<span class="ident">unwrap</span>(),
+            <span class="ident">manager</span>: <span class="self">self</span>.<span class="ident">clone</span>(),
+        })
     }
 
     <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::FileHandle</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
@@ -581,9 +611,7 @@
                 <span class="ident">ErrorKind::message</span>(<span class="string">&quot;not found&quot;</span>),
             ))
         })<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">file</span>.<span class="ident">lock</span>();
-        <span class="kw">let</span> <span class="ident">buffer</span> <span class="op">=</span> <span class="ident">file</span>.<span class="ident">buffer</span>.<span class="ident">read</span>();
-        <span class="prelude-val">Ok</span>(<span class="ident">buffer</span>.<span class="ident">len</span>() <span class="kw">as</span> <span class="ident">u64</span>)
+        <span class="ident">file</span>.<span class="ident">length</span>()
     }
 
     <span class="kw">fn</span> <span class="ident">exists</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
@@ -592,12 +620,11 @@
 
     <span class="kw">fn</span> <span class="ident">delete</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_ref</span>();
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">id</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">file_ids</span>.<span class="ident">remove_file_id_for_path</span>(<span class="ident">path</span>) {
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">open_files</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">open_files</span>.<span class="ident">lock</span>();
-            <span class="prelude-val">Ok</span>(<span class="ident">open_files</span>.<span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="ident">id</span>).<span class="ident">is_some</span>())
-        } <span class="kw">else</span> {
-            <span class="prelude-val">Ok</span>(<span class="bool-val">false</span>)
+        {
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">open_buffers</span> <span class="op">=</span> <span class="ident">OPEN_BUFFERS</span>.<span class="ident">lock</span>();
+            <span class="ident">open_buffers</span>.<span class="ident">remove</span>(<span class="ident">path</span>);
         }
+        <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="ident">forget_file</span>(<span class="ident">path</span>))
     }
 
     <span class="kw">fn</span> <span class="ident">delete_directory</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
@@ -613,7 +640,7 @@
 
     <span class="kw">fn</span> <span class="ident">close_handles</span><span class="op">&lt;</span><span class="ident">F</span>: <span class="ident">FnOnce</span>(<span class="ident">u64</span>)<span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>, <span class="ident">publish_callback</span>: <span class="ident">F</span>) {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_ref</span>();
-        <span class="ident">drop</span>(<span class="self">self</span>.<span class="ident">delete</span>(<span class="ident">path</span>));
+        <span class="self">self</span>.<span class="ident">forget_file</span>(<span class="ident">path</span>);
         <span class="kw">let</span> <span class="ident">new_id</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">file_ids</span>.<span class="ident">file_id_for_path</span>(<span class="ident">path</span>, <span class="bool-val">true</span>).<span class="ident">unwrap</span>();
         <span class="ident">publish_callback</span>(<span class="ident">new_id</span>);
     }
@@ -639,12 +666,14 @@
 
 <span class="doccomment">/// An open [`MemoryFile`] that is owned by a [`MemoryFileManager`].</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">OpenMemoryFile</span>(<span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span><span class="op">&gt;</span>);
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">OpenMemoryFile</span> {
+    <span class="ident">file</span>: <span class="ident">MemoryFile</span>,
+    <span class="ident">manager</span>: <span class="ident">MemoryFileManager</span>,
+}
 
 <span class="kw">impl</span> <span class="ident">OpenableFile</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">OpenMemoryFile</span> {
     <span class="kw">fn</span> <span class="ident">id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">f</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">lock</span>();
-        <span class="ident">f</span>.<span class="ident">id</span>()
+        <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">id</span>
     }
 
     <span class="kw">fn</span> <span class="ident">replace_with</span><span class="op">&lt;</span><span class="ident">C</span>: <span class="ident">FnOnce</span>(<span class="ident">u64</span>)<span class="op">&gt;</span>(
@@ -654,21 +683,19 @@
         <span class="ident">publish_callback</span>: <span class="ident">C</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">weak_buffer</span> <span class="op">=</span> <span class="ident">Arc::downgrade</span>(<span class="kw-2">&amp;</span><span class="ident">replacement</span>.<span class="ident">buffer</span>);
-        <span class="kw">let</span> <span class="ident">my_path</span> <span class="op">=</span> {
+        <span class="ident">drop</span>(<span class="self">self</span>.<span class="ident">manager</span>.<span class="ident">delete</span>(<span class="ident">replacement</span>.<span class="ident">path</span>()));
+        {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">open_buffers</span> <span class="op">=</span> <span class="ident">OPEN_BUFFERS</span>.<span class="ident">lock</span>();
-            <span class="ident">open_buffers</span>.<span class="ident">remove</span>(<span class="ident">replacement</span>.<span class="ident">path</span>());
-            <span class="kw">let</span> <span class="ident">my_path</span> <span class="op">=</span> {
-                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">file</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">lock</span>();
-                <span class="ident">file</span>.<span class="ident">buffer</span> <span class="op">=</span> <span class="ident">replacement</span>.<span class="ident">buffer</span>;
-                <span class="ident">file</span>.<span class="ident">path</span>.<span class="ident">clone</span>()
-            };
-            <span class="ident">open_buffers</span>.<span class="ident">insert</span>(<span class="ident">my_path</span>.<span class="ident">clone</span>(), <span class="ident">weak_buffer</span>);
-            <span class="ident">my_path</span>
-        };
+            <span class="ident">open_buffers</span>.<span class="ident">insert</span>(<span class="self">self</span>.<span class="ident">file</span>.<span class="ident">path</span>.<span class="ident">clone</span>(), <span class="ident">weak_buffer</span>);
+        }
 
-        <span class="ident">manager</span>.<span class="ident">close_handles</span>(<span class="kw-2">&amp;</span><span class="ident">my_path</span>, <span class="ident">publish_callback</span>);
+        <span class="ident">manager</span>.<span class="ident">close_handles</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">file</span>.<span class="ident">path</span>, <span class="ident">publish_callback</span>);
 
-        <span class="ident">manager</span>.<span class="ident">append</span>(<span class="kw-2">&amp;</span><span class="ident">my_path</span>)
+        <span class="kw">let</span> <span class="ident">new_file</span> <span class="op">=</span> <span class="ident">manager</span>.<span class="ident">append</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">file</span>.<span class="ident">path</span>)<span class="question-mark">?</span>;
+        {
+            <span class="macro">assert!</span>(<span class="ident">Arc::ptr_eq</span>(<span class="kw-2">&amp;</span><span class="ident">new_file</span>.<span class="ident">file</span>.<span class="ident">buffer</span>, <span class="kw-2">&amp;</span><span class="ident">replacement</span>.<span class="ident">buffer</span>));
+        }
+        <span class="prelude-val">Ok</span>(<span class="ident">new_file</span>)
     }
 
     <span class="kw">fn</span> <span class="ident">close</span>(<span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
@@ -679,8 +706,7 @@
 
 <span class="kw">impl</span> <span class="ident">OperableFile</span><span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">OpenMemoryFile</span> {
     <span class="kw">fn</span> <span class="ident">execute</span><span class="op">&lt;</span><span class="ident">Output</span>, <span class="ident">Op</span>: <span class="ident">FileOp</span><span class="op">&lt;</span><span class="ident">Output</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">operator</span>: <span class="ident">Op</span>) -&gt; <span class="ident">Output</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">file</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">lock</span>();
-        <span class="ident">operator</span>.<span class="ident">execute</span>(<span class="kw-2">&amp;mut</span> <span class="kw-2">*</span><span class="ident">file</span>)
+        <span class="ident">operator</span>.<span class="ident">execute</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="ident">file</span>)
     }
 }
 </code></pre></div>

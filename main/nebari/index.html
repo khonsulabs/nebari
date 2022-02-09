@@ -10,13 +10,12 @@ this crate.</p>
 <p>Inserting a key-value pair in an on-disk tree with full revision history:</p>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use</span> <span class="ident">nebari</span>::{
-    <span class="ident">io::fs::StdFile</span>,
     <span class="ident">tree</span>::{<span class="ident">Root</span>, <span class="ident">Versioned</span>},
     <span class="ident">Config</span>,
 };
 
 <span class="kw">let</span> <span class="ident">database_folder</span> <span class="op">=</span> <span class="ident">tempfile::tempdir</span>().<span class="ident">unwrap</span>();
-<span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::default_for</span>(<span class="ident">database_folder</span>.<span class="ident">path</span>())
+<span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config::default_for</span>(<span class="ident">database_folder</span>.<span class="ident">path</span>())
     .<span class="ident">open</span>()
     .<span class="ident">unwrap</span>();
 <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;a-tree&quot;</span>)).<span class="ident">unwrap</span>();

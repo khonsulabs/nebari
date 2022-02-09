@@ -1399,6 +1399,48 @@
 <span id="1398">1398</span>
 <span id="1399">1399</span>
 <span id="1400">1400</span>
+<span id="1401">1401</span>
+<span id="1402">1402</span>
+<span id="1403">1403</span>
+<span id="1404">1404</span>
+<span id="1405">1405</span>
+<span id="1406">1406</span>
+<span id="1407">1407</span>
+<span id="1408">1408</span>
+<span id="1409">1409</span>
+<span id="1410">1410</span>
+<span id="1411">1411</span>
+<span id="1412">1412</span>
+<span id="1413">1413</span>
+<span id="1414">1414</span>
+<span id="1415">1415</span>
+<span id="1416">1416</span>
+<span id="1417">1417</span>
+<span id="1418">1418</span>
+<span id="1419">1419</span>
+<span id="1420">1420</span>
+<span id="1421">1421</span>
+<span id="1422">1422</span>
+<span id="1423">1423</span>
+<span id="1424">1424</span>
+<span id="1425">1425</span>
+<span id="1426">1426</span>
+<span id="1427">1427</span>
+<span id="1428">1428</span>
+<span id="1429">1429</span>
+<span id="1430">1430</span>
+<span id="1431">1431</span>
+<span id="1432">1432</span>
+<span id="1433">1433</span>
+<span id="1434">1434</span>
+<span id="1435">1435</span>
+<span id="1436">1436</span>
+<span id="1437">1437</span>
+<span id="1438">1438</span>
+<span id="1439">1439</span>
+<span id="1440">1440</span>
+<span id="1441">1441</span>
+<span id="1442">1442</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">any::Any</span>,
     <span class="ident">borrow</span>::{<span class="ident">Borrow</span>, <span class="ident">Cow</span>},
@@ -1406,7 +1448,6 @@
     <span class="ident">convert::Infallible</span>,
     <span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Display</span>},
     <span class="ident">fs</span>,
-    <span class="ident">marker::PhantomData</span>,
     <span class="ident">ops::RangeBounds</span>,
     <span class="ident">path</span>::{<span class="ident">Path</span>, <span class="ident">PathBuf</span>},
     <span class="ident">sync</span>::{
@@ -1422,7 +1463,7 @@
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">context::Context</span>,
     <span class="ident">error::Error</span>,
-    <span class="ident">io</span>::{<span class="ident">FileManager</span>, <span class="ident">ManagedFile</span>},
+    <span class="ident">io</span>::{<span class="ident">fs::StdFileManager</span>, <span class="ident">FileManager</span>, <span class="ident">ManagedFile</span>},
     <span class="ident">transaction</span>::{<span class="ident">LogEntry</span>, <span class="ident">TransactionHandle</span>, <span class="ident">TransactionManager</span>},
     <span class="ident">tree</span>::{
         <span class="self">self</span>, <span class="ident">root::AnyTreeRoot</span>, <span class="ident">state::AnyTreeState</span>, <span class="ident">EmbeddedIndex</span>, <span class="ident">KeyEvaluation</span>, <span class="ident">KeySequence</span>,
@@ -1918,16 +1959,15 @@
 <span class="doccomment">/// A database configuration used to open a database.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="attribute">#[<span class="ident">must_use</span>]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Config</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> {
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Config</span><span class="op">&lt;</span><span class="ident">M</span>: <span class="ident">FileManager</span> <span class="op">=</span> <span class="ident">StdFileManager</span><span class="op">&gt;</span> {
     <span class="ident">path</span>: <span class="ident">PathBuf</span>,
     <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">cache</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">ChunkCache</span><span class="op">&gt;</span>,
-    <span class="ident">file_manager</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">File::Manager</span><span class="op">&gt;</span>,
-    <span class="ident">thread_pool</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">ThreadPool</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    <span class="ident">_file</span>: <span class="ident">PhantomData</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span>,
+    <span class="ident">file_manager</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">M</span><span class="op">&gt;</span>,
+    <span class="ident">thread_pool</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">ThreadPool</span><span class="op">&lt;</span><span class="ident">M::File</span><span class="op">&gt;</span><span class="op">&gt;</span>,
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">Clone</span> <span class="kw">for</span> <span class="ident">Config</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> {
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">M</span>: <span class="ident">FileManager</span><span class="op">&gt;</span> <span class="ident">Clone</span> <span class="kw">for</span> <span class="ident">Config</span><span class="op">&lt;</span><span class="ident">M</span><span class="op">&gt;</span> {
     <span class="kw">fn</span> <span class="ident">clone</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">path</span>: <span class="self">self</span>.<span class="ident">path</span>.<span class="ident">clone</span>(),
@@ -1935,12 +1975,11 @@
             <span class="ident">cache</span>: <span class="self">self</span>.<span class="ident">cache</span>.<span class="ident">clone</span>(),
             <span class="ident">file_manager</span>: <span class="self">self</span>.<span class="ident">file_manager</span>.<span class="ident">clone</span>(),
             <span class="ident">thread_pool</span>: <span class="self">self</span>.<span class="ident">thread_pool</span>.<span class="ident">clone</span>(),
-            <span class="ident">_file</span>: <span class="ident">PhantomData</span>,
         }
     }
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">Config</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> {
+<span class="kw">impl</span> <span class="ident">Config</span><span class="op">&lt;</span><span class="ident">StdFileManager</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Creates a new config to open a database located at `path`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span><span class="op">&lt;</span><span class="ident">P</span>: <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="ident">path</span>: <span class="ident">P</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
@@ -1949,9 +1988,9 @@
             <span class="ident">cache</span>: <span class="prelude-val">None</span>,
             <span class="ident">thread_pool</span>: <span class="prelude-val">None</span>,
             <span class="ident">file_manager</span>: <span class="prelude-val">None</span>,
-            <span class="ident">_file</span>: <span class="ident">PhantomData</span>,
         }
     }
+
     <span class="doccomment">/// Returns a default configuration to open a database located at `path`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">default_for</span><span class="op">&lt;</span><span class="ident">P</span>: <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="ident">path</span>: <span class="ident">P</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
@@ -1960,10 +1999,27 @@
             <span class="ident">cache</span>: <span class="prelude-val">Some</span>(<span class="ident">ChunkCache::new</span>(<span class="number">2000</span>, <span class="number">65536</span>)),
             <span class="ident">thread_pool</span>: <span class="prelude-val">Some</span>(<span class="ident">ThreadPool::default</span>()),
             <span class="ident">file_manager</span>: <span class="prelude-val">None</span>,
-            <span class="ident">_file</span>: <span class="ident">PhantomData</span>,
         }
     }
 
+    <span class="doccomment">/// Sets the file manager.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// ## Panics</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// Panics if called after a shared thread pool has been set.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">file_manager</span><span class="op">&lt;</span><span class="ident">M</span>: <span class="ident">FileManager</span><span class="op">&gt;</span>(<span class="self">self</span>, <span class="ident">file_manager</span>: <span class="ident">M</span>) -&gt; <span class="ident">Config</span><span class="op">&lt;</span><span class="ident">M</span><span class="op">&gt;</span> {
+        <span class="macro">assert!</span>(<span class="self">self</span>.<span class="ident">thread_pool</span>.<span class="ident">is_none</span>());
+        <span class="ident">Config</span> {
+            <span class="ident">path</span>: <span class="self">self</span>.<span class="ident">path</span>,
+            <span class="ident">vault</span>: <span class="self">self</span>.<span class="ident">vault</span>,
+            <span class="ident">cache</span>: <span class="self">self</span>.<span class="ident">cache</span>,
+            <span class="ident">file_manager</span>: <span class="prelude-val">Some</span>(<span class="ident">file_manager</span>),
+            <span class="ident">thread_pool</span>: <span class="prelude-val">None</span>,
+        }
+    }
+}
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">M</span>: <span class="ident">FileManager</span><span class="op">&gt;</span> <span class="ident">Config</span><span class="op">&lt;</span><span class="ident">M</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Sets the vault to use for this database.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">vault</span><span class="op">&lt;</span><span class="ident">V</span>: <span class="ident">AnyVault</span><span class="op">&gt;</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">vault</span>: <span class="ident">V</span>) -&gt; <span class="self">Self</span> {
         <span class="self">self</span>.<span class="ident">vault</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">Arc::new</span>(<span class="ident">vault</span>));
@@ -1976,22 +2032,16 @@
         <span class="self">self</span>
     }
 
-    <span class="doccomment">/// Sets the file manager.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">file_manager</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">file_manager</span>: <span class="ident">File::Manager</span>) -&gt; <span class="self">Self</span> {
-        <span class="self">self</span>.<span class="ident">file_manager</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">file_manager</span>);
-        <span class="self">self</span>
-    }
-
     <span class="doccomment">/// Uses the `thread_pool` provided instead of creating its own. This will</span>
     <span class="doccomment">/// allow a single thread pool to manage multiple [`Roots`] instances&#39;</span>
     <span class="doccomment">/// transactions.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">shared_thread_pool</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">thread_pool</span>: <span class="kw-2">&amp;</span><span class="ident">ThreadPool</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">shared_thread_pool</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">thread_pool</span>: <span class="kw-2">&amp;</span><span class="ident">ThreadPool</span><span class="op">&lt;</span><span class="ident">M::File</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {
         <span class="self">self</span>.<span class="ident">thread_pool</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">thread_pool</span>.<span class="ident">clone</span>());
         <span class="self">self</span>
     }
 
     <span class="doccomment">/// Opens the database, or creates one if the target path doesn&#39;t exist.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">open</span>(<span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Roots</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">open</span>(<span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Roots</span><span class="op">&lt;</span><span class="ident">M::File</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">Roots::open</span>(
             <span class="self">self</span>.<span class="ident">path</span>,
             <span class="ident">Context</span> {
@@ -2534,14 +2584,17 @@
 
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="kw">crate</span>::{
-        <span class="ident">io</span>::{<span class="ident">fs::StdFile</span>, <span class="ident">memory::MemoryFile</span>, <span class="ident">ManagedFile</span>},
+        <span class="ident">io</span>::{<span class="ident">any::AnyFileManager</span>, <span class="ident">fs::StdFileManager</span>, <span class="ident">memory::MemoryFileManager</span>},
         <span class="ident">test_util::RotatorVault</span>,
         <span class="ident">tree</span>::{<span class="ident">Root</span>, <span class="ident">Unversioned</span>, <span class="ident">Versioned</span>},
     };
 
-    <span class="kw">fn</span> <span class="ident">basic_get_set</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>() {
+    <span class="kw">fn</span> <span class="ident">basic_get_set</span><span class="op">&lt;</span><span class="ident">M</span>: <span class="ident">FileManager</span><span class="op">&gt;</span>(<span class="ident">file_manager</span>: <span class="ident">M</span>) {
         <span class="kw">let</span> <span class="ident">tempdir</span> <span class="op">=</span> <span class="ident">tempdir</span>().<span class="ident">unwrap</span>();
-        <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>()).<span class="ident">open</span>().<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>())
+            .<span class="ident">file_manager</span>(<span class="ident">file_manager</span>)
+            .<span class="ident">open</span>()
+            .<span class="ident">unwrap</span>();
 
         <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
         <span class="ident">tree</span>.<span class="ident">set</span>(<span class="string">b&quot;test&quot;</span>, <span class="string">b&quot;value&quot;</span>).<span class="ident">unwrap</span>();
@@ -2552,19 +2605,21 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">memory_basic_get_set</span>() {
-        <span class="ident">basic_get_set</span>::<span class="op">&lt;</span><span class="ident">MemoryFile</span><span class="op">&gt;</span>();
+        <span class="ident">basic_get_set</span>(<span class="ident">MemoryFileManager::default</span>());
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">std_basic_get_set</span>() {
-        <span class="ident">basic_get_set</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span>();
+        <span class="ident">basic_get_set</span>(<span class="ident">StdFileManager::default</span>());
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">basic_transaction_isolation_test</span>() {
         <span class="kw">let</span> <span class="ident">tempdir</span> <span class="op">=</span> <span class="ident">tempdir</span>().<span class="ident">unwrap</span>();
 
-        <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>()).<span class="ident">open</span>().<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFileManager</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>())
+            .<span class="ident">open</span>()
+            .<span class="ident">unwrap</span>();
         <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
         <span class="ident">tree</span>.<span class="ident">set</span>(<span class="string">b&quot;test&quot;</span>, <span class="string">b&quot;value&quot;</span>).<span class="ident">unwrap</span>();
 
@@ -2603,7 +2658,9 @@
     <span class="kw">fn</span> <span class="ident">basic_transaction_rollback_test</span>() {
         <span class="kw">let</span> <span class="ident">tempdir</span> <span class="op">=</span> <span class="ident">tempdir</span>().<span class="ident">unwrap</span>();
 
-        <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>()).<span class="ident">open</span>().<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFileManager</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>())
+            .<span class="ident">open</span>()
+            .<span class="ident">unwrap</span>();
         <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
         <span class="ident">tree</span>.<span class="ident">set</span>(<span class="string">b&quot;test&quot;</span>, <span class="string">b&quot;value&quot;</span>).<span class="ident">unwrap</span>();
 
@@ -2637,21 +2694,46 @@
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
-    <span class="kw">fn</span> <span class="ident">compact_test_versioned</span>() {
-        <span class="ident">compact_test</span>::<span class="op">&lt;</span><span class="ident">Versioned</span><span class="op">&gt;</span>();
+    <span class="kw">fn</span> <span class="ident">std_compact_test_versioned</span>() {
+        <span class="ident">compact_test</span>::<span class="op">&lt;</span><span class="ident">Versioned</span>, <span class="kw">_</span><span class="op">&gt;</span>(<span class="ident">StdFileManager::default</span>());
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
-    <span class="kw">fn</span> <span class="ident">compact_test_unversioned</span>() {
-        <span class="ident">compact_test</span>::<span class="op">&lt;</span><span class="ident">Unversioned</span><span class="op">&gt;</span>();
+    <span class="kw">fn</span> <span class="ident">std_compact_test_unversioned</span>() {
+        <span class="ident">compact_test</span>::<span class="op">&lt;</span><span class="ident">Unversioned</span>, <span class="kw">_</span><span class="op">&gt;</span>(<span class="ident">StdFileManager::default</span>());
     }
 
-    <span class="kw">fn</span> <span class="ident">compact_test</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">Root</span><span class="op">&gt;</span>() {
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">memory_compact_test_versioned</span>() {
+        <span class="ident">compact_test</span>::<span class="op">&lt;</span><span class="ident">Versioned</span>, <span class="kw">_</span><span class="op">&gt;</span>(<span class="ident">MemoryFileManager::default</span>());
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">memory_compact_test_unversioned</span>() {
+        <span class="ident">compact_test</span>::<span class="op">&lt;</span><span class="ident">Unversioned</span>, <span class="kw">_</span><span class="op">&gt;</span>(<span class="ident">MemoryFileManager::default</span>());
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">any_compact_test_versioned</span>() {
+        <span class="ident">compact_test</span>::<span class="op">&lt;</span><span class="ident">Versioned</span>, <span class="kw">_</span><span class="op">&gt;</span>(<span class="ident">AnyFileManager::std</span>());
+        <span class="ident">compact_test</span>::<span class="op">&lt;</span><span class="ident">Versioned</span>, <span class="kw">_</span><span class="op">&gt;</span>(<span class="ident">AnyFileManager::memory</span>());
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">any_compact_test_unversioned</span>() {
+        <span class="ident">compact_test</span>::<span class="op">&lt;</span><span class="ident">Unversioned</span>, <span class="kw">_</span><span class="op">&gt;</span>(<span class="ident">AnyFileManager::std</span>());
+        <span class="ident">compact_test</span>::<span class="op">&lt;</span><span class="ident">Unversioned</span>, <span class="kw">_</span><span class="op">&gt;</span>(<span class="ident">AnyFileManager::memory</span>());
+    }
+
+    <span class="kw">fn</span> <span class="ident">compact_test</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">Root</span>, <span class="ident">M</span>: <span class="ident">FileManager</span><span class="op">&gt;</span>(<span class="ident">file_manager</span>: <span class="ident">M</span>) {
         <span class="kw">const</span> <span class="ident">OPERATION_COUNT</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">256</span>;
         <span class="kw">const</span> <span class="ident">WORKER_COUNT</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">4</span>;
         <span class="kw">let</span> <span class="ident">tempdir</span> <span class="op">=</span> <span class="ident">tempdir</span>().<span class="ident">unwrap</span>();
 
-        <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>()).<span class="ident">open</span>().<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config::new</span>(<span class="macro">dbg!</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>()))
+            .<span class="ident">file_manager</span>(<span class="ident">file_manager</span>)
+            .<span class="ident">open</span>()
+            .<span class="ident">unwrap</span>();
         <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">R::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
         <span class="ident">tree</span>.<span class="ident">set</span>(<span class="string">&quot;foo&quot;</span>, <span class="string">b&quot;bar&quot;</span>).<span class="ident">unwrap</span>();
 
@@ -2707,7 +2789,7 @@
 
         <span class="comment">// Encrypt a tree using default encryption via the context</span>
         {
-            <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>())
+            <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFileManager</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>())
                 .<span class="ident">vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">13</span>))
                 .<span class="ident">open</span>()
                 .<span class="ident">unwrap</span>();
@@ -2720,7 +2802,7 @@
         }
         <span class="comment">// Try to access the tree with the vault again.</span>
         {
-            <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>())
+            <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFileManager</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>())
                 .<span class="ident">vault</span>(<span class="ident">RotatorVault::new</span>(<span class="number">13</span>))
                 .<span class="ident">open</span>()
                 .<span class="ident">unwrap</span>();
@@ -2740,7 +2822,9 @@
             <span class="macro">assert_eq!</span>(<span class="ident">value</span>.<span class="ident">as_deref</span>(), <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="string">b&quot;other&quot;</span>[..]));
         }
         {
-            <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>()).<span class="ident">open</span>().<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFileManager</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>())
+                .<span class="ident">open</span>()
+                .<span class="ident">unwrap</span>();
             <span class="comment">// Try to access roots without the vault.</span>
             <span class="kw">let</span> <span class="ident">bad_tree</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">tree</span>(<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)).<span class="ident">unwrap</span>();
             <span class="macro">assert!</span>(<span class="ident">bad_tree</span>.<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>).<span class="ident">is_err</span>());
@@ -2757,7 +2841,7 @@
     <span class="kw">fn</span> <span class="ident">too_large_transaction</span>() {
         <span class="kw">let</span> <span class="ident">tempdir</span> <span class="op">=</span> <span class="ident">tempdir</span>().<span class="ident">unwrap</span>();
 
-        <span class="kw">let</span> <span class="ident">config</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFile</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>());
+        <span class="kw">let</span> <span class="ident">config</span> <span class="op">=</span> <span class="ident">Config</span>::<span class="op">&lt;</span><span class="ident">StdFileManager</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">tempdir</span>.<span class="ident">path</span>());
         {
             <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">config</span>.<span class="ident">clone</span>().<span class="ident">open</span>().<span class="ident">unwrap</span>();
 

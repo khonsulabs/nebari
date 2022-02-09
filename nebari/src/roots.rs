@@ -1287,7 +1287,7 @@ mod tests {
         const WORKER_COUNT: usize = 4;
         let tempdir = tempdir().unwrap();
 
-        let roots = Config::new(dbg!(tempdir.path()))
+        let roots = Config::new(tempdir.path())
             .file_manager(file_manager)
             .open()
             .unwrap();

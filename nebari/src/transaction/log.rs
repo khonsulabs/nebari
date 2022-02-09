@@ -693,6 +693,20 @@ mod tests {
             let mut tx = transactions.new_transaction([&b"hello"[..]]);
 
             tx.transaction.data = Some(ArcBytes::from(id.to_be_bytes()));
+            // We want to have varying sizes to try to test the scan algorithm thoroughly.
+            #[allow(clippy::cast_possible_truncation)]
+            if id % 2 == 0 {
+                // Larger than PAGE_SIZE
+                if id % 3 == 0 {
+                    tx.set_data(vec![42; PAGE_SIZE * (id as usize % 10).min(3)])
+                        .unwrap();
+                } else {
+                    tx.set_data(vec![42; PAGE_SIZE * (id as usize % 10).min(2)])
+                        .unwrap();
+                }
+            } else {
+                tx.set_data(vec![41; id as usize]).unwrap();
+            }
 
             transactions.push(vec![tx.transaction]).unwrap();
             transactions.close().unwrap();

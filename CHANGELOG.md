@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.3.1
+
+### Changed
+
+- `BorrowedRange` now exposes its fields as public. Without this, there was no
+  way to implement `BorrowByteRange` outside of this crate.
+- This crate now explicitly states its minimum supported Rust version (MSRV).
+  The MSRV did not change as part of this update. It previously was not
+  documented.
+
 ## v0.3.0
 
 ### Breaking Changes
@@ -21,8 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an extra allocation.
 - `TreeFile::push()` has been renamed `TreeFile::set()` and now accepts any type
   that can convert to `ArcBytes<'static>.
-
-### Changed
 
 ### Added
 

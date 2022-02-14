@@ -1516,8 +1516,10 @@ impl RangeBounds<u64> for U64Range {
 /// A borrowed range in byte form.
 #[derive(Debug, Clone)]
 pub struct BorrowedRange<'a> {
-    start: Bound<&'a [u8]>,
-    end: Bound<&'a [u8]>,
+    /// The start bound for this range.
+    pub start: Bound<&'a [u8]>,
+    /// The end bound for this range.
+    pub end: Bound<&'a [u8]>,
 }
 
 /// Borrows a range.

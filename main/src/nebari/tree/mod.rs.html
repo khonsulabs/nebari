@@ -2365,6 +2365,8 @@
 <span id="2364">2364</span>
 <span id="2365">2365</span>
 <span id="2366">2366</span>
+<span id="2367">2367</span>
+<span id="2368">2368</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Append-only B-Tree implementation</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! The file format is loosely inspired by</span>
@@ -3883,8 +3885,10 @@
 <span class="doccomment">/// A borrowed range in byte form.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Clone</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">BorrowedRange</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
-    <span class="ident">start</span>: <span class="ident">Bound</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> [<span class="ident">u8</span>]<span class="op">&gt;</span>,
-    <span class="ident">end</span>: <span class="ident">Bound</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> [<span class="ident">u8</span>]<span class="op">&gt;</span>,
+    <span class="doccomment">/// The start bound for this range.</span>
+    <span class="kw">pub</span> <span class="ident">start</span>: <span class="ident">Bound</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> [<span class="ident">u8</span>]<span class="op">&gt;</span>,
+    <span class="doccomment">/// The end bound for this range.</span>
+    <span class="kw">pub</span> <span class="ident">end</span>: <span class="ident">Bound</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> [<span class="ident">u8</span>]<span class="op">&gt;</span>,
 }
 
 <span class="doccomment">/// Borrows a range.</span>

@@ -10,31 +10,42 @@
 //! - All values are tightly packed. There is no padding or alignment that isn't
 //!   explicitly included.
 //!
-//! ## File pages
+//! ## File Organization
 //!
-//! The file is written in pages that are 4,096 bytes long. Each page has single
-//! `u8` representing the `PageHeader`. If data needs to span more than one
-//! page, every [`PAGE_SIZE`] byte boundary must contain a `PageHeader::Continuation`.
+//! There is no way to read this file format starting at byte 0 and iterating
+//! forward. The contents of any given byte offset are unknown until the file's
+//! current root header has been found.
 //!
-//! ### File Headers
+//! When writing data to the file, it will be appended to the end of the file.
+//! When a tree is committed, all of the changed nodes will be appended to the
+//! end of the file, except for the Root.
 //!
-//! If the header is a `PageHeader::Header`, the contents of the block will be a
-//! single chunk that contains a serialized `BTreeRoot`.
+//! Before writing the Root, the file is padded to a multiple of
+//! [`PAGE_SIZE`]. A 3-byte magic code is written, followed by a byte for the
+//! [`PageHeader`].
+//!
+//! The Root is then serialized and written as a chunk.
+//!
+//! To locate the most recent header, take the file's length and find the
+//! largest multiple of [`PAGE_SIZE`]. Check the first three bytes at that
+//! offset for the nagic code. If found, attempt to read a chunk. If successful,
+//! attempt to deserialize the Root.
+//!
+//! If any step fails, loop back through the file at each [`PAGE_SIZE`] offset
+//! until a valid header is found.
 //!
 //! ## Chunks
 //!
 //! Each time a value, B-Tree node, or header is written, it is written as a
-//! chunk. If a [`Vault`](crate::Vault) is in-use, each chunk will be pre-processed by the
-//! vault before a `CRC-32-BZIP2` checksum is calculated. A chunk is limited to
-//! 4 gigabytes of data (2^32).
+//! chunk. If a [`Vault`](crate::Vault) is in-use, each chunk will be
+//! pre-processed by the vault before a `CRC-32-BZIP2` checksum is calculated. A
+//! chunk is limited to 4 gigabytes of data (2^32).
 //!
 //! The chunk is written as:
 //!
 //! - `u32` - Data length, excluding the header.
 //! - `u32` - CRC
 //! - `[u8]` - Contents
-//!
-//! A data block may contain more than one chunk.
 
 use std::{
     borrow::Cow,

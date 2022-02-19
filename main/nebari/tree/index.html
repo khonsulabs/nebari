@@ -1,5 +1,5 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Append-only B-Tree implementation"><meta name="keywords" content="rust, rustlang, rust-lang, tree"><title>nebari::tree - Rust</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><script defer src="../../main.js"></script>
-    <noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../nebari/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a><h2 class="location">Module tree</h2><div class="sidebar-elems"><div class="block items"><ul><li><a href="#structs">Structs</a></li><li><a href="#enums">Enums</a></li><li><a href="#constants">Constants</a></li><li><a href="#traits">Traits</a></li><li><a href="#types">Type Definitions</a></li></ul></div><div id="sidebar-vars" data-name="tree" data-ty="mod" data-relpath="./"></div><script defer src="./sidebar-items.js"></script></div></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><h1 class="fqn"><span class="in-band">Module <a href="../index.html">nebari</a>::<wbr><a class="mod" href="#">tree</a><button id="copy-path" onclick="copy_path(this)" title="Copy item path to clipboard"><img src="../../clipboard.svg" width="19" height="18" alt="Copy item path"></button></span><span class="out-of-band"><span id="render-detail"><a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">[<span class="inner">&#x2212;</span>]</a></span><a class="srclink" href="../../src/nebari/tree/mod.rs.html#1-2368" title="goto source code">[src]</a></span></h1><details class="rustdoc-toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Append-only B-Tree implementation</p>
+    <noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../nebari/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a><h2 class="location">Module tree</h2><div class="sidebar-elems"><div class="block items"><ul><li><a href="#structs">Structs</a></li><li><a href="#enums">Enums</a></li><li><a href="#constants">Constants</a></li><li><a href="#traits">Traits</a></li><li><a href="#types">Type Definitions</a></li></ul></div><div id="sidebar-vars" data-name="tree" data-ty="mod" data-relpath="./"></div><script defer src="./sidebar-items.js"></script></div></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><h1 class="fqn"><span class="in-band">Module <a href="../index.html">nebari</a>::<wbr><a class="mod" href="#">tree</a><button id="copy-path" onclick="copy_path(this)" title="Copy item path to clipboard"><img src="../../clipboard.svg" width="19" height="18" alt="Copy item path"></button></span><span class="out-of-band"><span id="render-detail"><a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">[<span class="inner">&#x2212;</span>]</a></span><a class="srclink" href="../../src/nebari/tree/mod.rs.html#1-2379" title="goto source code">[src]</a></span></h1><details class="rustdoc-toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Append-only B-Tree implementation</p>
 <p>The file format is loosely inspired by
 <a href="https://github.com/couchbase/couchstore">Couchstore</a>. Nebari is not
 compatible with Couchstore in any way.</p>
@@ -9,25 +9,34 @@ compatible with Couchstore in any way.</p>
 <li>All values are tightly packed. There is no padding or alignment that isn’t
 explicitly included.</li>
 </ul>
-<h3 id="file-pages" class="section-header"><a href="#file-pages">File pages</a></h3>
-<p>The file is written in pages that are 4,096 bytes long. Each page has single
-<code>u8</code> representing the <code>PageHeader</code>. If data needs to span more than one
-page, every <a href="constant.PAGE_SIZE.html" title="PAGE_SIZE"><code>PAGE_SIZE</code></a> byte boundary must contain a <code>PageHeader::Continuation</code>.</p>
-<h4 id="file-headers" class="section-header"><a href="#file-headers">File Headers</a></h4>
-<p>If the header is a <code>PageHeader::Header</code>, the contents of the block will be a
-single chunk that contains a serialized <code>BTreeRoot</code>.</p>
+<h3 id="file-organization" class="section-header"><a href="#file-organization">File Organization</a></h3>
+<p>There is no way to read this file format starting at byte 0 and iterating
+forward. The contents of any given byte offset are unknown until the file’s
+current root header has been found.</p>
+<p>When writing data to the file, it will be appended to the end of the file.
+When a tree is committed, all of the changed nodes will be appended to the
+end of the file, except for the Root.</p>
+<p>Before writing the Root, the file is padded to a multiple of
+<a href="constant.PAGE_SIZE.html" title="PAGE_SIZE"><code>PAGE_SIZE</code></a>. A 3-byte magic code is written, followed by a byte for the
+<a href="enum.PageHeader.html" title="PageHeader"><code>PageHeader</code></a>.</p>
+<p>The Root is then serialized and written as a chunk.</p>
+<p>To locate the most recent header, take the file’s length and find the
+largest multiple of <a href="constant.PAGE_SIZE.html" title="PAGE_SIZE"><code>PAGE_SIZE</code></a>. Check the first three bytes at that
+offset for the nagic code. If found, attempt to read a chunk. If successful,
+attempt to deserialize the Root.</p>
+<p>If any step fails, loop back through the file at each <a href="constant.PAGE_SIZE.html" title="PAGE_SIZE"><code>PAGE_SIZE</code></a> offset
+until a valid header is found.</p>
 <h3 id="chunks" class="section-header"><a href="#chunks">Chunks</a></h3>
 <p>Each time a value, B-Tree node, or header is written, it is written as a
-chunk. If a <a href="../trait.Vault.html"><code>Vault</code></a> is in-use, each chunk will be pre-processed by the
-vault before a <code>CRC-32-BZIP2</code> checksum is calculated. A chunk is limited to
-4 gigabytes of data (2^32).</p>
+chunk. If a <a href="../trait.Vault.html"><code>Vault</code></a> is in-use, each chunk will be
+pre-processed by the vault before a <code>CRC-32-BZIP2</code> checksum is calculated. A
+chunk is limited to 4 gigabytes of data (2^32).</p>
 <p>The chunk is written as:</p>
 <ul>
 <li><code>u32</code> - Data length, excluding the header.</li>
 <li><code>u32</code> - CRC</li>
 <li><code>[u8]</code> - Contents</li>
 </ul>
-<p>A data block may contain more than one chunk.</p>
 </div></details><h2 id="structs" class="small-section-header"><a href="#structs">Structs</a></h2>
 <div class="item-table"><div class="item-row"><div class="item-left module-item"><a class="struct" href="struct.ActiveState.html" title="nebari::tree::ActiveState struct">ActiveState</a></div><div class="item-right docblock-short"><p>An active state for a tree file.</p>
 </div></div><div class="item-row"><div class="item-left module-item"><a class="struct" href="struct.BTreeEntry.html" title="nebari::tree::BTreeEntry struct">BTreeEntry</a></div><div class="item-right docblock-short"><p>A B-Tree entry that stores a list of key-<code>Index</code> pairs.</p>

@@ -601,12 +601,20 @@ fn guess_page(
         let local_avg_per_page = (upper_id - lower_id) as f64 / (total_pages - current_page) as f64;
         let delta_estimated_pages = (delta_from_current as f64 * local_avg_per_page).floor() as u64;
         let guess = lower_location + delta_estimated_pages.max(1) * PAGE_SIZE as u64;
-        // If our estimate is that the location is beyond or equal to the upper, we'll guess the page before it.
-        Some(if guess >= upper_location {
-            upper_location - PAGE_SIZE as u64
+        // If our estimate is that the location is beyond or equal to the upper,
+        // we'll guess the page before it.
+        if guess >= upper_location {
+            let capped_guess = upper_location - PAGE_SIZE as u64;
+            // If the page before the upper is the lower, we can't find the
+            // transaction in question.
+            if capped_guess > lower_location {
+                Some(capped_guess)
+            } else {
+                None
+            }
         } else {
-            guess
-        })
+            Some(guess)
+        }
     } else if upper_id > looking_for {
         // Go backwards from upper
         let avg_per_page = upper_id as f64 / total_pages as f64;
@@ -622,6 +630,8 @@ fn guess_page(
 #[cfg(test)]
 #[allow(clippy::semicolon_if_nothing_returned, clippy::future_not_send)]
 mod tests {
+
+    use std::collections::HashSet;
 
     use nanorand::{Pcg64, Rng};
     use tempfile::tempdir;
@@ -779,7 +789,7 @@ mod tests {
         TransactionLog::<StdFile>::initialize_state(&state, &context).unwrap();
         let mut transactions = TransactionLog::<StdFile>::open(&log_path, state, context).unwrap();
 
-        let mut valid_ids = Vec::new();
+        let mut valid_ids = HashSet::new();
         for id in 1..=10_000 {
             assert_eq!(transactions.current_transaction_id(), id);
             let tx = transactions.new_transaction([&b"hello"[..]]);
@@ -787,17 +797,17 @@ mod tests {
                 // skip a few ids.
                 continue;
             }
-            valid_ids.push(tx.id);
+            valid_ids.insert(tx.id);
 
             transactions.push(vec![tx.transaction]).unwrap();
         }
 
-        for id in valid_ids {
+        for id in 1..=10_000 {
             let transaction = transactions.get(id).unwrap();
             match transaction {
                 Some(transaction) => assert_eq!(transaction.id, id),
                 None => {
-                    unreachable!("failed to fetch transaction {}", id)
+                    assert!(!valid_ids.contains(&id));
                 }
             }
         }

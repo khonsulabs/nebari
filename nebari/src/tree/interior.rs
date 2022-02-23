@@ -221,7 +221,7 @@ impl<
             any_data_copied = true;
             scratch.clear();
             node.serialize_to(scratch, writer)?;
-            Some(writer.write_chunk(scratch, false)?)
+            Some(writer.write_chunk(scratch)?)
         } else {
             self.position.position()
         };
@@ -258,8 +258,8 @@ impl<
                     entry.dirty = false;
                     let old_writer_length = writer.len();
                     entry.serialize_to(writer, paged_writer)?;
-                    let position = paged_writer
-                        .write_chunk(&writer[old_writer_length..writer.len()], false)?;
+                    let position =
+                        paged_writer.write_chunk(&writer[old_writer_length..writer.len()])?;
                     writer.truncate(old_writer_length);
                     if let (Some(cache), Some(file_id)) = (paged_writer.cache, paged_writer.id()) {
                         cache.replace_with_decoded(file_id, position, entry);

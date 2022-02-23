@@ -246,10 +246,30 @@ fn scan_for_transaction(
                 let length = (scratch_buffer[1] as usize) << 16
                     | (scratch_buffer[2] as usize) << 8
                     | scratch_buffer[3] as usize;
-                if scratch_buffer.len() < length {
-                    scratch_buffer.resize(length, 0);
+                scratch_buffer.resize(length, 0);
+                let mut initial_page = true;
+                let mut bytes_to_read = length;
+                let mut offset = 0;
+                while bytes_to_read > 0 {
+                    let page_header_length = if initial_page {
+                        // The initial page has 4 bytes at the start, which we've already read.
+                        initial_page = false;
+                        4
+                    } else {
+                        // Subsequent pages have a 0 byte at the start of the
+                        // page, denoting that it's not a valid page header. We
+                        // need to skip that byte, so that the read call reads
+                        // the stored data, not the header byte.
+                        log.seek(SeekFrom::Current(1))?;
+                        1
+                    };
+
+                    let page_length = (PAGE_SIZE - page_header_length).min(length - offset);
+                    log.read_exact(&mut scratch_buffer[offset..offset + page_length])?;
+                    offset += page_length;
+                    bytes_to_read -= page_length;
                 }
-                log.read_exact(scratch_buffer)?;
+
                 let payload = &scratch_buffer[0..length];
                 let decrypted = match &vault {
                     Some(vault) => Cow::Owned(vault.decrypt(payload)?),
@@ -517,7 +537,7 @@ impl<'a> LogEntry<'a> {
     }
 
     pub(crate) fn serialize(&self) -> Result<Vec<u8>, Error> {
-        let mut buffer = Vec::new();
+        let mut buffer = Vec::with_capacity(8 + self.data.as_ref().map_or(0, |data| data.len()));
         // Transaction ID
         buffer.write_u64::<BigEndian>(self.id)?;
         if let Some(data) = &self.data {
@@ -694,6 +714,11 @@ mod tests {
             directory.join("_transactions")
         };
 
+        let mut rng = Pcg64::new_seed(1);
+        let data = (0..PAGE_SIZE * 10)
+            .map(|_| rng.generate())
+            .collect::<Vec<u8>>();
+
         for id in 1..=1_000 {
             let state = State::from_path(&log_path);
             TransactionLog::<Manager::File>::initialize_state(&state, &context).unwrap();
@@ -708,15 +733,17 @@ mod tests {
             if id % 2 == 0 {
                 // Larger than PAGE_SIZE
                 if id % 3 == 0 {
-                    tx.set_data(vec![42; PAGE_SIZE * (id as usize % 10).min(3)])
+                    tx.set_data(data[0..PAGE_SIZE * (id as usize % 10).max(3)].to_vec())
                         .unwrap();
                 } else {
-                    tx.set_data(vec![42; PAGE_SIZE * (id as usize % 10).min(2)])
+                    tx.set_data(data[0..PAGE_SIZE * (id as usize % 10).max(2)].to_vec())
                         .unwrap();
                 }
             } else {
-                tx.set_data(vec![41; id as usize]).unwrap();
+                tx.set_data(data[0..id as usize].to_vec()).unwrap();
             }
+
+            assert!(tx.data.as_ref().unwrap().len() > 0);
 
             transactions.push(vec![tx.transaction]).unwrap();
             transactions.close().unwrap();
@@ -746,7 +773,13 @@ mod tests {
         for id in 1..=1_000 {
             let transaction = transactions.get(id).unwrap();
             match transaction {
-                Some(transaction) => assert_eq!(transaction.id, id),
+                Some(transaction) => {
+                    assert_eq!(transaction.id, id);
+                    assert_eq!(
+                        &data[..transaction.data().unwrap().len()],
+                        transaction.data().unwrap().as_slice()
+                    );
+                }
                 None => {
                     unreachable!("failed to fetch transaction {}", id)
                 }

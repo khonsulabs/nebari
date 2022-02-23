@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed potential infinite loop when scanning for a transaction ID that does not
   exist.
+- Reading associated transaction log data now works when the data is larger than
+  the page size. Previously, the data returned included the extra bytes that the
+  transaction log inserts at page boundaries.
 
 ## v0.3.1
 

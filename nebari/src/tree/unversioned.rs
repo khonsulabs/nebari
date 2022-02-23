@@ -91,7 +91,7 @@ where
                               _changes,
                               writer: &mut PagedWriter<'_>| {
                         if let Some(value) = value {
-                            let position = writer.write_chunk(value, false)?;
+                            let position = writer.write_chunk(value)?;
                             // write_chunk errors if it can't fit within a u32
                             #[allow(clippy::cast_possible_truncation)]
                             let value_length = value.len() as u32;

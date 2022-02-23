@@ -927,7 +927,7 @@ fn save_tree<Root: root::Root>(
         cache,
         active_state.current_position,
     )?;
-    header_block.write_chunk(scratch, false)?;
+    header_block.write_chunk(scratch)?;
 
     let (file, after_header) = header_block.finish()?;
     active_state.current_position = after_header;
@@ -1360,7 +1360,7 @@ impl<'a> PagedWriter<'a> {
     /// Writes a chunk of data to the file, after possibly encrypting it.
     /// Returns the position that this chunk can be read from in the file.
     #[allow(clippy::cast_possible_truncation)]
-    fn write_chunk(&mut self, contents: &[u8], cache: bool) -> Result<u64, Error> {
+    fn write_chunk(&mut self, contents: &[u8]) -> Result<u64, Error> {
         let possibly_encrypted = self.vault.as_ref().map_or_else(
             || Ok(Cow::Borrowed(contents)),
             |vault| vault.encrypt(contents).map(Cow::Owned),
@@ -1373,14 +1373,6 @@ impl<'a> PagedWriter<'a> {
         self.write_u32::<BigEndian>(length)?;
         self.write_u32::<BigEndian>(crc)?;
         self.write(&possibly_encrypted)?;
-
-        if cache {
-            if let (Some(cache), Cow::Owned(vec), Some(file_id)) =
-                (self.cache, possibly_encrypted, self.file.id())
-            {
-                cache.insert(file_id, position, ArcBytes::from(vec));
-            }
-        }
 
         Ok(position)
     }
@@ -1469,7 +1461,7 @@ pub(crate) fn copy_chunk<Hasher: BuildHasher>(
             CacheEntry::ArcBytes(buffer) => buffer,
             CacheEntry::Decoded(_) => unreachable!(),
         };
-        let new_location = to_file.write_chunk(&chunk, false)?;
+        let new_location = to_file.write_chunk(&chunk)?;
         copied_chunks.insert(original_position, new_location);
         Ok(new_location)
     }
@@ -1664,7 +1656,7 @@ mod tests {
             paged_writer.write(&scratch[..offset])?;
         }
         scratch.fill(1);
-        let written_position = paged_writer.write_chunk(&scratch[..length], false)?;
+        let written_position = paged_writer.write_chunk(&scratch[..length])?;
         drop(paged_writer.finish());
 
         match read_chunk(written_position, true, &mut file, None, None)? {

@@ -899,6 +899,39 @@
 <span id="898">898</span>
 <span id="899">899</span>
 <span id="900">900</span>
+<span id="901">901</span>
+<span id="902">902</span>
+<span id="903">903</span>
+<span id="904">904</span>
+<span id="905">905</span>
+<span id="906">906</span>
+<span id="907">907</span>
+<span id="908">908</span>
+<span id="909">909</span>
+<span id="910">910</span>
+<span id="911">911</span>
+<span id="912">912</span>
+<span id="913">913</span>
+<span id="914">914</span>
+<span id="915">915</span>
+<span id="916">916</span>
+<span id="917">917</span>
+<span id="918">918</span>
+<span id="919">919</span>
+<span id="920">920</span>
+<span id="921">921</span>
+<span id="922">922</span>
+<span id="923">923</span>
+<span id="924">924</span>
+<span id="925">925</span>
+<span id="926">926</span>
+<span id="927">927</span>
+<span id="928">928</span>
+<span id="929">929</span>
+<span id="930">930</span>
+<span id="931">931</span>
+<span id="932">932</span>
+<span id="933">933</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">borrow::Cow</span>,
     <span class="ident">cmp::Ordering</span>,
@@ -1147,10 +1180,30 @@
                 <span class="kw">let</span> <span class="ident">length</span> <span class="op">=</span> (<span class="ident">scratch_buffer</span>[<span class="number">1</span>] <span class="kw">as</span> <span class="ident">usize</span>) <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">16</span>
                     <span class="op">|</span> (<span class="ident">scratch_buffer</span>[<span class="number">2</span>] <span class="kw">as</span> <span class="ident">usize</span>) <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">8</span>
                     <span class="op">|</span> <span class="ident">scratch_buffer</span>[<span class="number">3</span>] <span class="kw">as</span> <span class="ident">usize</span>;
-                <span class="kw">if</span> <span class="ident">scratch_buffer</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="ident">length</span> {
-                    <span class="ident">scratch_buffer</span>.<span class="ident">resize</span>(<span class="ident">length</span>, <span class="number">0</span>);
+                <span class="ident">scratch_buffer</span>.<span class="ident">resize</span>(<span class="ident">length</span>, <span class="number">0</span>);
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">initial_page</span> <span class="op">=</span> <span class="bool-val">true</span>;
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">bytes_to_read</span> <span class="op">=</span> <span class="ident">length</span>;
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">offset</span> <span class="op">=</span> <span class="number">0</span>;
+                <span class="kw">while</span> <span class="ident">bytes_to_read</span> <span class="op">&gt;</span> <span class="number">0</span> {
+                    <span class="kw">let</span> <span class="ident">page_header_length</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">initial_page</span> {
+                        <span class="comment">// The initial page has 4 bytes at the start, which we&#39;ve already read.</span>
+                        <span class="ident">initial_page</span> <span class="op">=</span> <span class="bool-val">false</span>;
+                        <span class="number">4</span>
+                    } <span class="kw">else</span> {
+                        <span class="comment">// Subsequent pages have a 0 byte at the start of the</span>
+                        <span class="comment">// page, denoting that it&#39;s not a valid page header. We</span>
+                        <span class="comment">// need to skip that byte, so that the read call reads</span>
+                        <span class="comment">// the stored data, not the header byte.</span>
+                        <span class="ident">log</span>.<span class="ident">seek</span>(<span class="ident">SeekFrom::Current</span>(<span class="number">1</span>))<span class="question-mark">?</span>;
+                        <span class="number">1</span>
+                    };
+
+                    <span class="kw">let</span> <span class="ident">page_length</span> <span class="op">=</span> (<span class="ident">PAGE_SIZE</span> <span class="op">-</span> <span class="ident">page_header_length</span>).<span class="ident">min</span>(<span class="ident">length</span> <span class="op">-</span> <span class="ident">offset</span>);
+                    <span class="ident">log</span>.<span class="ident">read_exact</span>(<span class="kw-2">&amp;mut</span> <span class="ident">scratch_buffer</span>[<span class="ident">offset</span>..<span class="ident">offset</span> <span class="op">+</span> <span class="ident">page_length</span>])<span class="question-mark">?</span>;
+                    <span class="ident">offset</span> <span class="op">+</span><span class="op">=</span> <span class="ident">page_length</span>;
+                    <span class="ident">bytes_to_read</span> <span class="op">-</span><span class="op">=</span> <span class="ident">page_length</span>;
                 }
-                <span class="ident">log</span>.<span class="ident">read_exact</span>(<span class="ident">scratch_buffer</span>)<span class="question-mark">?</span>;
+
                 <span class="kw">let</span> <span class="ident">payload</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">scratch_buffer</span>[<span class="number">0</span>..<span class="ident">length</span>];
                 <span class="kw">let</span> <span class="ident">decrypted</span> <span class="op">=</span> <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="ident">vault</span> {
                     <span class="prelude-val">Some</span>(<span class="ident">vault</span>) =&gt; <span class="ident">Cow::Owned</span>(<span class="ident">vault</span>.<span class="ident">decrypt</span>(<span class="ident">payload</span>)<span class="question-mark">?</span>),
@@ -1418,7 +1471,7 @@
     }
 
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buffer</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buffer</span> <span class="op">=</span> <span class="ident">Vec::with_capacity</span>(<span class="number">8</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">data</span>.<span class="ident">as_ref</span>().<span class="ident">map_or</span>(<span class="number">0</span>, <span class="op">|</span><span class="ident">data</span><span class="op">|</span> <span class="ident">data</span>.<span class="ident">len</span>()));
         <span class="comment">// Transaction ID</span>
         <span class="ident">buffer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">id</span>)<span class="question-mark">?</span>;
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">data</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">data</span> {
@@ -1595,6 +1648,11 @@
             <span class="ident">directory</span>.<span class="ident">join</span>(<span class="string">&quot;_transactions&quot;</span>)
         };
 
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">Pcg64::new_seed</span>(<span class="number">1</span>);
+        <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> (<span class="number">0</span>..<span class="ident">PAGE_SIZE</span> <span class="op">*</span> <span class="number">10</span>)
+            .<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">rng</span>.<span class="ident">generate</span>())
+            .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span>();
+
         <span class="kw">for</span> <span class="ident">id</span> <span class="kw">in</span> <span class="number">1</span>..<span class="op">=</span><span class="number">1_000</span> {
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State::from_path</span>(<span class="kw-2">&amp;</span><span class="ident">log_path</span>);
             <span class="ident">TransactionLog</span>::<span class="op">&lt;</span><span class="ident">Manager::File</span><span class="op">&gt;</span><span class="ident">::initialize_state</span>(<span class="kw-2">&amp;</span><span class="ident">state</span>, <span class="kw-2">&amp;</span><span class="ident">context</span>).<span class="ident">unwrap</span>();
@@ -1609,15 +1667,17 @@
             <span class="kw">if</span> <span class="ident">id</span> <span class="op">%</span> <span class="number">2</span> <span class="op">==</span> <span class="number">0</span> {
                 <span class="comment">// Larger than PAGE_SIZE</span>
                 <span class="kw">if</span> <span class="ident">id</span> <span class="op">%</span> <span class="number">3</span> <span class="op">==</span> <span class="number">0</span> {
-                    <span class="ident">tx</span>.<span class="ident">set_data</span>(<span class="macro">vec!</span>[<span class="number">42</span>; <span class="ident">PAGE_SIZE</span> <span class="op">*</span> (<span class="ident">id</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">%</span> <span class="number">10</span>).<span class="ident">min</span>(<span class="number">3</span>)])
+                    <span class="ident">tx</span>.<span class="ident">set_data</span>(<span class="ident">data</span>[<span class="number">0</span>..<span class="ident">PAGE_SIZE</span> <span class="op">*</span> (<span class="ident">id</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">%</span> <span class="number">10</span>).<span class="ident">max</span>(<span class="number">3</span>)].<span class="ident">to_vec</span>())
                         .<span class="ident">unwrap</span>();
                 } <span class="kw">else</span> {
-                    <span class="ident">tx</span>.<span class="ident">set_data</span>(<span class="macro">vec!</span>[<span class="number">42</span>; <span class="ident">PAGE_SIZE</span> <span class="op">*</span> (<span class="ident">id</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">%</span> <span class="number">10</span>).<span class="ident">min</span>(<span class="number">2</span>)])
+                    <span class="ident">tx</span>.<span class="ident">set_data</span>(<span class="ident">data</span>[<span class="number">0</span>..<span class="ident">PAGE_SIZE</span> <span class="op">*</span> (<span class="ident">id</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">%</span> <span class="number">10</span>).<span class="ident">max</span>(<span class="number">2</span>)].<span class="ident">to_vec</span>())
                         .<span class="ident">unwrap</span>();
                 }
             } <span class="kw">else</span> {
-                <span class="ident">tx</span>.<span class="ident">set_data</span>(<span class="macro">vec!</span>[<span class="number">41</span>; <span class="ident">id</span> <span class="kw">as</span> <span class="ident">usize</span>]).<span class="ident">unwrap</span>();
+                <span class="ident">tx</span>.<span class="ident">set_data</span>(<span class="ident">data</span>[<span class="number">0</span>..<span class="ident">id</span> <span class="kw">as</span> <span class="ident">usize</span>].<span class="ident">to_vec</span>()).<span class="ident">unwrap</span>();
             }
+
+            <span class="macro">assert!</span>(<span class="ident">tx</span>.<span class="ident">data</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>().<span class="ident">len</span>() <span class="op">&gt;</span> <span class="number">0</span>);
 
             <span class="ident">transactions</span>.<span class="ident">push</span>(<span class="macro">vec!</span>[<span class="ident">tx</span>.<span class="ident">transaction</span>]).<span class="ident">unwrap</span>();
             <span class="ident">transactions</span>.<span class="ident">close</span>().<span class="ident">unwrap</span>();
@@ -1647,7 +1707,13 @@
         <span class="kw">for</span> <span class="ident">id</span> <span class="kw">in</span> <span class="number">1</span>..<span class="op">=</span><span class="number">1_000</span> {
             <span class="kw">let</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">transactions</span>.<span class="ident">get</span>(<span class="ident">id</span>).<span class="ident">unwrap</span>();
             <span class="kw">match</span> <span class="ident">transaction</span> {
-                <span class="prelude-val">Some</span>(<span class="ident">transaction</span>) =&gt; <span class="macro">assert_eq!</span>(<span class="ident">transaction</span>.<span class="ident">id</span>, <span class="ident">id</span>),
+                <span class="prelude-val">Some</span>(<span class="ident">transaction</span>) =&gt; {
+                    <span class="macro">assert_eq!</span>(<span class="ident">transaction</span>.<span class="ident">id</span>, <span class="ident">id</span>);
+                    <span class="macro">assert_eq!</span>(
+                        <span class="kw-2">&amp;</span><span class="ident">data</span>[..<span class="ident">transaction</span>.<span class="ident">data</span>().<span class="ident">unwrap</span>().<span class="ident">len</span>()],
+                        <span class="ident">transaction</span>.<span class="ident">data</span>().<span class="ident">unwrap</span>().<span class="ident">as_slice</span>()
+                    );
+                }
                 <span class="prelude-val">None</span> =&gt; {
                     <span class="macro">unreachable!</span>(<span class="string">&quot;failed to fetch transaction {}&quot;</span>, <span class="ident">id</span>)
                 }

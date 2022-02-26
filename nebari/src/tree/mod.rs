@@ -442,19 +442,24 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     /// Gets the values stored in `keys`. Does not error if a key is missing.
     /// Returns key/value pairs in an unspecified order. Keys are required to be
     /// pre-sorted.
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
-    pub fn get_multiple(
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, keys)))]
+    pub fn get_multiple<'keys, KeysIntoIter, KeysIter>(
         &mut self,
-        keys: &[&[u8]],
+        keys: KeysIntoIter,
         in_transaction: bool,
-    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error>
+    where
+        KeysIntoIter: IntoIterator<Item = &'keys [u8], IntoIter = KeysIter>,
+        KeysIter: Iterator<Item = &'keys [u8]> + ExactSizeIterator,
+    {
+        let keys = keys.into_iter();
         let mut buffers = Vec::with_capacity(keys.len());
         self.file.execute(TreeGetter {
             from_transaction: in_transaction,
             state: &self.state,
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
-            keys: KeyRange::new(keys.iter().copied()),
+            keys: KeyRange::new(keys),
             key_reader: |key, value| {
                 buffers.push((key, value));
                 Ok(())
@@ -2007,10 +2012,7 @@ mod tests {
 
         // Get them all
         let mut all_records = tree
-            .get_multiple(
-                &ids.iter().map(ArcBytes::as_slice).collect::<Vec<_>>(),
-                false,
-            )
+            .get_multiple(ids.iter().map(ArcBytes::as_slice), false)
             .unwrap();
         // Order isn't guaranteeed.
         all_records.sort();

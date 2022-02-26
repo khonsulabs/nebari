@@ -81,7 +81,6 @@ impl<File: ManagedFile> Roots<File> {
     }
 
     /// Returns the vault used to encrypt this database.
-    #[must_use]
     pub fn context(&self) -> &Context<File::Manager> {
         &self.data.context
     }
@@ -420,10 +419,14 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
 
     /// Retrieves the values of `keys`. If any keys are not found, they will be
     /// omitted from the results. Keys are required to be pre-sorted.
-    pub fn get_multiple(
+    pub fn get_multiple<'keys, KeysIntoIter, KeysIter>(
         &mut self,
-        keys: &[&[u8]],
-    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
+        keys: KeysIntoIter,
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error>
+    where
+        KeysIntoIter: IntoIterator<Item = &'keys [u8], IntoIter = KeysIter>,
+        KeysIter: Iterator<Item = &'keys [u8]> + ExactSizeIterator,
+    {
         self.tree.get_multiple(keys, true)
     }
 
@@ -753,14 +756,18 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
 
     /// Retrieves the values of `keys`. If any keys are not found, they will be
     /// omitted from the results. Keys are required to be pre-sorted.
-    pub fn get_multiple(
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn get_multiple<'keys, Keys>(
         &self,
-        keys: &[&[u8]],
-    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
+        keys: Keys,
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error>
+    where
+        Keys: Iterator<Item = &'keys [u8]> + ExactSizeIterator + Clone,
+    {
         catch_compaction_and_retry(|| {
             let mut tree = self.open_for_read()?;
 
-            tree.get_multiple(keys, false)
+            tree.get_multiple(keys.clone(), false)
         })
     }
 

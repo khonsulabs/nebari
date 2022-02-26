@@ -4,6 +4,7 @@ use crate::{io::FileManager, vault::AnyVault, ChunkCache, Vault};
 
 /// A shared environment for database operations.
 #[derive(Default, Debug, Clone)]
+#[must_use]
 pub struct Context<M: FileManager> {
     /// The file manager for the [`ManagedFile`](crate::io::ManagedFile) implementor.
     pub file_manager: M,

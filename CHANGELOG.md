@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Breaking Changes
+
+- `get_multiple` has been changed to accept an Iterator over borrowed byte slices.
+
+## v0.3.2
+
 ### Fixed
 
 - Fixed potential infinite loop when scanning for a transaction ID that does not

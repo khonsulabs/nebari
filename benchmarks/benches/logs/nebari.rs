@@ -172,8 +172,9 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
                     .collect::<Vec<_>>();
                 let start = Instant::now();
                 entry_key_bytes.sort_unstable();
-                let entry_keys = entry_key_bytes.iter().map(|k| &k[..]).collect::<Vec<_>>();
-                let buffers = self.tree.get_multiple(&entry_keys, false)?;
+                let buffers = self
+                    .tree
+                    .get_multiple(entry_key_bytes.iter().map(|k| &k[..]), false)?;
                 assert_eq!(buffers.len(), config.get_count);
                 total_duration += Instant::now() - start;
             }

@@ -144,6 +144,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
 }
 
 /// A named tree with a specific root type.
+#[must_use]
 pub struct TreeRoot<R: Root, File: ManagedFile> {
     /// The name of the tree.
     pub name: Cow<'static, str>,

@@ -271,7 +271,10 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                     let root = Root::deserialize(contents)
                         .map_err(|err| ErrorKind::DataIntegrity(Box::new(err)))?;
                     if let Some(transaction_manager) = transaction_manager {
-                        if !transaction_manager.transaction_was_successful(root.transaction_id())? {
+                        if root.transaction_id() > 0
+                            && !transaction_manager
+                                .transaction_was_successful(root.transaction_id())?
+                        {
                             // The transaction wasn't written successfully, so
                             // we cannot trust the data present.
                             if block_start == 0 {

@@ -66,10 +66,13 @@ impl<File: ManagedFile> TransactionLog<File> {
     /// Initializes `state` to contain the information about the transaction log
     /// located at `log_path`.
     pub fn initialize_state(state: &State, context: &Context<File::Manager>) -> Result<(), Error> {
-        let mut log_length = if context.file_manager.exists(state.path())? {
-            context.file_manager.file_length(state.path())?
-        } else {
-            0
+        let mut log_length = match context.file_manager.file_length(state.path()) {
+            Ok(length) => length,
+            Err(Error {
+                kind: ErrorKind::Io(err),
+                ..
+            }) if err.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(other) => return Err(other),
         };
         if log_length == 0 {
             state.initialize(1, 0);

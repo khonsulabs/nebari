@@ -349,7 +349,7 @@ impl<File: ManagedFile> ExecutingTransaction<File> {
         &self,
         index: usize,
     ) -> Option<LockedTransactionTree<'_, Root, File>> {
-        self.trees.get(index).map(UnlockedTransactionTree::lock)
+        self.unlocked_tree(index).map(UnlockedTransactionTree::lock)
     }
 
     /// Accesses an unlocked tree. Note: If you clone an

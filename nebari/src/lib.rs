@@ -36,8 +36,8 @@ pub use self::{
     context::Context,
     error::{Error, ErrorKind},
     roots::{
-        AbortError, CompareAndSwapError, Config, ExecutingTransaction, Roots, ThreadPool,
-        TransactionTree, Tree,
+        AbortError, CompareAndSwapError, Config, ExecutingTransaction, LockedTransactionTree,
+        Roots, ThreadPool, TransactionTree, Tree, UnlockedTransactionTree,
     },
     vault::Vault,
 };

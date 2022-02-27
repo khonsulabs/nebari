@@ -10,6 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking Changes
 
 - `get_multiple` has been changed to accept an Iterator over borrowed byte slices.
+- `ExecutingTransaction::tree` now returns a `LockedTransactionTree`, which
+  holds a shared reference to the transaction now. Previously `tree()` required
+  an exclusive reference to the transaction, preventing consumers of Nebari from
+  using multiple threads to process more complicated transactions.
+
+  This API is paired by a new addition: `ExecutingTransaction::unlocked_tree`.
+  This API returns an `UnlockedTransactionTree` which can be sent across thread
+  boundaries safely. It offers a `lock()` function to return a
+  `LockedTransactionTree` when the tread is ready to operate on the tree.
+
+  All instances of these new tree types must be dropped before a commit can
+  proceed. If using `UnlockedTransactionTree::clone` to send trees to multiple
+  threads, it is the callers responsibility to ensure that the only references
+  still active when committing the transaction, otherwise the commit will panic.
 
 ## v0.3.2
 

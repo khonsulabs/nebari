@@ -5,7 +5,7 @@ use std::{
     convert::Infallible,
     fmt::{Debug, Display},
     fs,
-    ops::RangeBounds,
+    ops::{Deref, DerefMut, RangeBounds},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU16, Ordering},
@@ -15,7 +15,7 @@ use std::{
 
 use flume::Sender;
 use once_cell::sync::Lazy;
-use parking_lot::Mutex;
+use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 
 use crate::{
     context::Context,
@@ -197,13 +197,15 @@ impl<File: ManagedFile> Roots<File> {
             .iter()
             .zip(states.into_iter())
             .map(|(tree, state)| {
-                tree.borrow().begin_transaction(
-                    transaction.id,
-                    &self.tree_path(tree.borrow().name()),
-                    state.as_ref(),
-                    self.context(),
-                    Some(&self.data.transactions),
-                )
+                tree.borrow()
+                    .begin_transaction(
+                        transaction.id,
+                        &self.tree_path(tree.borrow().name()),
+                        state.as_ref(),
+                        self.context(),
+                        Some(&self.data.transactions),
+                    )
+                    .map(UnlockedTransactionTree::new)
             })
             .collect::<Result<Vec<_>, Error>>()?;
         Ok(ExecutingTransaction {
@@ -241,8 +243,65 @@ impl<File: ManagedFile> Clone for Roots<File> {
 pub struct ExecutingTransaction<File: ManagedFile> {
     roots: Roots<File>,
     transaction_manager: TransactionManager<File::Manager>,
-    trees: Vec<Box<dyn AnyTransactionTree<File>>>,
+    trees: Vec<UnlockedTransactionTree<File>>,
     transaction: Option<TransactionHandle>,
+}
+
+/// A tree that belongs to an [`ExecutingTransaction`]. All instances of this
+/// type must be dropped before the transaction can be committed.
+#[must_use]
+pub struct UnlockedTransactionTree<File: ManagedFile>(
+    Arc<Mutex<Box<dyn AnyTransactionTree<File>>>>,
+);
+
+impl<File: ManagedFile> UnlockedTransactionTree<File> {
+    /// Returns a clone of `this`. All clones must be dropped before the
+    /// executing transaction is committed, otherwise the commit will panic.
+    #[allow(clippy::should_implement_trait)] // Different API with same name aims to aide in discoverability while also ensuring users are more likely to see the documented requirements.
+    pub fn clone(this: &Self) -> Self {
+        Self(this.0.clone())
+    }
+
+    fn new(file: Box<dyn AnyTransactionTree<File>>) -> Self {
+        Self(Arc::new(Mutex::new(file)))
+    }
+
+    /// Locks this tree so that operations can be performed against it.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if `Root` does not match the type specified when
+    /// starting the transaction.
+    pub fn lock<Root: tree::Root>(&self) -> LockedTransactionTree<'_, Root, File> {
+        LockedTransactionTree(MutexGuard::map(self.0.lock(), |tree| {
+            tree.as_mut().as_any_mut().downcast_mut().unwrap()
+        }))
+    }
+}
+
+/// A locked transaction tree. This transactional tree is exclusively available
+/// for writing and reading to the thread that locks it.
+#[must_use]
+pub struct LockedTransactionTree<'transaction, Root: tree::Root, File: ManagedFile>(
+    MappedMutexGuard<'transaction, TransactionTree<Root, File>>,
+);
+
+impl<'transaction, Root: tree::Root, File: ManagedFile> Deref
+    for LockedTransactionTree<'transaction, Root, File>
+{
+    type Target = TransactionTree<Root, File>;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
+}
+
+impl<'transaction, Root: tree::Root, File: ManagedFile> DerefMut
+    for LockedTransactionTree<'transaction, Root, File>
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.0
+    }
 }
 
 impl<File: ManagedFile> ExecutingTransaction<File> {
@@ -287,16 +346,22 @@ impl<File: ManagedFile> ExecutingTransaction<File> {
 
     /// Accesses a locked tree.
     pub fn tree<Root: tree::Root>(
-        &mut self,
+        &self,
         index: usize,
-    ) -> Option<&mut TransactionTree<Root, File>> {
-        self.trees
-            .get_mut(index)
-            .and_then(|any_tree| any_tree.as_mut().as_any_mut().downcast_mut())
+    ) -> Option<LockedTransactionTree<'_, Root, File>> {
+        self.trees.get(index).map(UnlockedTransactionTree::lock)
+    }
+
+    /// Accesses an unlocked tree. Note: If you clone an
+    /// [`UnlockedTransactionTree`], you must make sure to drop all instances
+    /// before calling commit.
+    pub fn unlocked_tree(&self, index: usize) -> Option<&UnlockedTransactionTree<File>> {
+        self.trees.get(index)
     }
 
     fn rollback_tree_states(&mut self) {
         for tree in self.trees.drain(..) {
+            let tree = tree.0.lock();
             tree.rollback();
         }
     }
@@ -660,7 +725,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         key: impl Into<ArcBytes<'static>>,
         value: impl Into<ArcBytes<'static>>,
     ) -> Result<(), Error> {
-        let mut transaction = self.begin_transaction()?;
+        let transaction = self.begin_transaction()?;
         transaction.tree::<Root>(0).unwrap().set(key, value)?;
         transaction.commit()
     }
@@ -704,7 +769,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         key: impl Into<ArcBytes<'static>>,
         value: impl Into<ArcBytes<'static>>,
     ) -> Result<Option<ArcBytes<'static>>, Error> {
-        let mut transaction = self.begin_transaction()?;
+        let transaction = self.begin_transaction()?;
         let existing_value = transaction.tree::<Root>(0).unwrap().replace(key, value)?;
         transaction.commit()?;
         Ok(existing_value)
@@ -717,7 +782,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         keys: Vec<ArcBytes<'a>>,
         operation: Operation<'a, ArcBytes<'static>>,
     ) -> Result<(), Error> {
-        let mut transaction = self.begin_transaction()?;
+        let transaction = self.begin_transaction()?;
         transaction
             .tree::<Root>(0)
             .unwrap()
@@ -729,7 +794,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// Removes `key` and returns the existing value, if present. This is executed within its own transaction.
     #[allow(clippy::missing_panics_doc)]
     pub fn remove(&self, key: &[u8]) -> Result<Option<ArcBytes<'static>>, Error> {
-        let mut transaction = self.begin_transaction()?;
+        let transaction = self.begin_transaction()?;
         let existing_value = transaction.tree::<Root>(0).unwrap().remove(key)?;
         transaction.commit()?;
         Ok(existing_value)
@@ -745,7 +810,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         old: Option<&[u8]>,
         new: Option<ArcBytes<'_>>,
     ) -> Result<(), CompareAndSwapError> {
-        let mut transaction = self.begin_transaction()?;
+        let transaction = self.begin_transaction()?;
         transaction
             .tree::<Root>(0)
             .unwrap()
@@ -1004,7 +1069,7 @@ where
 impl<File: ManagedFile> ThreadPool<File> {
     fn commit_trees(
         &self,
-        mut trees: Vec<Box<dyn AnyTransactionTree<File>>>,
+        trees: Vec<UnlockedTransactionTree<File>>,
     ) -> Result<Vec<Box<dyn AnyTransactionTree<File>>>, Error> {
         static CPU_COUNT: Lazy<usize> = Lazy::new(num_cpus::get);
 
@@ -1012,15 +1077,26 @@ impl<File: ManagedFile> ThreadPool<File> {
         // threads. If we have multiple trees, we should split even with one
         // cpu: if one thread blocks, the other can continue executing.
         if trees.len() == 1 {
-            trees[0].commit()?;
-            Ok(trees)
+            let mut tree = match Arc::try_unwrap(trees.into_iter().next().unwrap().0) {
+                Ok(tree) => tree.into_inner(),
+                _ => panic!(
+                    "all clones of UnlockedTransactionTree must be dropped before committing"
+                ),
+            };
+            tree.commit()?;
+            Ok(vec![tree])
         } else {
             // Push the trees so that any existing threads can begin processing the queue.
             let (completion_sender, completion_receiver) = flume::unbounded();
             let tree_count = trees.len();
             for tree in trees {
                 self.sender.send(ThreadCommit {
-                    tree,
+                    tree: match Arc::try_unwrap(tree.0) {
+                        Ok(tree) => tree.into_inner(),
+                        _ => panic!(
+                            "all clones of UnlockedTransactionTree must be dropped before committing"
+                        ),
+                    },
                     completion_sender: completion_sender.clone(),
                 })?;
             }
@@ -1091,7 +1167,8 @@ fn transaction_commit_thread<File: ManagedFile>(receiver: flume::Receiver<Thread
         completion_sender,
     }) = receiver.recv()
     {
-        let result = tree.commit().map(move |_| tree);
+        let result = tree.commit();
+        let result = result.map(move |_| tree);
         drop(completion_sender.send(result));
     }
 }
@@ -1188,7 +1265,7 @@ mod tests {
         tree.set(b"test", b"value").unwrap();
 
         // Begin a transaction
-        let mut transaction = roots.transaction(&[Versioned::tree("test")]).unwrap();
+        let transaction = roots.transaction(&[Versioned::tree("test")]).unwrap();
 
         // Replace the key with a new value.
         transaction
@@ -1229,7 +1306,7 @@ mod tests {
         tree.set(b"test", b"value").unwrap();
 
         // Begin a transaction
-        let mut transaction = roots.transaction(&[Versioned::tree("test")]).unwrap();
+        let transaction = roots.transaction(&[Versioned::tree("test")]).unwrap();
 
         // Replace the key with a new value.
         transaction
@@ -1246,7 +1323,7 @@ mod tests {
         assert_eq!(result, b"value");
 
         // Begin a new transaction
-        let mut transaction = roots.transaction(&[Versioned::tree("test")]).unwrap();
+        let transaction = roots.transaction(&[Versioned::tree("test")]).unwrap();
         // Check that the transaction has the original value
         let result = transaction
             .tree::<Versioned>(0)
@@ -1434,7 +1511,7 @@ mod tests {
         {
             let roots = config.open().unwrap();
 
-            let mut transaction = roots.transaction(&[Versioned::tree("test")]).unwrap();
+            let transaction = roots.transaction(&[Versioned::tree("test")]).unwrap();
 
             // Write some data to the tree
             transaction

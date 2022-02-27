@@ -21,21 +21,22 @@ fn main() -> Result<(), Error> {
     // Each operation on a Tree is executed within an ACID-compliant
     // transaction. If you want to execute multiple operations in a single
     // transaction, you can do that as well:
-    let mut transaction = roots.transaction(&[Versioned::tree("one"), Versioned::tree("two")])?;
+    let transaction = roots.transaction(&[Versioned::tree("one"), Versioned::tree("two")])?;
+    {
+        // This API isn't as ergonomic as it should be. The trees are accessible in
+        // the same order in which they're specified in the transaction call:
+        let mut tx_tree_one = transaction.tree::<Versioned>(0).unwrap();
+        tx_tree_one.set("hello", "everyone")?;
 
-    // This API isn't as ergonomic as it should be. The trees are accessible in
-    // the same order in which they're specified in the transaction call:
-    let tx_tree_one = transaction.tree::<Versioned>(0).unwrap();
-    tx_tree_one.set("hello", "everyone")?;
+        // The operation above is not visible to trees outside of the transaction:
+        assert_eq!(
+            tree_one.get("hello".as_bytes())?.as_deref(),
+            Some("world".as_bytes())
+        );
 
-    // The operation above is not visible to trees outside of the transaction:
-    assert_eq!(
-        tree_one.get("hello".as_bytes())?.as_deref(),
-        Some("world".as_bytes())
-    );
-
-    let tx_tree_two = transaction.tree::<Versioned>(1).unwrap();
-    tx_tree_two.set("another tree", "another value")?;
+        let mut tx_tree_two = transaction.tree::<Versioned>(1).unwrap();
+        tx_tree_two.set("another tree", "another value")?;
+    }
 
     // If you drop the transaction before calling commit, the transaction will be rolled back.
     transaction.commit()?;

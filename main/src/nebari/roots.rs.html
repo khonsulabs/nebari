@@ -1449,6 +1449,83 @@
 <span id="1447">1447</span>
 <span id="1448">1448</span>
 <span id="1449">1449</span>
+<span id="1450">1450</span>
+<span id="1451">1451</span>
+<span id="1452">1452</span>
+<span id="1453">1453</span>
+<span id="1454">1454</span>
+<span id="1455">1455</span>
+<span id="1456">1456</span>
+<span id="1457">1457</span>
+<span id="1458">1458</span>
+<span id="1459">1459</span>
+<span id="1460">1460</span>
+<span id="1461">1461</span>
+<span id="1462">1462</span>
+<span id="1463">1463</span>
+<span id="1464">1464</span>
+<span id="1465">1465</span>
+<span id="1466">1466</span>
+<span id="1467">1467</span>
+<span id="1468">1468</span>
+<span id="1469">1469</span>
+<span id="1470">1470</span>
+<span id="1471">1471</span>
+<span id="1472">1472</span>
+<span id="1473">1473</span>
+<span id="1474">1474</span>
+<span id="1475">1475</span>
+<span id="1476">1476</span>
+<span id="1477">1477</span>
+<span id="1478">1478</span>
+<span id="1479">1479</span>
+<span id="1480">1480</span>
+<span id="1481">1481</span>
+<span id="1482">1482</span>
+<span id="1483">1483</span>
+<span id="1484">1484</span>
+<span id="1485">1485</span>
+<span id="1486">1486</span>
+<span id="1487">1487</span>
+<span id="1488">1488</span>
+<span id="1489">1489</span>
+<span id="1490">1490</span>
+<span id="1491">1491</span>
+<span id="1492">1492</span>
+<span id="1493">1493</span>
+<span id="1494">1494</span>
+<span id="1495">1495</span>
+<span id="1496">1496</span>
+<span id="1497">1497</span>
+<span id="1498">1498</span>
+<span id="1499">1499</span>
+<span id="1500">1500</span>
+<span id="1501">1501</span>
+<span id="1502">1502</span>
+<span id="1503">1503</span>
+<span id="1504">1504</span>
+<span id="1505">1505</span>
+<span id="1506">1506</span>
+<span id="1507">1507</span>
+<span id="1508">1508</span>
+<span id="1509">1509</span>
+<span id="1510">1510</span>
+<span id="1511">1511</span>
+<span id="1512">1512</span>
+<span id="1513">1513</span>
+<span id="1514">1514</span>
+<span id="1515">1515</span>
+<span id="1516">1516</span>
+<span id="1517">1517</span>
+<span id="1518">1518</span>
+<span id="1519">1519</span>
+<span id="1520">1520</span>
+<span id="1521">1521</span>
+<span id="1522">1522</span>
+<span id="1523">1523</span>
+<span id="1524">1524</span>
+<span id="1525">1525</span>
+<span id="1526">1526</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">any::Any</span>,
     <span class="ident">borrow</span>::{<span class="ident">Borrow</span>, <span class="ident">Cow</span>},
@@ -1456,7 +1533,7 @@
     <span class="ident">convert::Infallible</span>,
     <span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Display</span>},
     <span class="ident">fs</span>,
-    <span class="ident">ops::RangeBounds</span>,
+    <span class="ident">ops</span>::{<span class="ident">Deref</span>, <span class="ident">DerefMut</span>, <span class="ident">RangeBounds</span>},
     <span class="ident">path</span>::{<span class="ident">Path</span>, <span class="ident">PathBuf</span>},
     <span class="ident">sync</span>::{
         <span class="ident">atomic</span>::{<span class="ident">AtomicU16</span>, <span class="ident">Ordering</span>},
@@ -1466,7 +1543,7 @@
 
 <span class="kw">use</span> <span class="ident">flume::Sender</span>;
 <span class="kw">use</span> <span class="ident">once_cell::sync::Lazy</span>;
-<span class="kw">use</span> <span class="ident">parking_lot::Mutex</span>;
+<span class="kw">use</span> <span class="ident">parking_lot</span>::{<span class="ident">MappedMutexGuard</span>, <span class="ident">Mutex</span>, <span class="ident">MutexGuard</span>};
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">context::Context</span>,
@@ -1648,13 +1725,15 @@
             .<span class="ident">iter</span>()
             .<span class="ident">zip</span>(<span class="ident">states</span>.<span class="ident">into_iter</span>())
             .<span class="ident">map</span>(<span class="op">|</span>(<span class="ident">tree</span>, <span class="ident">state</span>)<span class="op">|</span> {
-                <span class="ident">tree</span>.<span class="ident">borrow</span>().<span class="ident">begin_transaction</span>(
-                    <span class="ident">transaction</span>.<span class="ident">id</span>,
-                    <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">tree_path</span>(<span class="ident">tree</span>.<span class="ident">borrow</span>().<span class="ident">name</span>()),
-                    <span class="ident">state</span>.<span class="ident">as_ref</span>(),
-                    <span class="self">self</span>.<span class="ident">context</span>(),
-                    <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">data</span>.<span class="ident">transactions</span>),
-                )
+                <span class="ident">tree</span>.<span class="ident">borrow</span>()
+                    .<span class="ident">begin_transaction</span>(
+                        <span class="ident">transaction</span>.<span class="ident">id</span>,
+                        <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">tree_path</span>(<span class="ident">tree</span>.<span class="ident">borrow</span>().<span class="ident">name</span>()),
+                        <span class="ident">state</span>.<span class="ident">as_ref</span>(),
+                        <span class="self">self</span>.<span class="ident">context</span>(),
+                        <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">data</span>.<span class="ident">transactions</span>),
+                    )
+                    .<span class="ident">map</span>(<span class="ident">UnlockedTransactionTree::new</span>)
             })
             .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">ExecutingTransaction</span> {
@@ -1692,8 +1771,65 @@
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ExecutingTransaction</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> {
     <span class="ident">roots</span>: <span class="ident">Roots</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span>,
     <span class="ident">transaction_manager</span>: <span class="ident">TransactionManager</span><span class="op">&lt;</span><span class="ident">File::Manager</span><span class="op">&gt;</span>,
-    <span class="ident">trees</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="ident">trees</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">UnlockedTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">transaction</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">TransactionHandle</span><span class="op">&gt;</span>,
+}
+
+<span class="doccomment">/// A tree that belongs to an [`ExecutingTransaction`]. All instances of this</span>
+<span class="doccomment">/// type must be dropped before the transaction can be committed.</span>
+<span class="attribute">#[<span class="ident">must_use</span>]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">UnlockedTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+);
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">UnlockedTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Returns a clone of `this`. All clones must be dropped before the</span>
+    <span class="doccomment">/// executing transaction is committed, otherwise the commit will panic.</span>
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::should_implement_trait</span>)]</span> <span class="comment">// Different API with same name aims to aide in discoverability while also ensuring users are more likely to see the documented requirements.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">clone</span>(<span class="ident">this</span>: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; <span class="self">Self</span> {
+        <span class="self">Self</span>(<span class="ident">this</span>.<span class="number">0</span>.<span class="ident">clone</span>())
+    }
+
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">file</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {
+        <span class="self">Self</span>(<span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="ident">file</span>)))
+    }
+
+    <span class="doccomment">/// Locks this tree so that operations can be performed against it.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// # Panics</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// This function panics if `Root` does not match the type specified when</span>
+    <span class="doccomment">/// starting the transaction.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">lock</span><span class="op">&lt;</span><span class="ident">Root</span>: <span class="ident">tree::Root</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">LockedTransactionTree</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span> {
+        <span class="ident">LockedTransactionTree</span>(<span class="ident">MutexGuard::map</span>(<span class="self">self</span>.<span class="number">0</span>.<span class="ident">lock</span>(), <span class="op">|</span><span class="ident">tree</span><span class="op">|</span> {
+            <span class="ident">tree</span>.<span class="ident">as_mut</span>().<span class="ident">as_any_mut</span>().<span class="ident">downcast_mut</span>().<span class="ident">unwrap</span>()
+        }))
+    }
+}
+
+<span class="doccomment">/// A locked transaction tree. This transactional tree is exclusively available</span>
+<span class="doccomment">/// for writing and reading to the thread that locks it.</span>
+<span class="attribute">#[<span class="ident">must_use</span>]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">LockedTransactionTree</span><span class="op">&lt;</span><span class="lifetime">&#39;transaction</span>, <span class="ident">Root</span>: <span class="ident">tree::Root</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+    <span class="ident">MappedMutexGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;transaction</span>, <span class="ident">TransactionTree</span><span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+);
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;transaction</span>, <span class="ident">Root</span>: <span class="ident">tree::Root</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">Deref</span>
+    <span class="kw">for</span> <span class="ident">LockedTransactionTree</span><span class="op">&lt;</span><span class="lifetime">&#39;transaction</span>, <span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span>
+{
+    <span class="kw">type</span> <span class="ident">Target</span> <span class="op">=</span> <span class="ident">TransactionTree</span><span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span>;
+
+    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Target</span> {
+        <span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="self">self</span>.<span class="number">0</span>
+    }
+}
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;transaction</span>, <span class="ident">Root</span>: <span class="ident">tree::Root</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">DerefMut</span>
+    <span class="kw">for</span> <span class="ident">LockedTransactionTree</span><span class="op">&lt;</span><span class="lifetime">&#39;transaction</span>, <span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span>
+{
+    <span class="kw">fn</span> <span class="ident">deref_mut</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="ident"><span class="self">Self</span>::Target</span> {
+        <span class="kw-2">&amp;mut</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="number">0</span>
+    }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">ExecutingTransaction</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> {
@@ -1738,16 +1874,22 @@
 
     <span class="doccomment">/// Accesses a locked tree.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">tree</span><span class="op">&lt;</span><span class="ident">Root</span>: <span class="ident">tree::Root</span><span class="op">&gt;</span>(
-        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">index</span>: <span class="ident">usize</span>,
-    ) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;mut</span> <span class="ident">TransactionTree</span><span class="op">&lt;</span><span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">trees</span>
-            .<span class="ident">get_mut</span>(<span class="ident">index</span>)
-            .<span class="ident">and_then</span>(<span class="op">|</span><span class="ident">any_tree</span><span class="op">|</span> <span class="ident">any_tree</span>.<span class="ident">as_mut</span>().<span class="ident">as_any_mut</span>().<span class="ident">downcast_mut</span>())
+    ) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">LockedTransactionTree</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Root</span>, <span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">trees</span>.<span class="ident">get</span>(<span class="ident">index</span>).<span class="ident">map</span>(<span class="ident">UnlockedTransactionTree::lock</span>)
+    }
+
+    <span class="doccomment">/// Accesses an unlocked tree. Note: If you clone an</span>
+    <span class="doccomment">/// [`UnlockedTransactionTree`], you must make sure to drop all instances</span>
+    <span class="doccomment">/// before calling commit.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">unlocked_tree</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">index</span>: <span class="ident">usize</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">UnlockedTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">trees</span>.<span class="ident">get</span>(<span class="ident">index</span>)
     }
 
     <span class="kw">fn</span> <span class="ident">rollback_tree_states</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
         <span class="kw">for</span> <span class="ident">tree</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">trees</span>.<span class="ident">drain</span>(..) {
+            <span class="kw">let</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">tree</span>.<span class="number">0</span>.<span class="ident">lock</span>();
             <span class="ident">tree</span>.<span class="ident">rollback</span>();
         }
     }
@@ -2111,7 +2253,7 @@
         <span class="ident">key</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">value</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
         <span class="ident">transaction</span>.<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>(<span class="number">0</span>).<span class="ident">unwrap</span>().<span class="ident">set</span>(<span class="ident">key</span>, <span class="ident">value</span>)<span class="question-mark">?</span>;
         <span class="ident">transaction</span>.<span class="ident">commit</span>()
     }
@@ -2155,7 +2297,7 @@
         <span class="ident">key</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">value</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">existing_value</span> <span class="op">=</span> <span class="ident">transaction</span>.<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>(<span class="number">0</span>).<span class="ident">unwrap</span>().<span class="ident">replace</span>(<span class="ident">key</span>, <span class="ident">value</span>)<span class="question-mark">?</span>;
         <span class="ident">transaction</span>.<span class="ident">commit</span>()<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">existing_value</span>)
@@ -2168,7 +2310,7 @@
         <span class="ident">keys</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">operation</span>: <span class="ident">Operation</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
         <span class="ident">transaction</span>
             .<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>(<span class="number">0</span>)
             .<span class="ident">unwrap</span>()
@@ -2180,7 +2322,7 @@
     <span class="doccomment">/// Removes `key` and returns the existing value, if present. This is executed within its own transaction.</span>
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::missing_panics_doc</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">existing_value</span> <span class="op">=</span> <span class="ident">transaction</span>.<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>(<span class="number">0</span>).<span class="ident">unwrap</span>().<span class="ident">remove</span>(<span class="ident">key</span>)<span class="question-mark">?</span>;
         <span class="ident">transaction</span>.<span class="ident">commit</span>()<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">existing_value</span>)
@@ -2196,7 +2338,7 @@
         <span class="ident">old</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span>[<span class="ident">u8</span>]<span class="op">&gt;</span>,
         <span class="ident">new</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">CompareAndSwapError</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">begin_transaction</span>()<span class="question-mark">?</span>;
         <span class="ident">transaction</span>
             .<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>(<span class="number">0</span>)
             .<span class="ident">unwrap</span>()
@@ -2455,7 +2597,7 @@
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">ThreadPool</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> {
     <span class="kw">fn</span> <span class="ident">commit_trees</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="kw-2">mut</span> <span class="ident">trees</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">trees</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">UnlockedTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">static</span> <span class="ident">CPU_COUNT</span>: <span class="ident">Lazy</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Lazy::new</span>(<span class="ident">num_cpus::get</span>);
 
@@ -2463,15 +2605,26 @@
         <span class="comment">// threads. If we have multiple trees, we should split even with one</span>
         <span class="comment">// cpu: if one thread blocks, the other can continue executing.</span>
         <span class="kw">if</span> <span class="ident">trees</span>.<span class="ident">len</span>() <span class="op">==</span> <span class="number">1</span> {
-            <span class="ident">trees</span>[<span class="number">0</span>].<span class="ident">commit</span>()<span class="question-mark">?</span>;
-            <span class="prelude-val">Ok</span>(<span class="ident">trees</span>)
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">Arc::try_unwrap</span>(<span class="ident">trees</span>.<span class="ident">into_iter</span>().<span class="ident">next</span>().<span class="ident">unwrap</span>().<span class="number">0</span>) {
+                <span class="prelude-val">Ok</span>(<span class="ident">tree</span>) =&gt; <span class="ident">tree</span>.<span class="ident">into_inner</span>(),
+                <span class="kw">_</span> =&gt; <span class="macro">panic!</span>(
+                    <span class="string">&quot;all clones of UnlockedTransactionTree must be dropped before committing&quot;</span>
+                ),
+            };
+            <span class="ident">tree</span>.<span class="ident">commit</span>()<span class="question-mark">?</span>;
+            <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[<span class="ident">tree</span>])
         } <span class="kw">else</span> {
             <span class="comment">// Push the trees so that any existing threads can begin processing the queue.</span>
             <span class="kw">let</span> (<span class="ident">completion_sender</span>, <span class="ident">completion_receiver</span>) <span class="op">=</span> <span class="ident">flume::unbounded</span>();
             <span class="kw">let</span> <span class="ident">tree_count</span> <span class="op">=</span> <span class="ident">trees</span>.<span class="ident">len</span>();
             <span class="kw">for</span> <span class="ident">tree</span> <span class="kw">in</span> <span class="ident">trees</span> {
                 <span class="self">self</span>.<span class="ident">sender</span>.<span class="ident">send</span>(<span class="ident">ThreadCommit</span> {
-                    <span class="ident">tree</span>,
+                    <span class="ident">tree</span>: <span class="kw">match</span> <span class="ident">Arc::try_unwrap</span>(<span class="ident">tree</span>.<span class="number">0</span>) {
+                        <span class="prelude-val">Ok</span>(<span class="ident">tree</span>) =&gt; <span class="ident">tree</span>.<span class="ident">into_inner</span>(),
+                        <span class="kw">_</span> =&gt; <span class="macro">panic!</span>(
+                            <span class="string">&quot;all clones of UnlockedTransactionTree must be dropped before committing&quot;</span>
+                        ),
+                    },
                     <span class="ident">completion_sender</span>: <span class="ident">completion_sender</span>.<span class="ident">clone</span>(),
                 })<span class="question-mark">?</span>;
             }
@@ -2542,7 +2695,8 @@
         <span class="ident">completion_sender</span>,
     }) <span class="op">=</span> <span class="ident">receiver</span>.<span class="ident">recv</span>()
     {
-        <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">tree</span>.<span class="ident">commit</span>().<span class="ident">map</span>(<span class="kw">move</span> <span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">tree</span>);
+        <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">tree</span>.<span class="ident">commit</span>();
+        <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">result</span>.<span class="ident">map</span>(<span class="kw">move</span> <span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">tree</span>);
         <span class="ident">drop</span>(<span class="ident">completion_sender</span>.<span class="ident">send</span>(<span class="ident">result</span>));
     }
 }
@@ -2639,7 +2793,7 @@
         <span class="ident">tree</span>.<span class="ident">set</span>(<span class="string">b&quot;test&quot;</span>, <span class="string">b&quot;value&quot;</span>).<span class="ident">unwrap</span>();
 
         <span class="comment">// Begin a transaction</span>
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)]).<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)]).<span class="ident">unwrap</span>();
 
         <span class="comment">// Replace the key with a new value.</span>
         <span class="ident">transaction</span>
@@ -2680,7 +2834,7 @@
         <span class="ident">tree</span>.<span class="ident">set</span>(<span class="string">b&quot;test&quot;</span>, <span class="string">b&quot;value&quot;</span>).<span class="ident">unwrap</span>();
 
         <span class="comment">// Begin a transaction</span>
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)]).<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)]).<span class="ident">unwrap</span>();
 
         <span class="comment">// Replace the key with a new value.</span>
         <span class="ident">transaction</span>
@@ -2697,7 +2851,7 @@
         <span class="macro">assert_eq!</span>(<span class="ident">result</span>, <span class="string">b&quot;value&quot;</span>);
 
         <span class="comment">// Begin a new transaction</span>
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)]).<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)]).<span class="ident">unwrap</span>();
         <span class="comment">// Check that the transaction has the original value</span>
         <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">transaction</span>
             .<span class="ident">tree</span>::<span class="op">&lt;</span><span class="ident">Versioned</span><span class="op">&gt;</span>(<span class="number">0</span>)
@@ -2885,7 +3039,7 @@
         {
             <span class="kw">let</span> <span class="ident">roots</span> <span class="op">=</span> <span class="ident">config</span>.<span class="ident">open</span>().<span class="ident">unwrap</span>();
 
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)]).<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">transaction</span> <span class="op">=</span> <span class="ident">roots</span>.<span class="ident">transaction</span>(<span class="kw-2">&amp;</span>[<span class="ident">Versioned::tree</span>(<span class="string">&quot;test&quot;</span>)]).<span class="ident">unwrap</span>();
 
             <span class="comment">// Write some data to the tree</span>
             <span class="ident">transaction</span>

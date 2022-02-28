@@ -20,10 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   boundaries safely. It offers a `lock()` function to return a
   `LockedTransactionTree` when the tread is ready to operate on the tree.
 
-  All instances of these new tree types must be dropped before a commit can
-  proceed. If using `UnlockedTransactionTree::clone` to send trees to multiple
-  threads, it is the callers responsibility to ensure that the only references
-  still active when committing the transaction, otherwise the commit will panic.
+### Added
+
+- `ThreadPool::new(usize)` allows creating a thread pool with a maximum number
+  of threads set. `ThreadPool::default()` continues to use `num_cpus::get` to
+  configure this value automatically.
 
 ## v0.3.2
 

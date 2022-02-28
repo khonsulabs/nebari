@@ -247,23 +247,13 @@ pub struct ExecutingTransaction<File: ManagedFile> {
     transaction: Option<TransactionHandle>,
 }
 
-/// A tree that belongs to an [`ExecutingTransaction`]. All instances of this
-/// type must be dropped before the transaction can be committed.
+/// A tree that belongs to an [`ExecutingTransaction`].
 #[must_use]
-pub struct UnlockedTransactionTree<File: ManagedFile>(
-    Arc<Mutex<Box<dyn AnyTransactionTree<File>>>>,
-);
+pub struct UnlockedTransactionTree<File: ManagedFile>(Mutex<Box<dyn AnyTransactionTree<File>>>);
 
 impl<File: ManagedFile> UnlockedTransactionTree<File> {
-    /// Returns a clone of `this`. All clones must be dropped before the
-    /// executing transaction is committed, otherwise the commit will panic.
-    #[allow(clippy::should_implement_trait)] // Different API with same name aims to aide in discoverability while also ensuring users are more likely to see the documented requirements.
-    pub fn clone(this: &Self) -> Self {
-        Self(this.0.clone())
-    }
-
     fn new(file: Box<dyn AnyTransactionTree<File>>) -> Self {
-        Self(Arc::new(Mutex::new(file)))
+        Self(Mutex::new(file))
     }
 
     /// Locks this tree so that operations can be performed against it.
@@ -1064,25 +1054,32 @@ where
     sender: flume::Sender<ThreadCommit<File>>,
     receiver: flume::Receiver<ThreadCommit<File>>,
     thread_count: Arc<AtomicU16>,
+    maximum_threads: usize,
 }
 
 impl<File: ManagedFile> ThreadPool<File> {
+    /// Returns a thread pool that will spawn up to `maximum_threads` to process
+    /// file operations.
+    #[must_use]
+    pub fn new(maximum_threads: usize) -> Self {
+        let (sender, receiver) = flume::unbounded();
+        Self {
+            sender,
+            receiver,
+            thread_count: Arc::new(AtomicU16::new(0)),
+            maximum_threads,
+        }
+    }
+
     fn commit_trees(
         &self,
         trees: Vec<UnlockedTransactionTree<File>>,
     ) -> Result<Vec<Box<dyn AnyTransactionTree<File>>>, Error> {
-        static CPU_COUNT: Lazy<usize> = Lazy::new(num_cpus::get);
-
         // If we only have one tree, there's no reason to split IO across
         // threads. If we have multiple trees, we should split even with one
         // cpu: if one thread blocks, the other can continue executing.
         if trees.len() == 1 {
-            let mut tree = match Arc::try_unwrap(trees.into_iter().next().unwrap().0) {
-                Ok(tree) => tree.into_inner(),
-                _ => panic!(
-                    "all clones of UnlockedTransactionTree must be dropped before committing"
-                ),
-            };
+            let mut tree = trees.into_iter().next().unwrap().0.into_inner();
             tree.commit()?;
             Ok(vec![tree])
         } else {
@@ -1091,18 +1088,13 @@ impl<File: ManagedFile> ThreadPool<File> {
             let tree_count = trees.len();
             for tree in trees {
                 self.sender.send(ThreadCommit {
-                    tree: match Arc::try_unwrap(tree.0) {
-                        Ok(tree) => tree.into_inner(),
-                        _ => panic!(
-                            "all clones of UnlockedTransactionTree must be dropped before committing"
-                        ),
-                    },
+                    tree: tree.0.into_inner(),
                     completion_sender: completion_sender.clone(),
                 })?;
             }
 
             // Scale the queue if needed.
-            let desired_threads = tree_count.min(*CPU_COUNT);
+            let desired_threads = tree_count.min(self.maximum_threads);
             loop {
                 let thread_count = self.thread_count.load(Ordering::SeqCst);
                 if (thread_count as usize) >= desired_threads {
@@ -1145,18 +1137,15 @@ impl<File: ManagedFile> Clone for ThreadPool<File> {
             sender: self.sender.clone(),
             receiver: self.receiver.clone(),
             thread_count: self.thread_count.clone(),
+            maximum_threads: self.maximum_threads,
         }
     }
 }
 
 impl<File: ManagedFile> Default for ThreadPool<File> {
     fn default() -> Self {
-        let (sender, receiver) = flume::unbounded();
-        Self {
-            sender,
-            receiver,
-            thread_count: Arc::new(AtomicU16::new(0)),
-        }
+        static CPU_COUNT: Lazy<usize> = Lazy::new(num_cpus::get);
+        Self::new(*CPU_COUNT)
     }
 }
 

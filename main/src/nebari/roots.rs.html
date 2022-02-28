@@ -1515,17 +1515,6 @@
 <span id="1513">1513</span>
 <span id="1514">1514</span>
 <span id="1515">1515</span>
-<span id="1516">1516</span>
-<span id="1517">1517</span>
-<span id="1518">1518</span>
-<span id="1519">1519</span>
-<span id="1520">1520</span>
-<span id="1521">1521</span>
-<span id="1522">1522</span>
-<span id="1523">1523</span>
-<span id="1524">1524</span>
-<span id="1525">1525</span>
-<span id="1526">1526</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">any::Any</span>,
     <span class="ident">borrow</span>::{<span class="ident">Borrow</span>, <span class="ident">Cow</span>},
@@ -1775,23 +1764,13 @@
     <span class="ident">transaction</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">TransactionHandle</span><span class="op">&gt;</span>,
 }
 
-<span class="doccomment">/// A tree that belongs to an [`ExecutingTransaction`]. All instances of this</span>
-<span class="doccomment">/// type must be dropped before the transaction can be committed.</span>
+<span class="doccomment">/// A tree that belongs to an [`ExecutingTransaction`].</span>
 <span class="attribute">#[<span class="ident">must_use</span>]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">UnlockedTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
-    <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-);
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">UnlockedTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(<span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>);
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">UnlockedTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> {
-    <span class="doccomment">/// Returns a clone of `this`. All clones must be dropped before the</span>
-    <span class="doccomment">/// executing transaction is committed, otherwise the commit will panic.</span>
-    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::should_implement_trait</span>)]</span> <span class="comment">// Different API with same name aims to aide in discoverability while also ensuring users are more likely to see the documented requirements.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">clone</span>(<span class="ident">this</span>: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; <span class="self">Self</span> {
-        <span class="self">Self</span>(<span class="ident">this</span>.<span class="number">0</span>.<span class="ident">clone</span>())
-    }
-
     <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">file</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {
-        <span class="self">Self</span>(<span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="ident">file</span>)))
+        <span class="self">Self</span>(<span class="ident">Mutex::new</span>(<span class="ident">file</span>))
     }
 
     <span class="doccomment">/// Locks this tree so that operations can be performed against it.</span>
@@ -2592,25 +2571,32 @@
     <span class="ident">sender</span>: <span class="ident">flume::Sender</span><span class="op">&lt;</span><span class="ident">ThreadCommit</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">receiver</span>: <span class="ident">flume::Receiver</span><span class="op">&lt;</span><span class="ident">ThreadCommit</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">thread_count</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">AtomicU16</span><span class="op">&gt;</span>,
+    <span class="ident">maximum_threads</span>: <span class="ident">usize</span>,
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">ThreadPool</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Returns a thread pool that will spawn up to `maximum_threads` to process</span>
+    <span class="doccomment">/// file operations.</span>
+    <span class="attribute">#[<span class="ident">must_use</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">maximum_threads</span>: <span class="ident">usize</span>) -&gt; <span class="self">Self</span> {
+        <span class="kw">let</span> (<span class="ident">sender</span>, <span class="ident">receiver</span>) <span class="op">=</span> <span class="ident">flume::unbounded</span>();
+        <span class="self">Self</span> {
+            <span class="ident">sender</span>,
+            <span class="ident">receiver</span>,
+            <span class="ident">thread_count</span>: <span class="ident">Arc::new</span>(<span class="ident">AtomicU16::new</span>(<span class="number">0</span>)),
+            <span class="ident">maximum_threads</span>,
+        }
+    }
+
     <span class="kw">fn</span> <span class="ident">commit_trees</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">trees</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">UnlockedTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTransactionTree</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">static</span> <span class="ident">CPU_COUNT</span>: <span class="ident">Lazy</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Lazy::new</span>(<span class="ident">num_cpus::get</span>);
-
         <span class="comment">// If we only have one tree, there&#39;s no reason to split IO across</span>
         <span class="comment">// threads. If we have multiple trees, we should split even with one</span>
         <span class="comment">// cpu: if one thread blocks, the other can continue executing.</span>
         <span class="kw">if</span> <span class="ident">trees</span>.<span class="ident">len</span>() <span class="op">==</span> <span class="number">1</span> {
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">Arc::try_unwrap</span>(<span class="ident">trees</span>.<span class="ident">into_iter</span>().<span class="ident">next</span>().<span class="ident">unwrap</span>().<span class="number">0</span>) {
-                <span class="prelude-val">Ok</span>(<span class="ident">tree</span>) =&gt; <span class="ident">tree</span>.<span class="ident">into_inner</span>(),
-                <span class="kw">_</span> =&gt; <span class="macro">panic!</span>(
-                    <span class="string">&quot;all clones of UnlockedTransactionTree must be dropped before committing&quot;</span>
-                ),
-            };
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="ident">trees</span>.<span class="ident">into_iter</span>().<span class="ident">next</span>().<span class="ident">unwrap</span>().<span class="number">0</span>.<span class="ident">into_inner</span>();
             <span class="ident">tree</span>.<span class="ident">commit</span>()<span class="question-mark">?</span>;
             <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[<span class="ident">tree</span>])
         } <span class="kw">else</span> {
@@ -2619,18 +2605,13 @@
             <span class="kw">let</span> <span class="ident">tree_count</span> <span class="op">=</span> <span class="ident">trees</span>.<span class="ident">len</span>();
             <span class="kw">for</span> <span class="ident">tree</span> <span class="kw">in</span> <span class="ident">trees</span> {
                 <span class="self">self</span>.<span class="ident">sender</span>.<span class="ident">send</span>(<span class="ident">ThreadCommit</span> {
-                    <span class="ident">tree</span>: <span class="kw">match</span> <span class="ident">Arc::try_unwrap</span>(<span class="ident">tree</span>.<span class="number">0</span>) {
-                        <span class="prelude-val">Ok</span>(<span class="ident">tree</span>) =&gt; <span class="ident">tree</span>.<span class="ident">into_inner</span>(),
-                        <span class="kw">_</span> =&gt; <span class="macro">panic!</span>(
-                            <span class="string">&quot;all clones of UnlockedTransactionTree must be dropped before committing&quot;</span>
-                        ),
-                    },
+                    <span class="ident">tree</span>: <span class="ident">tree</span>.<span class="number">0</span>.<span class="ident">into_inner</span>(),
                     <span class="ident">completion_sender</span>: <span class="ident">completion_sender</span>.<span class="ident">clone</span>(),
                 })<span class="question-mark">?</span>;
             }
 
             <span class="comment">// Scale the queue if needed.</span>
-            <span class="kw">let</span> <span class="ident">desired_threads</span> <span class="op">=</span> <span class="ident">tree_count</span>.<span class="ident">min</span>(<span class="kw-2">*</span><span class="ident">CPU_COUNT</span>);
+            <span class="kw">let</span> <span class="ident">desired_threads</span> <span class="op">=</span> <span class="ident">tree_count</span>.<span class="ident">min</span>(<span class="self">self</span>.<span class="ident">maximum_threads</span>);
             <span class="kw">loop</span> {
                 <span class="kw">let</span> <span class="ident">thread_count</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread_count</span>.<span class="ident">load</span>(<span class="ident">Ordering::SeqCst</span>);
                 <span class="kw">if</span> (<span class="ident">thread_count</span> <span class="kw">as</span> <span class="ident">usize</span>) <span class="op">&gt;</span><span class="op">=</span> <span class="ident">desired_threads</span> {
@@ -2673,18 +2654,15 @@
             <span class="ident">sender</span>: <span class="self">self</span>.<span class="ident">sender</span>.<span class="ident">clone</span>(),
             <span class="ident">receiver</span>: <span class="self">self</span>.<span class="ident">receiver</span>.<span class="ident">clone</span>(),
             <span class="ident">thread_count</span>: <span class="self">self</span>.<span class="ident">thread_count</span>.<span class="ident">clone</span>(),
+            <span class="ident">maximum_threads</span>: <span class="self">self</span>.<span class="ident">maximum_threads</span>,
         }
     }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">ThreadPool</span><span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span> {
     <span class="kw">fn</span> <span class="ident">default</span>() -&gt; <span class="self">Self</span> {
-        <span class="kw">let</span> (<span class="ident">sender</span>, <span class="ident">receiver</span>) <span class="op">=</span> <span class="ident">flume::unbounded</span>();
-        <span class="self">Self</span> {
-            <span class="ident">sender</span>,
-            <span class="ident">receiver</span>,
-            <span class="ident">thread_count</span>: <span class="ident">Arc::new</span>(<span class="ident">AtomicU16::new</span>(<span class="number">0</span>)),
-        }
+        <span class="kw">static</span> <span class="ident">CPU_COUNT</span>: <span class="ident">Lazy</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Lazy::new</span>(<span class="ident">num_cpus::get</span>);
+        <span class="ident"><span class="self">Self</span>::new</span>(<span class="kw-2">*</span><span class="ident">CPU_COUNT</span>)
     }
 }
 

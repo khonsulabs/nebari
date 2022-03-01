@@ -1,7 +1,6 @@
 use std::{
     borrow::Cow,
     cmp::Ordering,
-    convert::TryFrom,
     fs::OpenOptions,
     io::{SeekFrom, Write},
     ops::{Bound, RangeBounds},
@@ -59,8 +58,7 @@ impl<File: ManagedFile> TransactionLog<File> {
 
     /// Returns the total size of the transaction log file.
     pub fn total_size(&self) -> u64 {
-        let state = self.state.lock_for_write();
-        *state
+        self.state.len()
     }
 
     /// Initializes `state` to contain the information about the transaction log
@@ -75,7 +73,7 @@ impl<File: ManagedFile> TransactionLog<File> {
             Err(other) => return Err(other),
         };
         if log_length == 0 {
-            state.initialize(1, 0);
+            state.initialize(0, 0);
             return Ok(());
         }
 
@@ -105,6 +103,12 @@ impl<File: ManagedFile> TransactionLog<File> {
 
     /// Logs one or more transactions. After this call returns, the transaction
     /// log is guaranteed to be fully written to disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TransactionPushedOutOfOrder`] if `handles` is out of
+    /// order, or if any handle contains an id older than one already written to
+    /// the log.
     pub fn push(&mut self, handles: Vec<LogEntry<'static>>) -> Result<(), Error> {
         self.log.execute(LogWriter {
             state: self.state.clone(),
@@ -192,8 +196,7 @@ impl<'a> FileOp<Result<(), Error>> for StateInitializer<'a> {
                 }
             };
 
-        self.state
-            .initialize(last_transaction.id + 1, self.log_length);
+        self.state.initialize(last_transaction.id, self.log_length);
         Ok(())
     }
 }
@@ -356,8 +359,14 @@ fn fetch_entry(
                 state.note_transaction_id_status(entry.id, Some(position));
                 match entry.id.cmp(&id) {
                     Ordering::Less => {
-                        lower_id = Some(entry.id);
-                        lower_location = Some(position);
+                        if lower_id.is_none() || entry.id > lower_id.unwrap() {
+                            lower_id = Some(entry.id);
+                            lower_location = Some(position);
+                        } else {
+                            return Ok(ScanResult::NotFound {
+                                nearest_position: position,
+                            });
+                        }
                     }
                     Ordering::Equal => {
                         return Ok(ScanResult::Found {
@@ -367,8 +376,14 @@ fn fetch_entry(
                         });
                     }
                     Ordering::Greater => {
-                        upper_id = entry.id;
-                        upper_location = position;
+                        if entry.id < upper_id {
+                            upper_id = entry.id;
+                            upper_location = position;
+                        } else {
+                            return Ok(ScanResult::NotFound {
+                                nearest_position: position,
+                            });
+                        }
                     }
                 }
             }
@@ -448,7 +463,12 @@ impl FileOp<Result<(), Error>> for LogWriter {
         let mut scratch = [0_u8; PAGE_SIZE];
         let mut completed_transactions = Vec::with_capacity(self.transactions.len());
         for transaction in self.transactions.drain(..) {
-            completed_transactions.push((transaction.id, Some(*log_position)));
+            if transaction.id > log_position.last_written_transaction {
+                log_position.last_written_transaction = transaction.id;
+            } else {
+                return Err(Error::from(ErrorKind::TransactionPushedOutOfOrder));
+            }
+            completed_transactions.push((transaction.id, Some(log_position.file_offset)));
             let mut bytes = transaction.serialize()?;
             if let Some(vault) = &self.vault {
                 bytes = vault.encrypt(&bytes)?;
@@ -486,7 +506,7 @@ impl FileOp<Result<(), Error>> for LogWriter {
                     .copy_from_slice(&bytes[offset..offset + bytes_to_write]);
                 log.write_all(&scratch)?;
                 offset += bytes_to_write;
-                *log_position += PAGE_SIZE as u64;
+                log_position.file_offset += PAGE_SIZE as u64;
             }
         }
 
@@ -654,7 +674,7 @@ fn guess_page(
 #[allow(clippy::semicolon_if_nothing_returned, clippy::future_not_send)]
 mod tests {
 
-    use std::collections::HashSet;
+    use std::collections::{BTreeSet, HashSet};
 
     use nanorand::{Pcg64, Rng};
     use tempfile::tempdir;
@@ -771,6 +791,20 @@ mod tests {
         TransactionLog::<Manager::File>::initialize_state(&state, &context).unwrap();
         let mut transactions =
             TransactionLog::<Manager::File>::open(&log_path, state, context).unwrap();
+
+        let out_of_order = transactions.new_transaction([&b"test"[..]]);
+        transactions
+            .push(vec![
+                transactions.new_transaction([&b"test2"[..]]).transaction,
+            ])
+            .unwrap();
+        assert!(matches!(
+            transactions
+                .push(vec![out_of_order.transaction])
+                .unwrap_err()
+                .kind,
+            ErrorKind::TransactionPushedOutOfOrder
+        ));
 
         assert!(transactions.get(0).unwrap().is_none());
         for id in 1..=1_000 {
@@ -904,7 +938,7 @@ mod tests {
             handles.push(std::thread::spawn(move || {
                 for id in 0_u32..1_000 {
                     let tx = manager.new_transaction([&id.to_be_bytes()[..]]);
-                    manager.push(tx).unwrap();
+                    tx.commit().unwrap();
                 }
             }));
         }
@@ -932,5 +966,105 @@ mod tests {
             })
             .unwrap();
         assert_eq!(ten.unwrap().id, 10);
+    }
+
+    #[test]
+    fn file_out_of_order_log_manager_tests() {
+        out_of_order_log_manager_tests(
+            "file_out_of_order_log_manager",
+            StdFileManager::default(),
+            None,
+            None,
+        );
+    }
+
+    #[test]
+    fn memory_out_of_order_log_manager_tests() {
+        out_of_order_log_manager_tests(
+            "memory_out_of_order_log_manager",
+            MemoryFileManager::default(),
+            None,
+            None,
+        );
+    }
+
+    #[test]
+    fn any_out_of_order_log_manager_tests() {
+        out_of_order_log_manager_tests(
+            "any_out_of_order_log_manager",
+            AnyFileManager::std(),
+            None,
+            None,
+        );
+        out_of_order_log_manager_tests(
+            "any_out_of_order_log_manager",
+            AnyFileManager::memory(),
+            None,
+            None,
+        );
+    }
+
+    fn out_of_order_log_manager_tests<Manager: FileManager>(
+        file_name: &str,
+        file_manager: Manager,
+        vault: Option<Arc<dyn AnyVault>>,
+        cache: Option<ChunkCache>,
+    ) {
+        let temp_dir = crate::test_util::TestDirectory::new(file_name);
+        std::fs::create_dir(&temp_dir).unwrap();
+        let context = Context {
+            file_manager,
+            vault,
+            cache,
+        };
+        let manager = TransactionManager::spawn(&temp_dir, context).unwrap();
+        let mut rng = Pcg64::new_seed(1);
+
+        for batch in 1..=100_u8 {
+            println!("New batch");
+            // Generate a bunch of transactions.
+            let mut handles = Vec::new();
+            for tree in 1..=batch {
+                handles.push(manager.new_transaction([&tree.to_be_bytes()[..]]));
+            }
+            rng.shuffle(&mut handles);
+            let (handle_sender, handle_receiver) = flume::unbounded();
+            let mut should_commit_handles = Vec::new();
+            let mut expected_ids = BTreeSet::new();
+            for (index, handle) in handles.into_iter().enumerate() {
+                let should_commit_handle = rng.generate::<f32>() > 0.25 || expected_ids.is_empty();
+                if should_commit_handle {
+                    expected_ids.insert(handle.id);
+                }
+                should_commit_handles.push(should_commit_handle);
+                handle_sender.send((index, handle)).unwrap();
+            }
+            let should_commit_handles = Arc::new(should_commit_handles);
+            let mut threads = Vec::new();
+            for _ in 1..=batch {
+                let handle_receiver = handle_receiver.clone();
+                let should_commit_handles = should_commit_handles.clone();
+                threads.push(std::thread::spawn(move || {
+                    let (handle_index, handle) = handle_receiver.recv().unwrap();
+                    if should_commit_handles[handle_index] {
+                        println!("Committing handle {}", handle.id);
+                        handle.commit().unwrap();
+                    } else {
+                        println!("Dropping handle {}", handle.id);
+                        drop(handle);
+                    }
+                }));
+            }
+            for thread in threads {
+                thread.join().unwrap();
+            }
+            manager
+                .scan(dbg!(*expected_ids.iter().next().unwrap()).., |tx| {
+                    expected_ids.remove(&tx.id);
+                    true
+                })
+                .unwrap();
+            assert!(expected_ids.is_empty(), "{:?}", expected_ids);
+        }
     }
 }

@@ -1,5 +1,3 @@
-use std::convert::TryFrom;
-
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};

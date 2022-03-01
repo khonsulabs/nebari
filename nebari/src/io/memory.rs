@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    convert::TryFrom,
     io::{self, SeekFrom},
     ops::Neg,
     path::{Path, PathBuf},

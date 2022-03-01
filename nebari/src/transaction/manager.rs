@@ -12,7 +12,7 @@ use parking_lot::Mutex;
 use super::{log::EntryFetcher, LogEntry, State, TransactionLog};
 use crate::{
     error::{Error, InternalError},
-    io::{FileManager, ManagedFile, OperableFile},
+    io::{FileManager, OperableFile},
     transaction::log::ScanResult,
     Context, ErrorKind,
 };
@@ -21,7 +21,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct TransactionManager<Manager: FileManager> {
     state: State,
-    transaction_sender: flume::Sender<(TransactionHandle, flume::Sender<TreeLocks>)>,
+    transaction_sender: flume::Sender<ThreadCommand>,
     context: Context<Manager>,
 }
 
@@ -40,12 +40,7 @@ where
         std::thread::Builder::new()
             .name(String::from("nebari-txlog"))
             .spawn(move || {
-                transaction_writer_thread::<Manager::File>(
-                    state_sender,
-                    log_path,
-                    receiver,
-                    thread_context,
-                );
+                ManagerThread::<Manager>::run(&state_sender, &log_path, receiver, thread_context);
             })
             .map_err(ErrorKind::message)?;
 
@@ -57,12 +52,31 @@ where
         })
     }
 
+    /// Creates a new transaction, exclusively locking `trees`. Will block the thread until the trees can be locked.
+    #[must_use]
+    pub fn new_transaction<
+        'a,
+        I: IntoIterator<Item = &'a [u8], IntoIter = II>,
+        II: ExactSizeIterator<Item = &'a [u8]>,
+    >(
+        &self,
+        trees: I,
+    ) -> ManagedTransaction<Manager> {
+        ManagedTransaction {
+            transaction: Some(self.state.new_transaction(trees)),
+            manager: self.clone(),
+        }
+    }
+
     /// Push `transaction` to the log. Once this function returns, the
     /// transaction log entry has been fully flushed to disk.
-    pub fn push(&self, transaction: TransactionHandle) -> Result<TreeLocks, Error> {
+    fn push(&self, transaction: TransactionHandle) -> Result<TreeLocks, Error> {
         let (completion_sender, completion_receiver) = flume::bounded(1);
         self.transaction_sender
-            .send((transaction, completion_sender))
+            .send(ThreadCommand::Commit {
+                transaction,
+                completion_sender,
+            })
             .map_err(|_| ErrorKind::Internal(InternalError::TransactionManagerStopped))?;
         completion_receiver.recv().map_err(|_| {
             Error::from(ErrorKind::Internal(
@@ -120,6 +134,13 @@ where
         }
     }
 
+    pub(crate) fn drop_transaction_id(&self, transaction_id: u64) {
+        drop(
+            self.transaction_sender
+                .send(ThreadCommand::Drop(transaction_id)),
+        );
+    }
+
     fn log_path(directory: &Path) -> PathBuf {
         directory.join("_transactions")
     }
@@ -139,55 +160,250 @@ impl<Manager: FileManager> Deref for TransactionManager<Manager> {
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
-fn transaction_writer_thread<File: ManagedFile>(
-    state_sender: flume::Sender<Result<State, Error>>,
-    log_path: PathBuf,
-    transactions: flume::Receiver<(TransactionHandle, flume::Sender<TreeLocks>)>,
-    context: Context<File::Manager>,
-) {
+enum ThreadCommand {
+    Commit {
+        transaction: TransactionHandle,
+        completion_sender: flume::Sender<TreeLocks>,
+    },
+    Drop(u64),
+}
+
+struct ManagerThread<Manager: FileManager> {
+    state: ThreadState,
+    commands: flume::Receiver<ThreadCommand>,
+    log: TransactionLog<Manager::File>,
+    pending_transaction_ids: IdSequence,
+    last_processed_id: u64,
+    transaction_batch: Vec<LogEntry<'static>>,
+    completion_senders: Vec<(flume::Sender<Vec<TreeLockHandle>>, Vec<TreeLockHandle>)>,
+}
+
+enum ThreadState {
+    Fresh,
+    Batching,
+    EnsuringSequence,
+}
+
+impl<Manager: FileManager> ManagerThread<Manager> {
     const BATCH: usize = 16;
 
-    let state = State::from_path(&log_path);
-    if let Err(err) = TransactionLog::<File>::initialize_state(&state, &context) {
-        drop(state_sender.send(Err(err)));
-        return;
+    fn run(
+        state_sender: &flume::Sender<Result<State, Error>>,
+        log_path: &Path,
+        transactions: flume::Receiver<ThreadCommand>,
+        context: Context<Manager>,
+    ) {
+        let state = State::from_path(&log_path);
+
+        let log = match TransactionLog::<Manager::File>::initialize_state(&state, &context)
+            .and_then(|_| TransactionLog::<Manager::File>::open(log_path, state.clone(), context))
+        {
+            Ok(log) => log,
+            Err(err) => {
+                drop(state_sender.send(Err(err)));
+                return;
+            }
+        };
+        let transaction_id = log.current_transaction_id();
+        drop(state_sender.send(Ok(state)));
+
+        Self {
+            state: ThreadState::Fresh,
+            commands: transactions,
+            last_processed_id: transaction_id,
+            pending_transaction_ids: IdSequence::new(transaction_id),
+            log,
+            transaction_batch: Vec::with_capacity(Self::BATCH),
+            completion_senders: Vec::with_capacity(Self::BATCH),
+        }
+        .save_transactions();
     }
 
-    let mut log = TransactionLog::<File>::open(&log_path, state.clone(), context).unwrap();
+    fn save_transactions(mut self) {
+        while self.process_next_command() {}
+    }
 
-    drop(state_sender.send(Ok(state)));
-
-    while let Ok(transaction) = transactions.recv() {
-        let mut transaction_batch = Vec::with_capacity(BATCH);
-        let completion_sender = transaction.1;
-        let TransactionHandle {
-            transaction,
-            locked_trees,
-        } = transaction.0;
-        transaction_batch.push(transaction);
-        let mut completion_senders = Vec::with_capacity(BATCH);
-        completion_senders.push((completion_sender, locked_trees));
-        for _ in 0..BATCH - 1 {
-            match transactions.try_recv() {
-                Ok((
-                    TransactionHandle {
-                        transaction,
-                        locked_trees,
-                    },
-                    sender,
-                )) => {
-                    transaction_batch.push(transaction);
-                    completion_senders.push((sender, locked_trees));
-                }
-                // At this point either type of error we want to finish writing the transactions we have.
-                Err(_) => break,
-            }
+    fn process_next_command(&mut self) -> bool {
+        match self.state {
+            ThreadState::Fresh => self.process_next_command_fresh(),
+            ThreadState::Batching => self.process_next_command_batching(),
+            ThreadState::EnsuringSequence => self.process_next_command_ensuring_sequence(),
         }
-        log.push(transaction_batch).unwrap();
-        for (completion_sender, tree_locks) in completion_senders {
+    }
+
+    fn process_next_command_fresh(&mut self) -> bool {
+        match self.commands.recv() {
+            Ok(command) => {
+                match command {
+                    ThreadCommand::Commit {
+                        transaction:
+                            TransactionHandle {
+                                transaction,
+                                locked_trees,
+                            },
+                        completion_sender,
+                    } => {
+                        self.pending_transaction_ids.note(transaction.id);
+                        if self.pending_transaction_ids.complete() {
+                            // Safe to start a new batch
+                            self.last_processed_id = transaction.id;
+                            self.state = ThreadState::Batching;
+                        } else {
+                            // Need to wait for IDs
+                            self.state = ThreadState::EnsuringSequence;
+                        }
+
+                        self.transaction_batch.push(transaction);
+                        self.completion_senders
+                            .push((completion_sender, locked_trees));
+                    }
+                    ThreadCommand::Drop(id) => {
+                        self.mark_transaction_handled(id);
+                    }
+                }
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    fn mark_transaction_handled(&mut self, id: u64) {
+        self.pending_transaction_ids.note(id);
+        if self.pending_transaction_ids.complete() && !self.transaction_batch.is_empty() {
+            self.commit_transaction_batch();
+        }
+    }
+
+    fn process_next_command_batching(&mut self) -> bool {
+        match self.commands.try_recv() {
+            Ok(command) => {
+                match command {
+                    ThreadCommand::Commit {
+                        transaction:
+                            TransactionHandle {
+                                transaction,
+                                locked_trees,
+                            },
+                        completion_sender,
+                    } => {
+                        // Ensure this transaction can be batched. If not,
+                        // commit and enqueue it.
+                        self.note_potentially_sequntial_id(transaction.id);
+                        self.transaction_batch.push(transaction);
+                        self.completion_senders
+                            .push((completion_sender, locked_trees));
+                    }
+                    ThreadCommand::Drop(id) => {
+                        self.note_potentially_sequntial_id(id);
+                    }
+                }
+                true
+            }
+            Err(flume::TryRecvError::Empty) => {
+                // No more pending transactions are ready.
+                self.commit_transaction_batch();
+                true
+            }
+            Err(flume::TryRecvError::Disconnected) => false,
+        }
+    }
+
+    fn note_potentially_sequntial_id(&mut self, id: u64) {
+        self.pending_transaction_ids.note(id);
+        if self.pending_transaction_ids.complete() {
+            // Safe to start a new batch
+            self.last_processed_id = id;
+            self.state = ThreadState::Batching;
+        } else {
+            if !self.transaction_batch.is_empty() {
+                self.commit_transaction_batch();
+            }
+            self.state = ThreadState::EnsuringSequence;
+        }
+    }
+
+    fn process_next_command_ensuring_sequence(&mut self) -> bool {
+        match self.commands.recv() {
+            Ok(command) => {
+                match command {
+                    ThreadCommand::Commit {
+                        transaction:
+                            TransactionHandle {
+                                transaction,
+                                locked_trees,
+                            },
+                        completion_sender,
+                    } => {
+                        let transaction_id = transaction.id;
+                        self.transaction_batch.push(transaction);
+                        self.completion_senders
+                            .push((completion_sender, locked_trees));
+                        self.mark_transaction_handled(transaction_id);
+                    }
+                    ThreadCommand::Drop(id) => {
+                        self.mark_transaction_handled(id);
+                    }
+                }
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    fn commit_transaction_batch(&mut self) {
+        let mut transaction_batch = Vec::with_capacity(Self::BATCH);
+        std::mem::swap(&mut transaction_batch, &mut self.transaction_batch);
+        transaction_batch.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+        self.last_processed_id = transaction_batch.last().unwrap().id;
+        self.state = ThreadState::Fresh;
+        self.log.push(transaction_batch).unwrap();
+        for (completion_sender, tree_locks) in self.completion_senders.drain(..) {
             drop(completion_sender.send(tree_locks));
         }
+    }
+}
+
+/// A transaction that is managed by a [`TransactionManager`].
+pub struct ManagedTransaction<Manager: FileManager> {
+    pub(crate) manager: TransactionManager<Manager>,
+    pub(crate) transaction: Option<TransactionHandle>,
+}
+
+impl<Manager: FileManager> Drop for ManagedTransaction<Manager> {
+    fn drop(&mut self) {
+        if let Some(transaction) = self.transaction.take() {
+            self.manager.drop_transaction_id(transaction.id);
+        }
+    }
+}
+impl<Manager: FileManager> ManagedTransaction<Manager> {
+    /// Commits the transaction to the transaction manager that created this
+    /// transaction.
+    #[allow(clippy::missing_panics_doc)] // Should be unreachable
+    pub fn commit(mut self) -> Result<TreeLocks, Error> {
+        let transaction = self.transaction.take().unwrap();
+        self.manager.push(transaction)
+    }
+
+    /// Rolls the transaction back. It is not necessary to call this function --
+    /// transactions will automatically be rolled back when the handle is
+    /// dropped, if `commit()` isn't called first.
+    pub fn rollback(self) {
+        drop(self);
+    }
+}
+
+impl<Manager: FileManager> Deref for ManagedTransaction<Manager> {
+    type Target = LogEntry<'static>;
+
+    fn deref(&self) -> &Self::Target {
+        self.transaction.as_ref().unwrap()
+    }
+}
+
+impl<Manager: FileManager> DerefMut for ManagedTransaction<Manager> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.transaction.as_mut().unwrap().transaction
     }
 }
 
@@ -297,5 +513,96 @@ impl Deref for TransactionHandle {
 impl DerefMut for TransactionHandle {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.transaction
+    }
+}
+
+struct IdSequence {
+    start: u64,
+    length: u64,
+    statuses: Vec<usize>,
+}
+
+impl IdSequence {
+    pub const fn new(start: u64) -> Self {
+        Self {
+            start,
+            length: 0,
+            statuses: Vec::new(),
+        }
+    }
+
+    pub fn note(&mut self, id: u64) {
+        println!(
+            "Noting {} in {}..={}",
+            id,
+            self.start,
+            self.start + self.length
+        );
+        self.length = ((id + 1).checked_sub(self.start).unwrap()).max(self.length);
+        let offset = usize::try_from(id.checked_sub(self.start).unwrap()).unwrap();
+        let index = offset / (usize::BITS as usize);
+        if self.statuses.len() < index + 1 {
+            self.statuses.resize(index + 1, 0);
+        }
+
+        let bit_offset = offset as usize % (usize::BITS as usize);
+        self.statuses[index] |= 1 << bit_offset;
+
+        println!(
+            "Before truncate: {}..={}",
+            self.start,
+            self.start + self.length
+        );
+        self.truncate();
+        println!(
+            "After truncate: {}..={}",
+            self.start,
+            self.start + self.length
+        );
+    }
+
+    pub const fn complete(&self) -> bool {
+        self.length == 0
+    }
+
+    fn truncate(&mut self) {
+        while self.length > 0 {
+            let mask_bits = usize::try_from(self.length).unwrap();
+            let mask_bits = mask_bits.min(usize::BITS as usize);
+            let mask = usize::MAX >> (usize::BITS as usize - mask_bits);
+            if self.statuses[0] & mask == mask {
+                self.statuses.remove(0);
+                let mask_bits = u64::try_from(mask_bits).unwrap();
+                self.start += mask_bits;
+                self.length -= mask_bits;
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+#[test]
+fn id_sequence_tests() {
+    let mut seq = IdSequence::new(1);
+    seq.note(3);
+    assert!(!seq.complete());
+    seq.note(1);
+    assert!(!seq.complete());
+    seq.note(2);
+    assert!(seq.complete());
+    seq.note(4);
+    assert!(seq.complete());
+
+    let mut seq = IdSequence::new(0);
+    for id in (0..=65).rev() {
+        seq.note(id);
+        assert_eq!(id == 0, seq.complete());
+    }
+
+    let mut seq = IdSequence::new(1);
+    for id in (1..=1024).rev() {
+        seq.note(id);
+        assert_eq!(id == 1, seq.complete());
     }
 }

@@ -21,7 +21,7 @@ use crate::{
     context::Context,
     error::Error,
     io::{fs::StdFileManager, FileManager, ManagedFile},
-    transaction::{LogEntry, TransactionHandle, TransactionManager},
+    transaction::{LogEntry, ManagedTransaction, TransactionManager},
     tree::{
         self, root::AnyTreeRoot, state::AnyTreeState, EmbeddedIndex, KeyEvaluation, KeySequence,
         Modification, Operation, Reducer, State, TransactableCompaction, TreeFile, TreeRoot,
@@ -212,7 +212,6 @@ impl<File: ManagedFile> Roots<File> {
             roots: self.clone(),
             transaction: Some(transaction),
             trees,
-            transaction_manager: self.data.transactions.clone(),
         })
     }
 }
@@ -242,9 +241,8 @@ impl<File: ManagedFile> Clone for Roots<File> {
 #[must_use]
 pub struct ExecutingTransaction<File: ManagedFile> {
     roots: Roots<File>,
-    transaction_manager: TransactionManager<File::Manager>,
     trees: Vec<UnlockedTransactionTree<File>>,
-    transaction: Option<TransactionHandle>,
+    transaction: Option<ManagedTransaction<File::Manager>>,
 }
 
 /// A tree that belongs to an [`ExecutingTransaction`].
@@ -299,14 +297,20 @@ impl<File: ManagedFile> ExecutingTransaction<File> {
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
     pub fn entry(&self) -> &LogEntry<'static> {
-        self.transaction.as_ref().unwrap()
+        self.transaction
+            .as_ref()
+            .and_then(|tx| tx.transaction.as_ref())
+            .unwrap()
     }
 
     /// Returns a mutable reference to the [`LogEntry`] for this transaction.
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
     pub fn entry_mut(&mut self) -> &mut LogEntry<'static> {
-        self.transaction.as_mut().unwrap()
+        self.transaction
+            .as_mut()
+            .and_then(|tx| tx.transaction.as_mut())
+            .unwrap()
     }
 
     /// Commits the transaction. Once this function has returned, all data
@@ -319,9 +323,8 @@ impl<File: ManagedFile> ExecutingTransaction<File> {
         let trees = self.roots.data.thread_pool.commit_trees(trees)?;
 
         // Push the transaction to the log.
-        let tree_locks = self
-            .transaction_manager
-            .push(self.transaction.take().unwrap())?;
+        let transaction = self.transaction.take().unwrap();
+        let tree_locks = transaction.commit()?;
 
         // Publish the tree states, now that the transaction has been fully recorded
         for tree in trees {

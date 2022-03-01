@@ -163,6 +163,9 @@ pub enum ErrorKind {
     /// An error ocurred in the vault.
     #[error("a vault error occurred: {0}")]
     Vault(Box<dyn SendSyncError>),
+    /// An transaction was pushed to the log out of order.
+    #[error("transaction pushed out of order")]
+    TransactionPushedOutOfOrder,
 }
 
 pub trait SendSyncError: std::error::Error + Send + Sync + 'static {}

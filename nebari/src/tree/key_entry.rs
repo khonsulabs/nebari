@@ -1,4 +1,4 @@
-use std::{collections::HashMap, convert::TryFrom};
+use std::collections::HashMap;
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 

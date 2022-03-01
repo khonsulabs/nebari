@@ -50,7 +50,6 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
-    convert::TryFrom,
     fmt::{Debug, Display},
     hash::BuildHasher,
     io::SeekFrom,
@@ -69,7 +68,7 @@ use crate::{
     error::Error,
     io::{File, FileManager, FileOp, ManagedFile, ManagedFileOpener, OpenableFile, OperableFile},
     roots::AbortError,
-    transaction::{TransactionHandle, TransactionManager},
+    transaction::{ManagedTransaction, TransactionManager},
     tree::{btree_entry::ScanArgs, serialization::BinarySerialization},
     vault::AnyVault,
     ArcBytes, ChunkCache, CompareAndSwapError, Context, ErrorKind,
@@ -741,7 +740,9 @@ struct TreeCompactor<'a, Root: root::Root, Manager: FileManager> {
     transactions: Option<TransactableCompaction<'a, Manager>>,
     scratch: &'a mut Vec<u8>,
 }
-impl<'a, Root, Manager> FileOp<Result<(Manager::File, TreeCompactionFinisher<'a, Root>), Error>>
+
+impl<'a, Root, Manager>
+    FileOp<Result<(Manager::File, TreeCompactionFinisher<'a, Root, Manager>), Error>>
     for TreeCompactor<'a, Root, Manager>
 where
     Root: root::Root,
@@ -750,7 +751,7 @@ where
     fn execute(
         self,
         file: &mut dyn File,
-    ) -> Result<(Manager::File, TreeCompactionFinisher<'a, Root>), Error> {
+    ) -> Result<(Manager::File, TreeCompactionFinisher<'a, Root, Manager>), Error> {
         let current_path = file.path().to_path_buf();
         let file_name = current_path
             .file_name()
@@ -805,13 +806,13 @@ where
     }
 }
 
-struct TreeCompactionFinisher<'a, Root: root::Root> {
+struct TreeCompactionFinisher<'a, Root: root::Root, Manager: FileManager> {
     state: &'a State<Root>,
     write_state: MutexGuard<'a, ActiveState<Root>>,
-    _transaction: Option<TransactionHandle>,
+    _transaction: Option<ManagedTransaction<Manager>>,
 }
 
-impl<'a, Root: root::Root> TreeCompactionFinisher<'a, Root> {
+impl<'a, Root: root::Root, Manager: FileManager> TreeCompactionFinisher<'a, Root, Manager> {
     fn finish(mut self, new_file_id: u64) {
         self.write_state.file_id = Some(new_file_id);
         self.write_state.publish(self.state);
@@ -1887,18 +1888,12 @@ mod tests {
 
     #[test]
     fn spam_insert_std_versioned() {
-        spam_insert::<Versioned, StdFile>("std");
+        spam_insert::<Versioned, StdFile>("std-versioned");
     }
 
     #[test]
     fn spam_insert_std_unversioned() {
-        spam_insert::<Unversioned, StdFile>("std");
-    }
-
-    #[test]
-    #[cfg(feature = "uring")]
-    fn spam_insert_uring() {
-        spam_insert::<crate::UringFile>("uring");
+        spam_insert::<Unversioned, StdFile>("std-unversioned");
     }
 
     fn spam_insert<R: Root, F: ManagedFile>(name: &str) {

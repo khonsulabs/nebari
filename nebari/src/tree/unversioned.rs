@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    convert::TryFrom,
     fmt::{Debug, Display},
     marker::PhantomData,
     ops::RangeBounds,

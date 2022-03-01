@@ -26,8 +26,26 @@ struct ActiveState {
     path: PathBuf,
     current_transaction_id: AtomicU64,
     tree_locks: Mutex<HashMap<Cow<'static, [u8]>, TreeLock>>,
-    log_position: Mutex<u64>,
+    log_position: Mutex<LogPosition>,
     known_completed_transactions: Mutex<LruCache<u64, Option<u64>>>,
+}
+
+/// The active log position information.
+#[derive(Debug)]
+pub struct LogPosition {
+    /// The offset of the writer within the file.
+    pub file_offset: u64,
+    /// The last successfully written transaction id.
+    pub last_written_transaction: u64,
+}
+
+impl Default for LogPosition {
+    fn default() -> Self {
+        Self {
+            file_offset: 0,
+            last_written_transaction: UNINITIALIZED_ID,
+        }
+    }
 }
 
 impl State {
@@ -38,24 +56,25 @@ impl State {
                 path: path.as_ref().to_path_buf(),
                 tree_locks: Mutex::default(),
                 current_transaction_id: AtomicU64::new(UNINITIALIZED_ID),
-                log_position: Mutex::new(0),
+                log_position: Mutex::new(LogPosition::default()),
                 known_completed_transactions: Mutex::new(LruCache::new(1024)),
             }),
         }
     }
 
-    pub(crate) fn initialize(&self, current_transaction_id: u64, log_position: u64) {
+    pub(crate) fn initialize(&self, last_written_transaction: u64, log_position: u64) {
         let mut state_position = self.state.log_position.lock();
         self.state
             .current_transaction_id
             .compare_exchange(
                 UNINITIALIZED_ID,
-                current_transaction_id,
+                last_written_transaction + 1,
                 Ordering::SeqCst,
                 Ordering::SeqCst,
             )
             .expect("state already initialized");
-        *state_position = log_position;
+        state_position.file_offset = log_position;
+        state_position.last_written_transaction = last_written_transaction;
     }
 
     /// Returns the last successfully written transaction id, or None if no
@@ -84,7 +103,7 @@ impl State {
     #[must_use]
     pub fn len(&self) -> u64 {
         let position = self.state.log_position.lock();
-        *position
+        position.file_offset
     }
 
     /// Returns if the log is empty.
@@ -164,7 +183,7 @@ impl State {
 }
 
 impl State {
-    pub(crate) fn lock_for_write(&self) -> MutexGuard<'_, u64> {
+    pub(crate) fn lock_for_write(&self) -> MutexGuard<'_, LogPosition> {
         self.state.log_position.lock()
     }
 }

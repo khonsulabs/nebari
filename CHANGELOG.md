@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   This API returns an `UnlockedTransactionTree` which can be sent across thread
   boundaries safely. It offers a `lock()` function to return a
   `LockedTransactionTree` when the tread is ready to operate on the tree.
+- `TransactionManager::push` has been made private. This is a result of the
+  previous breaking change. `TransactionManager::new_transaction()` is a new
+  function that returns a `ManagedTransaction`. `ManagedTransaction::commit()`
+  is the new way to commit a transaction in a transaction manager.
+
+### Fixed
+
+- `TransactionManager` now enforces that transaction log entries are written
+  sequentially. The ACID-compliance of Nebari was never broken when
+  non-sequential log entries are written, but scanning the log file could fail
+  to retrieve items as the scanning algorithm expects the file to be ordered
+  sequentially.
 
 ### Added
 

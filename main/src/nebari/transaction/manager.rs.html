@@ -592,22 +592,6 @@
 <span id="590">590</span>
 <span id="591">591</span>
 <span id="592">592</span>
-<span id="593">593</span>
-<span id="594">594</span>
-<span id="595">595</span>
-<span id="596">596</span>
-<span id="597">597</span>
-<span id="598">598</span>
-<span id="599">599</span>
-<span id="600">600</span>
-<span id="601">601</span>
-<span id="602">602</span>
-<span id="603">603</span>
-<span id="604">604</span>
-<span id="605">605</span>
-<span id="606">606</span>
-<span id="607">607</span>
-<span id="608">608</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">ops</span>::{<span class="ident">Deref</span>, <span class="ident">DerefMut</span>, <span class="ident">RangeBounds</span>},
     <span class="ident">path</span>::{<span class="ident">Path</span>, <span class="ident">PathBuf</span>},
@@ -1142,12 +1126,6 @@
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">note</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">id</span>: <span class="ident">u64</span>) {
-        <span class="macro">println!</span>(
-            <span class="string">&quot;Noting {} in {}..={}&quot;</span>,
-            <span class="ident">id</span>,
-            <span class="self">self</span>.<span class="ident">start</span>,
-            <span class="self">self</span>.<span class="ident">start</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">length</span>
-        );
         <span class="self">self</span>.<span class="ident">length</span> <span class="op">=</span> ((<span class="ident">id</span> <span class="op">+</span> <span class="number">1</span>).<span class="ident">checked_sub</span>(<span class="self">self</span>.<span class="ident">start</span>).<span class="ident">unwrap</span>()).<span class="ident">max</span>(<span class="self">self</span>.<span class="ident">length</span>);
         <span class="kw">let</span> <span class="ident">offset</span> <span class="op">=</span> <span class="ident">usize::try_from</span>(<span class="ident">id</span>.<span class="ident">checked_sub</span>(<span class="self">self</span>.<span class="ident">start</span>).<span class="ident">unwrap</span>()).<span class="ident">unwrap</span>();
         <span class="kw">let</span> <span class="ident">index</span> <span class="op">=</span> <span class="ident">offset</span> <span class="op">/</span> (<span class="ident">usize::BITS</span> <span class="kw">as</span> <span class="ident">usize</span>);
@@ -1158,17 +1136,7 @@
         <span class="kw">let</span> <span class="ident">bit_offset</span> <span class="op">=</span> <span class="ident">offset</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">%</span> (<span class="ident">usize::BITS</span> <span class="kw">as</span> <span class="ident">usize</span>);
         <span class="self">self</span>.<span class="ident">statuses</span>[<span class="ident">index</span>] <span class="op">|</span><span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="ident">bit_offset</span>;
 
-        <span class="macro">println!</span>(
-            <span class="string">&quot;Before truncate: {}..={}&quot;</span>,
-            <span class="self">self</span>.<span class="ident">start</span>,
-            <span class="self">self</span>.<span class="ident">start</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">length</span>
-        );
         <span class="self">self</span>.<span class="ident">truncate</span>();
-        <span class="macro">println!</span>(
-            <span class="string">&quot;After truncate: {}..={}&quot;</span>,
-            <span class="self">self</span>.<span class="ident">start</span>,
-            <span class="self">self</span>.<span class="ident">start</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">length</span>
-        );
     }
 
     <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">complete</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {

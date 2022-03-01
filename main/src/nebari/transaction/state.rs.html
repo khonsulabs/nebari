@@ -170,6 +170,25 @@
 <span id="168">168</span>
 <span id="169">169</span>
 <span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">borrow::Cow</span>,
     <span class="ident">collections::HashMap</span>,
@@ -198,8 +217,26 @@
     <span class="ident">path</span>: <span class="ident">PathBuf</span>,
     <span class="ident">current_transaction_id</span>: <span class="ident">AtomicU64</span>,
     <span class="ident">tree_locks</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">Cow</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span>, [<span class="ident">u8</span>]<span class="op">&gt;</span>, <span class="ident">TreeLock</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    <span class="ident">log_position</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
+    <span class="ident">log_position</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">LogPosition</span><span class="op">&gt;</span>,
     <span class="ident">known_completed_transactions</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">LruCache</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+}
+
+<span class="doccomment">/// The active log position information.</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">LogPosition</span> {
+    <span class="doccomment">/// The offset of the writer within the file.</span>
+    <span class="kw">pub</span> <span class="ident">file_offset</span>: <span class="ident">u64</span>,
+    <span class="doccomment">/// The last successfully written transaction id.</span>
+    <span class="kw">pub</span> <span class="ident">last_written_transaction</span>: <span class="ident">u64</span>,
+}
+
+<span class="kw">impl</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">LogPosition</span> {
+    <span class="kw">fn</span> <span class="ident">default</span>() -&gt; <span class="self">Self</span> {
+        <span class="self">Self</span> {
+            <span class="ident">file_offset</span>: <span class="number">0</span>,
+            <span class="ident">last_written_transaction</span>: <span class="ident">UNINITIALIZED_ID</span>,
+        }
+    }
 }
 
 <span class="kw">impl</span> <span class="ident">State</span> {
@@ -210,24 +247,25 @@
                 <span class="ident">path</span>: <span class="ident">path</span>.<span class="ident">as_ref</span>().<span class="ident">to_path_buf</span>(),
                 <span class="ident">tree_locks</span>: <span class="ident">Mutex::default</span>(),
                 <span class="ident">current_transaction_id</span>: <span class="ident">AtomicU64::new</span>(<span class="ident">UNINITIALIZED_ID</span>),
-                <span class="ident">log_position</span>: <span class="ident">Mutex::new</span>(<span class="number">0</span>),
+                <span class="ident">log_position</span>: <span class="ident">Mutex::new</span>(<span class="ident">LogPosition::default</span>()),
                 <span class="ident">known_completed_transactions</span>: <span class="ident">Mutex::new</span>(<span class="ident">LruCache::new</span>(<span class="number">1024</span>)),
             }),
         }
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">initialize</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">current_transaction_id</span>: <span class="ident">u64</span>, <span class="ident">log_position</span>: <span class="ident">u64</span>) {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">initialize</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">last_written_transaction</span>: <span class="ident">u64</span>, <span class="ident">log_position</span>: <span class="ident">u64</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">state_position</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">log_position</span>.<span class="ident">lock</span>();
         <span class="self">self</span>.<span class="ident">state</span>
             .<span class="ident">current_transaction_id</span>
             .<span class="ident">compare_exchange</span>(
                 <span class="ident">UNINITIALIZED_ID</span>,
-                <span class="ident">current_transaction_id</span>,
+                <span class="ident">last_written_transaction</span> <span class="op">+</span> <span class="number">1</span>,
                 <span class="ident">Ordering::SeqCst</span>,
                 <span class="ident">Ordering::SeqCst</span>,
             )
             .<span class="ident">expect</span>(<span class="string">&quot;state already initialized&quot;</span>);
-        <span class="kw-2">*</span><span class="ident">state_position</span> <span class="op">=</span> <span class="ident">log_position</span>;
+        <span class="ident">state_position</span>.<span class="ident">file_offset</span> <span class="op">=</span> <span class="ident">log_position</span>;
+        <span class="ident">state_position</span>.<span class="ident">last_written_transaction</span> <span class="op">=</span> <span class="ident">last_written_transaction</span>;
     }
 
     <span class="doccomment">/// Returns the last successfully written transaction id, or None if no</span>
@@ -256,7 +294,7 @@
     <span class="attribute">#[<span class="ident">must_use</span>]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">u64</span> {
         <span class="kw">let</span> <span class="ident">position</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">log_position</span>.<span class="ident">lock</span>();
-        <span class="kw-2">*</span><span class="ident">position</span>
+        <span class="ident">position</span>.<span class="ident">file_offset</span>
     }
 
     <span class="doccomment">/// Returns if the log is empty.</span>
@@ -336,7 +374,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">State</span> {
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">lock_for_write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">MutexGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">u64</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">lock_for_write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">MutexGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">LogPosition</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">log_position</span>.<span class="ident">lock</span>()
     }
 }

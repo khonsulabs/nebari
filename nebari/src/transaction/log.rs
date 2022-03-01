@@ -106,7 +106,7 @@ impl<File: ManagedFile> TransactionLog<File> {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::TransactionPushedOutOfOrder`] if `handles` is out of
+    /// Returns [`ErrorKind::TransactionPushedOutOfOrder`] if `handles` is out of
     /// order, or if any handle contains an id older than one already written to
     /// the log.
     pub fn push(&mut self, handles: Vec<LogEntry<'static>>) -> Result<(), Error> {

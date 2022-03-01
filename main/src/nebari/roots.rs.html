@@ -1518,6 +1518,13 @@
 <span id="1516">1516</span>
 <span id="1517">1517</span>
 <span id="1518">1518</span>
+<span id="1519">1519</span>
+<span id="1520">1520</span>
+<span id="1521">1521</span>
+<span id="1522">1522</span>
+<span id="1523">1523</span>
+<span id="1524">1524</span>
+<span id="1525">1525</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">any::Any</span>,
     <span class="ident">borrow</span>::{<span class="ident">Borrow</span>, <span class="ident">Cow</span>},
@@ -1855,6 +1862,13 @@
         <span class="ident">drop</span>(<span class="ident">tree_locks</span>);
 
         <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="doccomment">/// Rolls the transaction back. It is not necessary to call this function --</span>
+    <span class="doccomment">/// transactions will automatically be rolled back when the transaction is</span>
+    <span class="doccomment">/// dropped, if `commit()` isn&#39;t called first.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">rollback</span>(<span class="self">self</span>) {
+        <span class="ident">drop</span>(<span class="self">self</span>);
     }
 
     <span class="doccomment">/// Accesses a locked tree.</span>
@@ -2828,7 +2842,7 @@
             .<span class="ident">unwrap</span>();
 
         <span class="comment">// Roll the transaction back</span>
-        <span class="ident">drop</span>(<span class="ident">transaction</span>);
+        <span class="ident">transaction</span>.<span class="ident">rollback</span>();
 
         <span class="comment">// Ensure that the reader still sees the old value</span>
         <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">tree</span>.<span class="ident">get</span>(<span class="string">b&quot;test&quot;</span>).<span class="ident">unwrap</span>().<span class="ident">expect</span>(<span class="string">&quot;key not found&quot;</span>);
@@ -3017,7 +3031,7 @@
                 <span class="ident">ErrorKind::ValueTooLarge</span>
             ));
             <span class="comment">// Roll the transaction back</span>
-            <span class="ident">drop</span>(<span class="ident">transaction</span>);
+            <span class="ident">transaction</span>.<span class="ident">rollback</span>();
         }
         <span class="comment">// Ensure that we can still write to the tree.</span>
         {

@@ -2123,7 +2123,7 @@
                         <span class="ident">handle</span>.<span class="ident">commit</span>().<span class="ident">unwrap</span>();
                     } <span class="kw">else</span> {
                         <span class="macro">println!</span>(<span class="string">&quot;Dropping handle {}&quot;</span>, <span class="ident">handle</span>.<span class="ident">id</span>);
-                        <span class="ident">drop</span>(<span class="ident">handle</span>);
+                        <span class="ident">handle</span>.<span class="ident">rollback</span>();
                     }
                 }));
             }

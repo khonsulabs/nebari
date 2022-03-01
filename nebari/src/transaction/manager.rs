@@ -532,12 +532,6 @@ impl IdSequence {
     }
 
     pub fn note(&mut self, id: u64) {
-        println!(
-            "Noting {} in {}..={}",
-            id,
-            self.start,
-            self.start + self.length
-        );
         self.length = ((id + 1).checked_sub(self.start).unwrap()).max(self.length);
         let offset = usize::try_from(id.checked_sub(self.start).unwrap()).unwrap();
         let index = offset / (usize::BITS as usize);
@@ -548,17 +542,7 @@ impl IdSequence {
         let bit_offset = offset as usize % (usize::BITS as usize);
         self.statuses[index] |= 1 << bit_offset;
 
-        println!(
-            "Before truncate: {}..={}",
-            self.start,
-            self.start + self.length
-        );
         self.truncate();
-        println!(
-            "After truncate: {}..={}",
-            self.start,
-            self.start + self.length
-        );
     }
 
     pub const fn complete(&self) -> bool {

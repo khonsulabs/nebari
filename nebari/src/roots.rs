@@ -337,6 +337,13 @@ impl<File: ManagedFile> ExecutingTransaction<File> {
         Ok(())
     }
 
+    /// Rolls the transaction back. It is not necessary to call this function --
+    /// transactions will automatically be rolled back when the transaction is
+    /// dropped, if `commit()` isn't called first.
+    pub fn rollback(self) {
+        drop(self);
+    }
+
     /// Accesses a locked tree.
     pub fn tree<Root: tree::Root>(
         &self,
@@ -1308,7 +1315,7 @@ mod tests {
             .unwrap();
 
         // Roll the transaction back
-        drop(transaction);
+        transaction.rollback();
 
         // Ensure that the reader still sees the old value
         let result = tree.get(b"test").unwrap().expect("key not found");
@@ -1497,7 +1504,7 @@ mod tests {
                 ErrorKind::ValueTooLarge
             ));
             // Roll the transaction back
-            drop(transaction);
+            transaction.rollback();
         }
         // Ensure that we can still write to the tree.
         {

@@ -1051,7 +1051,7 @@ mod tests {
                         handle.commit().unwrap();
                     } else {
                         println!("Dropping handle {}", handle.id);
-                        drop(handle);
+                        handle.rollback();
                     }
                 }));
             }

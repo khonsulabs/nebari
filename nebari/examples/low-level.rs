@@ -3,7 +3,7 @@
 
 use nebari::{
     io::{fs::StdFile, memory::MemoryFile, ManagedFile},
-    tree::{KeyEvaluation, State, TreeFile, Unversioned, Versioned},
+    tree::{ScanEvaluation, State, TreeFile, Unversioned, Versioned},
     ArcBytes, Context, Error,
 };
 
@@ -48,7 +48,7 @@ fn main() -> Result<(), Error> {
         ..,
         true,
         false,
-        &mut |_key| KeyEvaluation::ReadData,
+        &mut |_key| ScanEvaluation::ReadData,
         &mut |key, data| {
             println!(
                 "Key {:?} contained {:?} at sequence {:?}. Previous sequence: {:?}",
@@ -76,8 +76,8 @@ fn tree_basics<Root: nebari::tree::Root, File: ManagedFile>(
         &(..),
         true,
         false,
-        &mut |_, _, _| true,
-        &mut |_key, _index| KeyEvaluation::ReadData,
+        &mut |_, _, _| ScanEvaluation::ReadData,
+        &mut |_key, _index| ScanEvaluation::ReadData,
         &mut |key, _index, value| {
             println!("Found key {:?} with value {:?}", key, value);
             Ok(())

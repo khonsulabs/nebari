@@ -13,9 +13,7 @@ This crate provides the `Roots` type, which is the transactional storage layer
 for [`BonsaiDb`][bonsaidb]. It is loosely inspired by
 [`Couchstore`](https://github.com/couchbase/couchstore).
 
-This crate blocks the current thread when accessing the filesystem. If you are
-looking for an async-ready database, [BonsaiDb][bonsaidb] is our vision of an
-async-aware database built atop Nebari.
+This crate blocks the current thread when accessing the filesystem. If you are looking for an async-ready database, [BonsaiDb][bonsaidb] is our vision of an async-aware database built atop Nebari.
 
 This crate is alpha. While its format is considered stable, there may be bugs
 that could lead to data loss. Please have a good backup strategy while using

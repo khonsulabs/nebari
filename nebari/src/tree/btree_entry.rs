@@ -20,7 +20,7 @@ use crate::{
     chunk_cache::CacheEntry,
     error::Error,
     io::File,
-    tree::{key_entry::ValueIndex, read_chunk, versioned::Children, KeyEvaluation},
+    tree::{key_entry::ValueIndex, read_chunk, versioned::Children, ScanEvaluation},
     vault::AnyVault,
     AbortError, ArcBytes, ChunkCache, ErrorKind,
 };
@@ -70,16 +70,38 @@ impl<Index, ReducedIndex> Default for BTreeEntry<Index, ReducedIndex> {
 /// values.
 pub trait Reducer<Index> {
     /// Reduces one or more indexes into a single reduced index.
-    fn reduce(indexes: &[&Index]) -> Self;
+    fn reduce<'a, Indexes, IndexesIter>(indexes: Indexes) -> Self
+    where
+        Index: 'a,
+        Indexes: IntoIterator<Item = &'a Index, IntoIter = IndexesIter> + ExactSizeIterator,
+        IndexesIter: Iterator<Item = &'a Index> + ExactSizeIterator + Clone;
 
     /// Reduces one or more previously-reduced indexes into a single reduced index.
-    fn rereduce(reductions: &[&Self]) -> Self;
+    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(values: ReducedIndexes) -> Self
+    where
+        Self: 'a,
+        ReducedIndexes:
+            IntoIterator<Item = &'a Self, IntoIter = ReducedIndexesIter> + ExactSizeIterator,
+        ReducedIndexesIter: Iterator<Item = &'a Self> + ExactSizeIterator + Clone;
 }
 
 impl<Index> Reducer<Index> for () {
-    fn reduce(_indexes: &[&Index]) -> Self {}
+    fn reduce<'a, Indexes, IndexesIter>(_indexes: Indexes) -> Self
+    where
+        Index: 'a,
+        Indexes: IntoIterator<Item = &'a Index, IntoIter = IndexesIter> + ExactSizeIterator,
+        IndexesIter: Iterator<Item = &'a Index> + ExactSizeIterator + Clone,
+    {
+    }
 
-    fn rereduce(_reductions: &[&Self]) -> Self {}
+    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(_values: ReducedIndexes) -> Self
+    where
+        Self: 'a,
+        ReducedIndexes:
+            IntoIterator<Item = &'a Self, IntoIter = ReducedIndexesIter> + ExactSizeIterator,
+        ReducedIndexesIter: Iterator<Item = &'a Self> + ExactSizeIterator + Clone,
+    {
+    }
 }
 
 pub struct ModificationContext<IndexedType, Index, Context, Indexer, Loader>
@@ -891,11 +913,9 @@ where
     #[must_use]
     pub fn stats(&self) -> ReducedIndex {
         match &self.node {
-            BTreeNode::Leaf(children) => {
-                ReducedIndex::reduce(&children.iter().map(|c| &c.index).collect::<Vec<_>>())
-            }
+            BTreeNode::Leaf(children) => ReducedIndex::reduce(children.iter().map(|c| &c.index)),
             BTreeNode::Interior(children) => {
-                ReducedIndex::rereduce(&children.iter().map(|c| &c.stats).collect::<Vec<_>>())
+                ReducedIndex::rereduce(children.iter().map(|c| &c.stats))
             }
             BTreeNode::Uninitialized => unreachable!(),
         }
@@ -941,8 +961,8 @@ where
         current_depth: usize,
     ) -> Result<bool, AbortError<CallerError>>
     where
-        NodeEvaluator: FnMut(&ArcBytes<'static>, &ReducedIndex, usize) -> bool,
-        KeyEvaluator: FnMut(&ArcBytes<'static>, &Index) -> KeyEvaluation,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &ReducedIndex, usize) -> ScanEvaluation,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Index) -> ScanEvaluation,
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
         ScanDataCallback: FnMut(
             ArcBytes<'static>,
@@ -955,7 +975,7 @@ where
                 for child in DirectionalSliceIterator::new(args.forwards, children) {
                     if range.contains(&child.key.as_slice()) {
                         match (args.key_evaluator)(&child.key, &child.index) {
-                            KeyEvaluation::ReadData => {
+                            ScanEvaluation::ReadData => {
                                 if child.index.position() > 0 {
                                     let data = match read_chunk(
                                         child.index.position(),
@@ -970,8 +990,8 @@ where
                                     (args.data_callback)(child.key.clone(), &child.index, data)?;
                                 }
                             }
-                            KeyEvaluation::Skip => {}
-                            KeyEvaluation::Stop => return Ok(false),
+                            ScanEvaluation::Skip => {}
+                            ScanEvaluation::Stop => return Ok(false),
                         };
                     }
                 }
@@ -1024,8 +1044,9 @@ where
                     }
 
                     let keep_scanning =
-                        (args.node_evaluator)(&child.key, &child.stats, current_depth)
-                            && child.position.map_loaded_entry(
+                        match (args.node_evaluator)(&child.key, &child.stats, current_depth) {
+                            ScanEvaluation::Stop => false,
+                            ScanEvaluation::ReadData => child.position.map_loaded_entry(
                                 file,
                                 vault,
                                 cache,
@@ -1033,7 +1054,9 @@ where
                                 |entry, file| {
                                     entry.scan(range, args, file, vault, cache, current_depth + 1)
                                 },
-                            )?;
+                            )?,
+                            ScanEvaluation::Skip => true,
+                        };
                     if !keep_scanning {
                         return Ok(false);
                     }
@@ -1058,7 +1081,7 @@ where
         cache: Option<&ChunkCache>,
     ) -> Result<bool, Error>
     where
-        KeyEvaluator: FnMut(&ArcBytes<'static>, &Index) -> KeyEvaluation,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Index) -> ScanEvaluation,
         KeyReader: FnMut(ArcBytes<'static>, &Index) -> Result<(), AbortError<Infallible>>,
         Keys: Iterator<Item = &'keys [u8]>,
     {
@@ -1074,11 +1097,11 @@ where
                             last_index += matching;
                             let entry = &children[last_index];
                             match key_evaluator(&entry.key, &entry.index) {
-                                KeyEvaluation::ReadData => {
+                                ScanEvaluation::ReadData => {
                                     key_reader(entry.key.clone(), &entry.index)?;
                                 }
-                                KeyEvaluation::Skip => {}
-                                KeyEvaluation::Stop => return Ok(false),
+                                ScanEvaluation::Skip => {}
+                                ScanEvaluation::Stop => return Ok(false),
                             }
                         }
                         Err(location) => {
@@ -1333,8 +1356,8 @@ pub struct ScanArgs<
     KeyEvaluator,
     DataCallback,
 > where
-    NodeEvaluator: FnMut(&ArcBytes<'static>, &ReducedIndex, usize) -> bool,
-    KeyEvaluator: FnMut(&ArcBytes<'static>, &Index) -> KeyEvaluation,
+    NodeEvaluator: FnMut(&ArcBytes<'static>, &ReducedIndex, usize) -> ScanEvaluation,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &Index) -> ScanEvaluation,
     DataCallback:
         FnMut(ArcBytes<'static>, &Index, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
 {
@@ -1354,8 +1377,8 @@ impl<
         DataCallback,
     > ScanArgs<Index, ReducedIndex, CallerError, NodeEvaluator, KeyEvaluator, DataCallback>
 where
-    NodeEvaluator: FnMut(&ArcBytes<'static>, &ReducedIndex, usize) -> bool,
-    KeyEvaluator: FnMut(&ArcBytes<'static>, &Index) -> KeyEvaluation,
+    NodeEvaluator: FnMut(&ArcBytes<'static>, &ReducedIndex, usize) -> ScanEvaluation,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &Index) -> ScanEvaluation,
     DataCallback:
         FnMut(ArcBytes<'static>, &Index, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
 {

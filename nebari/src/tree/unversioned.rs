@@ -13,7 +13,7 @@ use super::{
     modify::Modification,
     read_chunk,
     serialization::BinarySerialization,
-    KeyEvaluation, KeyRange, PagedWriter,
+    KeyRange, PagedWriter, ScanEvaluation,
 };
 use crate::{
     chunk_cache::CacheEntry,
@@ -226,7 +226,7 @@ where
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
     where
-        KeyEvaluator: FnMut(&ArcBytes<'static>) -> KeyEvaluation,
+        KeyEvaluator: FnMut(&ArcBytes<'static>) -> ScanEvaluation,
         KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
         Keys: Iterator<Item = &'keys [u8]>,
     {
@@ -285,8 +285,8 @@ where
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
     where
-        NodeEvaluator: FnMut(&ArcBytes<'static>, &Self::ReducedIndex, usize) -> bool,
-        KeyEvaluator: FnMut(&ArcBytes<'static>, &Self::Index) -> KeyEvaluation,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &Self::ReducedIndex, usize) -> ScanEvaluation,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Self::Index) -> ScanEvaluation,
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
         DataCallback: FnMut(
             ArcBytes<'static>,

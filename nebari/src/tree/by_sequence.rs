@@ -102,16 +102,28 @@ impl BinarySerialization for BySequenceStats {
     }
 }
 
-impl<'a> Reducer<BySequenceIndex> for BySequenceStats {
-    fn reduce(values: &[&BySequenceIndex]) -> Self {
+impl Reducer<BySequenceIndex> for BySequenceStats {
+    fn reduce<'a, Indexes, IndexesIter>(indexes: Indexes) -> Self
+    where
+        BySequenceIndex: 'a,
+        Indexes:
+            IntoIterator<Item = &'a BySequenceIndex, IntoIter = IndexesIter> + ExactSizeIterator,
+        IndexesIter: Iterator<Item = &'a BySequenceIndex> + ExactSizeIterator + Clone,
+    {
         Self {
-            total_sequences: values.len() as u64,
+            total_sequences: indexes.len() as u64,
         }
     }
 
-    fn rereduce(values: &[&Self]) -> Self {
+    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(values: ReducedIndexes) -> Self
+    where
+        Self: 'a,
+        ReducedIndexes:
+            IntoIterator<Item = &'a Self, IntoIter = ReducedIndexesIter> + ExactSizeIterator,
+        ReducedIndexesIter: Iterator<Item = &'a Self> + ExactSizeIterator,
+    {
         Self {
-            total_sequences: values.iter().map(|v| v.total_sequences).sum(),
+            total_sequences: values.into_iter().map(|v| v.total_sequences).sum(),
         }
     }
 }

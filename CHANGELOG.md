@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.5.0
+
+### Breaking Changes
+
+- `KeyEvaluation` has been renamed to `ScanEvaluation`.
+- All ``scan()` functions have been updated with the `node_evaluator`callback
+now returns a`ScanEvaluation` instead of a `bool`. To preserve existing
+behavior, return`ScanEvaluation::ReadData`instead of true and
+`ScanEvaluation::Stop` instead of false.
+
+### Added
+
+- `TreeFile::reduce()`, `Tree::reduce()`, `TransactionTree::reduce()` have been
+  added as a way to return aggregated information stored within the nodes. A
+  practical use case is the ability to retrieve the number of alive/deleted keys
+  over a given range, but this functionality extends to embedded indexes through
+  the existing `Reducer` trait.
+
 ## v0.4.0
 
 ### Breaking Changes

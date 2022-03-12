@@ -23,8 +23,8 @@ use crate::{
     io::{fs::StdFileManager, FileManager, ManagedFile},
     transaction::{LogEntry, ManagedTransaction, TransactionManager},
     tree::{
-        self, root::AnyTreeRoot, state::AnyTreeState, EmbeddedIndex, KeyEvaluation, KeySequence,
-        Modification, Operation, Reducer, State, TransactableCompaction, TreeFile, TreeRoot,
+        self, root::AnyTreeRoot, state::AnyTreeState, EmbeddedIndex, KeySequence, Modification,
+        Operation, Reducer, ScanEvaluation, State, TransactableCompaction, TreeFile, TreeRoot,
         VersionedTreeRoot,
     },
     vault::AnyVault,
@@ -506,12 +506,26 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
         self.tree.get_range(range, true)
     }
 
-    /// Scans the tree. Each key that is contained `range` will be passed to
-    /// `key_evaluator`, which can opt to read the data for the key, skip, or
-    /// stop scanning. If `KeyEvaluation::ReadData` is returned, `callback` will
-    /// be invoked with the key and stored value. The order in which `callback`
-    /// is invoked is not necessarily the same order in which the keys are
-    /// found.
+    /// Scans the tree across all nodes that might contain nodes within `range`.
+    ///
+    /// If `forwards` is true, the tree is scanned in ascending order.
+    /// Otherwise, the tree is scanned in descending order.
+    ///
+    /// `node_evaluator` is invoked for each [`Interior`] node to determine if
+    /// the node should be traversed. The parameters to the callback are:
+    ///
+    /// - `&ArcBytes<'static>`: The maximum key stored within the all children
+    ///   nodes.
+    /// - `&Root::ReducedIndex`: The reduced index value stored within the node.
+    /// - `usize`: The depth of the node. The root nodes are depth 0.
+    ///
+    /// The result of the callback is a [`ScanEvaluation`]. To read children
+    /// nodes, return [`ScanEvalution::ReadData`].
+    ///
+    /// `key_evaluator` is invoked for each key encountered that is contained
+    /// within `range`. For all [`ScanEvaluation::ReadData`] results returned,
+    /// `callback` will be invoked with the key and values. `callback` may not
+    /// be invoked in the same order as the keys are scanned.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(skip(self, node_evaluator, key_evaluator, callback))
@@ -526,8 +540,8 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     ) -> Result<(), AbortError<CallerError>>
     where
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
-        NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> bool,
-        KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> KeyEvaluation,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> ScanEvaluation,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> ScanEvaluation,
         DataCallback: FnMut(
             ArcBytes<'static>,
             &Root::Index,
@@ -543,6 +557,25 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
             &mut key_evaluator,
             &mut callback,
         )
+    }
+
+    /// Returns the reduced index over the provided range. This is an
+    /// aggregation function that builds atop the `scan()` operation which calls
+    /// [`Reducer::reduce()`] and [`Reducer::rereduce()`] on all matching
+    /// indexes stored within the nodes of this tree, producing a single
+    /// aggregated [`Root::ReducedIndex`] value.
+    ///
+    /// If no keys match, the returned result is what [`Reducer::rereduce()`]
+    /// returns when an empty slice is provided.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    pub fn reduce<'keys, KeyRangeBounds>(
+        &mut self,
+        range: &'keys KeyRangeBounds,
+    ) -> Result<Root::ReducedIndex, Error>
+    where
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + Clone + ?Sized,
+    {
+        self.tree.reduce(range, true)
     }
 
     /// Returns the first key of the tree.
@@ -851,12 +884,26 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         })
     }
 
-    /// Scans the tree. Each key that is contained `range` will be passed to
-    /// `key_evaluator`, which can opt to read the data for the key, skip, or
-    /// stop scanning. If `KeyEvaluation::ReadData` is returned, `callback` will
-    /// be invoked with the key and stored value. The order in which `callback`
-    /// is invoked is not necessarily the same order in which the keys are
-    /// found.
+    /// Scans the tree across all nodes that might contain nodes within `range`.
+    ///
+    /// If `forwards` is true, the tree is scanned in ascending order.
+    /// Otherwise, the tree is scanned in descending order.
+    ///
+    /// `node_evaluator` is invoked for each [`Interior`] node to determine if
+    /// the node should be traversed. The parameters to the callback are:
+    ///
+    /// - `&ArcBytes<'static>`: The maximum key stored within the all children
+    ///   nodes.
+    /// - `&Root::ReducedIndex`: The reduced index value stored within the node.
+    /// - `usize`: The depth of the node. The root nodes are depth 0.
+    ///
+    /// The result of the callback is a [`ScanEvaluation`]. To read children
+    /// nodes, return [`ScanEvalution::ReadData`].
+    ///
+    /// `key_evaluator` is invoked for each key encountered that is contained
+    /// within `range`. For all [`ScanEvaluation::ReadData`] results returned,
+    /// `callback` will be invoked with the key and values. `callback` may not
+    /// be invoked in the same order as the keys are scanned.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(skip(self, node_evaluator, key_evaluator, callback))
@@ -871,8 +918,8 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     ) -> Result<(), AbortError<CallerError>>
     where
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + Clone + ?Sized,
-        NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> bool,
-        KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> KeyEvaluation,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> ScanEvaluation,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> ScanEvaluation,
         DataCallback: FnMut(
             ArcBytes<'static>,
             &Root::Index,
@@ -891,6 +938,29 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
                 &mut key_evaluator,
                 &mut callback,
             )
+        })
+    }
+
+    /// Returns the reduced index over the provided range. This is an
+    /// aggregation function that builds atop the `scan()` operation which calls
+    /// [`Reducer::reduce()`] and [`Reducer::rereduce()`] on all matching
+    /// indexes stored within the nodes of this tree, producing a single
+    /// aggregated [`Root::ReducedIndex`] value.
+    ///
+    /// If no keys match, the returned result is what [`Reducer::rereduce()`]
+    /// returns when an empty slice is provided.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    pub fn reduce<'keys, KeyRangeBounds>(
+        &self,
+        range: &'keys KeyRangeBounds,
+    ) -> Result<Root::ReducedIndex, Error>
+    where
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + Clone + ?Sized,
+    {
+        catch_compaction_and_retry(move || {
+            let mut tree = self.open_for_read()?;
+
+            tree.reduce(range, false)
         })
     }
 
@@ -1016,7 +1086,7 @@ where
     ) -> Result<(), AbortError<CallerError>>
     where
         Range: Clone + RangeBounds<u64> + Debug + 'static,
-        KeyEvaluator: FnMut(KeySequence) -> KeyEvaluation,
+        KeyEvaluator: FnMut(KeySequence) -> ScanEvaluation,
         DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {

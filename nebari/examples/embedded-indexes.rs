@@ -3,7 +3,7 @@ use std::convert::Infallible;
 use byteorder::BigEndian;
 use nanorand::{Pcg64, Rng};
 use nebari::{
-    tree::{EmbeddedIndex, KeyEvaluation, Reducer, Root, Serializable, VersionedTreeRoot},
+    tree::{EmbeddedIndex, Reducer, Root, ScanEvaluation, Serializable, VersionedTreeRoot},
     Error,
 };
 
@@ -34,13 +34,13 @@ fn main() -> Result<(), Error> {
                 "Interior found with a maximum key stored of {:?} at depth {} with {} zeros",
                 max_key, depth, index.embedded.0,
             );
-            true
+            ScanEvaluation::ReadData
         },
         // The key evaluator is called for each key discovered in the tree, but
         // before the stored value is read.
         |key, index| {
             println!("Key {:?} has {} zeros", key, index.embedded.0);
-            KeyEvaluation::Skip
+            ScanEvaluation::Skip
         },
         // The data callback is invoked once data is read. In this example, we
         // always skip reading, so this is unreachable.
@@ -64,12 +64,23 @@ impl EmbeddedIndex for Zeroes {
 }
 
 impl Reducer<Self> for Zeroes {
-    fn reduce(indexes: &[&Self]) -> Self {
-        Self(indexes.iter().map(|i| i.0).sum())
+    fn reduce<'a, Indexes, IndexesIter>(indexes: Indexes) -> Self
+    where
+        Indexes: IntoIterator<Item = &'a Self, IntoIter = IndexesIter> + ExactSizeIterator,
+        IndexesIter: Iterator<Item = &'a Self> + ExactSizeIterator + Clone,
+    {
+        Self(indexes.into_iter().map(|i| i.0).sum())
     }
 
-    fn rereduce(reductions: &[&Self]) -> Self {
-        Self::reduce(reductions)
+    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(values: ReducedIndexes) -> Self
+    where
+        Self: 'a,
+        ReducedIndexes:
+            IntoIterator<Item = &'a Self, IntoIter = ReducedIndexesIter> + ExactSizeIterator,
+        ReducedIndexesIter: Iterator<Item = &'a Self> + ExactSizeIterator + Clone,
+    {
+        // TODO change reduce to an iterator too
+        Self::reduce(values)
     }
 }
 

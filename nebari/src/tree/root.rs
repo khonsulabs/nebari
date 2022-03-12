@@ -14,8 +14,8 @@ use crate::{
     roots::AnyTransactionTree,
     transaction::TransactionManager,
     tree::{
-        btree_entry::ScanArgs, state::AnyTreeState, KeyEvaluation, Modification, PageHeader,
-        PagedWriter, State, TreeFile,
+        btree_entry::ScanArgs, state::AnyTreeState, Modification, PageHeader, PagedWriter, Reducer,
+        ScanEvaluation, State, TreeFile,
     },
     vault::AnyVault,
     AbortError, ArcBytes, ChunkCache, Context, TransactionTree, Vault,
@@ -29,7 +29,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     /// The primary index type contained within this root.
     type Index: Clone + Debug + 'static;
     /// The primary index type contained within this root.
-    type ReducedIndex: Clone + Debug + 'static;
+    type ReducedIndex: Reducer<Self::Index> + Clone + Debug + 'static;
 
     /// Returns the number of values contained in this tree, not including
     /// deleted records.
@@ -91,7 +91,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
     where
-        KeyEvaluator: FnMut(&ArcBytes<'static>) -> KeyEvaluation,
+        KeyEvaluator: FnMut(&ArcBytes<'static>) -> ScanEvaluation,
         KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
         Keys: Iterator<Item = &'keys [u8]>;
 
@@ -122,8 +122,8 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
     where
-        NodeEvaluator: FnMut(&ArcBytes<'static>, &Self::ReducedIndex, usize) -> bool,
-        KeyEvaluator: FnMut(&ArcBytes<'static>, &Self::Index) -> KeyEvaluation,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &Self::ReducedIndex, usize) -> ScanEvaluation,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Self::Index) -> ScanEvaluation,
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
         ScanDataCallback: FnMut(
             ArcBytes<'static>,

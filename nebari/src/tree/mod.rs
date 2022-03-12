@@ -49,6 +49,7 @@
 
 use std::{
     borrow::Cow,
+    cell::RefCell,
     collections::HashMap,
     fmt::{Debug, Display},
     hash::BuildHasher,
@@ -436,7 +437,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                 buffer = Some(value);
                 Ok(())
             },
-            key_evaluator: |_| KeyEvaluation::ReadData,
+            key_evaluator: |_| ScanEvaluation::ReadData,
         })?;
         Ok(buffer)
     }
@@ -466,7 +467,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                 buffers.push((key, value));
                 Ok(())
             },
-            key_evaluator: |_| KeyEvaluation::ReadData,
+            key_evaluator: |_| ScanEvaluation::ReadData,
         })?;
         Ok(buffers)
     }
@@ -486,8 +487,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             range,
             true,
             in_transaction,
-            &mut |_, _, _| true,
-            &mut |_, _| KeyEvaluation::ReadData,
+            &mut |_, _, _| ScanEvaluation::ReadData,
+            &mut |_, _| ScanEvaluation::ReadData,
             &mut |key, _index, value| {
                 results.push((key, value));
                 Ok(())
@@ -496,13 +497,26 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         Ok(results)
     }
 
-    /// Scans the tree for keys that are contained within `range`. If `forwards`
-    /// is true, scanning starts at the lowest sort-order key and scans forward.
-    /// Otherwise, scanning starts at the highest sort-order key and scans
-    /// backwards. `key_evaluator` is invoked for each key as it is encountered.
-    /// For all [`KeyEvaluation::ReadData`] results returned, `callback` will be
-    /// invoked with the key and values. The callback may not be invoked in the
-    /// same order as the keys are scanned.
+    /// Scans the tree across all nodes that might contain nodes within `range`.
+    ///
+    /// If `forwards` is true, the tree is scanned in ascending order.
+    /// Otherwise, the tree is scanned in descending order.
+    ///
+    /// `node_evaluator` is invoked for each [`Interior`] node to determine if
+    /// the node should be traversed. The parameters to the callback are:
+    ///
+    /// - `&ArcBytes<'static>`: The maximum key stored within the all children
+    ///   nodes.
+    /// - `&Root::ReducedIndex`: The reduced index value stored within the node.
+    /// - `usize`: The depth of the node. The root nodes are depth 0.
+    ///
+    /// The result of the callback is a [`ScanEvaluation`]. To read children
+    /// nodes, return [`ScanEvalution::ReadData`].
+    ///
+    /// `key_evaluator` is invoked for each key encountered that is contained
+    /// within `range`. For all [`ScanEvaluation::ReadData`] results returned,
+    /// `callback` will be invoked with the key and values. `callback` may not
+    /// be invoked in the same order as the keys are scanned.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(skip(self, node_evaluator, key_evaluator, key_reader))
@@ -518,8 +532,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     ) -> Result<(), AbortError<CallerError>>
     where
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
-        NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> bool,
-        KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> KeyEvaluation,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> ScanEvaluation,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> ScanEvaluation,
         DataCallback: FnMut(
             ArcBytes<'static>,
             &Root::Index,
@@ -542,6 +556,78 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         Ok(())
     }
 
+    /// Returns the reduced index over the provided range. This is an
+    /// aggregation function that builds atop the `scan()` operation which calls
+    /// [`Reducer::reduce()`] and [`Reducer::rereduce()`] on all matching
+    /// indexes stored within the nodes of this tree, producing a single
+    /// aggregated [`Root::ReducedIndex`] value.
+    ///
+    /// If no keys match, the returned result is what [`Reducer::rereduce()`]
+    /// returns when an empty slice is provided.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    pub fn reduce<'keys, KeyRangeBounds>(
+        &mut self,
+        range: &'keys KeyRangeBounds,
+        in_transaction: bool,
+    ) -> Result<Root::ReducedIndex, Error>
+    where
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+        Root::Index: Clone,
+        Root::ReducedIndex: Reducer<Root::Index>,
+    {
+        let reduce_state = RefCell::new(ReduceState::default());
+        self.file.execute(TreeScanner {
+            forwards: true,
+            from_transaction: in_transaction,
+            state: &self.state,
+            vault: self.vault.as_deref(),
+            cache: self.cache.as_ref(),
+            range,
+            node_evaluator: |max_key, index, depth| {
+                let mut state = reduce_state.borrow_mut();
+                state.reduce_to_depth(depth);
+                let start_is_after_max = match range.start_bound() {
+                    Bound::Unbounded => false,
+                    Bound::Excluded(start) => start >= &max_key.as_slice(),
+                    Bound::Included(start) => start > &max_key.as_slice(),
+                };
+                let start_is_lowest = match range.start_bound() {
+                    Bound::Unbounded => true,
+                    Bound::Excluded(start) => start < &state.lowest_key.as_slice(),
+                    Bound::Included(start) => start <= &state.lowest_key.as_slice(),
+                };
+                let end_included = match range.end_bound() {
+                    Bound::Included(end) => end <= &max_key.as_slice(),
+                    Bound::Excluded(end) => end < &max_key.as_slice(),
+                    Bound::Unbounded => true,
+                };
+                if start_is_after_max {
+                    // We are beyond the end, we can stop scanning.
+                    ScanEvaluation::Stop
+                } else if end_included && start_is_lowest {
+                    // The node is fully included. Copy the index to the
+                    // stack and skip all the children.
+                    state.push_reduced(depth, index.clone());
+                    ScanEvaluation::Skip
+                } else {
+                    // This node is partially contained.
+                    ScanEvaluation::ReadData
+                }
+            },
+            key_evaluator: |key, index| {
+                if range.contains(&key.as_slice()) {
+                    let mut state = reduce_state.borrow_mut();
+                    state.push_index(index.clone());
+                }
+                ScanEvaluation::Skip
+            },
+            key_reader: |_, _, _| unreachable!(),
+            _phantom: PhantomData,
+        })?;
+        let reduce_state = reduce_state.into_inner();
+        Ok(reduce_state.finish())
+    }
+
     /// Returns the last key of the tree.
     pub fn first_key(&mut self, in_transaction: bool) -> Result<Option<ArcBytes<'static>>, Error> {
         let mut result = None;
@@ -549,10 +635,10 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             &(..),
             true,
             in_transaction,
-            &mut |_, _, _| true,
+            &mut |_, _, _| ScanEvaluation::ReadData,
             &mut |key, _index| {
                 result = Some(key.clone());
-                KeyEvaluation::Stop
+                ScanEvaluation::Stop
             },
             &mut |_key, _index, _value| Ok(()),
         )?;
@@ -571,13 +657,13 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             &(..),
             true,
             in_transaction,
-            &mut |_, _, _| true,
+            &mut |_, _, _| ScanEvaluation::ReadData,
             &mut |_, _| {
                 if key_requested {
-                    KeyEvaluation::Stop
+                    ScanEvaluation::Stop
                 } else {
                     key_requested = true;
-                    KeyEvaluation::ReadData
+                    ScanEvaluation::ReadData
                 }
             },
             &mut |key, _index, value| {
@@ -596,10 +682,10 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             &(..),
             false,
             in_transaction,
-            &mut |_, _, _| true,
+            &mut |_, _, _| ScanEvaluation::ReadData,
             &mut |key, _index| {
                 result = Some(key.clone());
-                KeyEvaluation::Stop
+                ScanEvaluation::Stop
             },
             &mut |_key, _index, _value| Ok(()),
         )?;
@@ -618,13 +704,13 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             &(..),
             false,
             in_transaction,
-            &mut |_, _, _| true,
+            &mut |_, _, _| ScanEvaluation::ReadData,
             &mut |_, _| {
                 if key_requested {
-                    KeyEvaluation::Stop
+                    ScanEvaluation::Stop
                 } else {
                     key_requested = true;
-                    KeyEvaluation::ReadData
+                    ScanEvaluation::ReadData
                 }
             },
             &mut |key, _index, value| {
@@ -675,6 +761,86 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     }
 }
 
+#[derive(Debug)]
+struct ReduceState<I, RI> {
+    depths: Vec<DepthState<I, RI>>,
+    lowest_key: ArcBytes<'static>,
+}
+
+impl<I, RI> Default for ReduceState<I, RI>
+where
+    I: Clone,
+    RI: Reducer<I> + Clone,
+{
+    fn default() -> Self {
+        Self {
+            depths: vec![DepthState::default()],
+            lowest_key: ArcBytes::default(),
+        }
+    }
+}
+
+impl<I, RI> ReduceState<I, RI>
+where
+    I: Clone,
+    RI: Reducer<I> + Clone,
+{
+    fn reduce_to_depth(&mut self, depth: usize) {
+        while self.depths.len() > depth + 1 {
+            let state_to_reduce = self.depths.pop().unwrap();
+            self.depths
+                .last_mut()
+                .unwrap()
+                .reduced
+                .push(state_to_reduce.finish());
+        }
+    }
+
+    fn push_reduced(&mut self, depth: usize, reduced: RI) {
+        if self.depths.len() < depth + 1 {
+            self.depths.resize(depth + 1, DepthState::default());
+        }
+        self.depths[depth].reduced.push(reduced);
+    }
+
+    fn push_index(&mut self, index: I) {
+        self.depths.last_mut().unwrap().indexes.push(index);
+    }
+
+    fn finish(mut self) -> RI {
+        self.reduce_to_depth(0);
+        self.depths.pop().unwrap().finish()
+    }
+}
+
+#[derive(Clone, Debug)]
+struct DepthState<I, RI> {
+    reduced: Vec<RI>,
+    indexes: Vec<I>,
+}
+
+impl<I, RI> Default for DepthState<I, RI> {
+    fn default() -> Self {
+        Self {
+            reduced: Vec::default(),
+            indexes: Vec::default(),
+        }
+    }
+}
+
+impl<I, RI> DepthState<I, RI>
+where
+    I: Clone,
+    RI: Reducer<I> + Clone,
+{
+    fn finish(mut self) -> RI {
+        if !self.indexes.is_empty() {
+            self.reduced.push(RI::reduce(self.indexes.iter()));
+        }
+        RI::rereduce(self.reduced.iter())
+    }
+}
+
 impl<File: ManagedFile, Index> TreeFile<VersionedTreeRoot<Index>, File>
 where
     Index: EmbeddedIndex + Reducer<Index> + Clone + Debug + 'static,
@@ -683,7 +849,7 @@ where
     /// is true, scanning starts at the lowest sort-order key and scans forward.
     /// Otherwise, scanning starts at the highest sort-order key and scans
     /// backwards. `key_evaluator` is invoked for each key as it is encountered.
-    /// For all [`KeyEvaluation::ReadData`] results returned, `callback` will be
+    /// For all [`ScanEvaluation::ReadData`] results returned, `callback` will be
     /// invoked with the key and values. The callback may not be invoked in the
     /// same order as the keys are scanned.
     #[cfg_attr(
@@ -700,7 +866,7 @@ where
     ) -> Result<(), AbortError<CallerError>>
     where
         Range: RangeBounds<u64> + Debug + 'static,
-        KeyEvaluator: FnMut(KeySequence) -> KeyEvaluation,
+        KeyEvaluator: FnMut(KeySequence) -> ScanEvaluation,
         DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
@@ -975,13 +1141,13 @@ impl<'a, I: Iterator<Item = &'a [u8]>> Iterator for KeyRange<'a, I> {
 }
 
 #[derive(Clone, Copy)]
-/// The result of evaluating a key that was scanned.
-pub enum KeyEvaluation {
-    /// Read the data for this key.
+/// The result of evaluating a key or node that was scanned.
+pub enum ScanEvaluation {
+    /// Read the data for this entry.
     ReadData,
-    /// Skip this key.
+    /// Skip this entry's contained data.
     Skip,
-    /// Stop scanning keys.
+    /// Stop scanning.
     Stop,
 }
 
@@ -989,7 +1155,7 @@ struct TreeGetter<
     'a,
     'keys,
     Root: root::Root,
-    KeyEvaluator: FnMut(&ArcBytes<'static>) -> KeyEvaluation,
+    KeyEvaluator: FnMut(&ArcBytes<'static>) -> ScanEvaluation,
     KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
     Keys: Iterator<Item = &'keys [u8]>,
 > {
@@ -1005,7 +1171,7 @@ struct TreeGetter<
 impl<'a, 'keys, KeyEvaluator, KeyReader, Root, Keys> FileOp<Result<(), Error>>
     for TreeGetter<'a, 'keys, Root, KeyEvaluator, KeyReader, Keys>
 where
-    KeyEvaluator: FnMut(&ArcBytes<'static>) -> KeyEvaluation,
+    KeyEvaluator: FnMut(&ArcBytes<'static>) -> ScanEvaluation,
     KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
     Keys: Iterator<Item = &'keys [u8]>,
     Root: root::Root,
@@ -1053,8 +1219,8 @@ struct TreeScanner<
     KeyReader,
     KeyRangeBounds,
 > where
-    NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> bool,
-    KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> KeyEvaluation,
+    NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> ScanEvaluation,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> ScanEvaluation,
     KeyReader: FnMut(
         ArcBytes<'static>,
         &Root::Index,
@@ -1096,8 +1262,8 @@ impl<
         KeyRangeBounds,
     >
 where
-    NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> bool,
-    KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> KeyEvaluation,
+    NodeEvaluator: FnMut(&ArcBytes<'static>, &Root::ReducedIndex, usize) -> ScanEvaluation,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> ScanEvaluation,
     KeyReader: FnMut(
         ArcBytes<'static>,
         &Root::Index,
@@ -1155,7 +1321,7 @@ struct TreeSequenceScanner<
     CallerError,
     Index,
 > where
-    KeyEvaluator: FnMut(&ArcBytes<'static>, &BySequenceIndex) -> KeyEvaluation,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &BySequenceIndex) -> ScanEvaluation,
     KeyRangeBounds: RangeBounds<&'keys [u8]> + ?Sized,
     DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
     CallerError: Display + Debug,
@@ -1183,7 +1349,7 @@ impl<'a, 'keys, KeyEvaluator, KeyRangeBounds, DataCallback, CallerError, Index>
         Index,
     >
 where
-    KeyEvaluator: FnMut(&ArcBytes<'static>, &BySequenceIndex) -> KeyEvaluation,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &BySequenceIndex) -> ScanEvaluation,
     KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
     DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
     CallerError: Display + Debug,
@@ -1226,7 +1392,7 @@ where
                     range,
                     &mut ScanArgs::new(
                         forwards,
-                        |_, _, _| true,
+                        |_, _, _| ScanEvaluation::ReadData,
                         &mut key_evaluator,
                         mapped_data_callback,
                     ),
@@ -1249,7 +1415,7 @@ where
                     range,
                     &mut ScanArgs::new(
                         forwards,
-                        |_, _, _| true,
+                        |_, _, _| ScanEvaluation::ReadData,
                         &mut key_evaluator,
                         mapped_data_callback,
                     ),
@@ -2137,7 +2303,7 @@ mod tests {
             ..,
             true,
             false,
-            &mut |_| KeyEvaluation::ReadData,
+            &mut |_| ScanEvaluation::ReadData,
             &mut |sequence, value| {
                 sequences.push((sequence, value));
                 Ok(())
@@ -2307,6 +2473,72 @@ mod tests {
     fn any_edit_keys_unversioned() {
         edit_keys::<Unversioned, _>("any-unversioned", AnyFileManager::std());
         edit_keys::<Unversioned, _>("any-unversioned", AnyFileManager::memory());
+    }
+
+    #[test]
+    fn reduce() {
+        #[derive(Debug)]
+        struct ExcludedStart<'a>(&'a [u8]);
+
+        impl<'a> RangeBounds<&'a [u8]> for ExcludedStart<'a> {
+            fn start_bound(&self) -> Bound<&&'a [u8]> {
+                Bound::Excluded(&self.0)
+            }
+
+            fn end_bound(&self) -> Bound<&&'a [u8]> {
+                Bound::Unbounded
+            }
+        }
+
+        let context = Context {
+            file_manager: StdFileManager::default(),
+            vault: None,
+            cache: None,
+        };
+        let temp_dir = crate::test_util::TestDirectory::new("reduce");
+        std::fs::create_dir(&temp_dir).unwrap();
+        let file_path = temp_dir.join("tree");
+
+        let mut tree = TreeFile::<Unversioned, StdFile>::write(
+            &file_path,
+            State::new(None, Some(4)),
+            &context,
+            None,
+        )
+        .unwrap();
+        for i in 0..=u8::MAX {
+            let bytes = ArcBytes::from([i]);
+            tree.set(None, bytes.clone(), bytes.clone()).unwrap();
+        }
+
+        assert_eq!(tree.reduce(&(..), false).unwrap().alive_keys, 256);
+        assert_eq!(
+            tree.reduce(&ExcludedStart(&[0]), false).unwrap().alive_keys,
+            255
+        );
+        assert_eq!(
+            tree.reduce(&(&[0][..]..&[u8::MAX][..]), false)
+                .unwrap()
+                .alive_keys,
+            255
+        );
+        assert_eq!(
+            tree.reduce(&(&[1][..]..=&[100][..]), false)
+                .unwrap()
+                .alive_keys,
+            100
+        );
+
+        for start in 0..u8::MAX {
+            for end in start + 1..=u8::MAX {
+                assert_eq!(
+                    tree.reduce(&(&[start][..]..&[end][..]), false)
+                        .unwrap()
+                        .alive_keys,
+                    u64::from(end - start)
+                );
+            }
+        }
     }
 
     fn first_last<R: Root, M: FileManager>(label: &str, file_manager: M) {

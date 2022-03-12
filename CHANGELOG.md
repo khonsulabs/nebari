@@ -15,6 +15,11 @@ now returns a`ScanEvaluation` instead of a `bool`. To preserve existing
 behavior, return`ScanEvaluation::ReadData`instead of true and
 `ScanEvaluation::Stop` instead of false.
 
+  The new functionality unlocked with this change is that scan operations can
+  now be directed as to whether to skip navigating into an interior node. The
+  new `reduce()` function uses this ability to skip scanning nodes when an
+  already reduced value is available on a node.
+
 ### Added
 
 - `TreeFile::reduce()`, `Tree::reduce()`, `TransactionTree::reduce()` have been

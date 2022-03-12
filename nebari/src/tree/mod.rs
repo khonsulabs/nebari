@@ -511,7 +511,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     /// - `usize`: The depth of the node. The root nodes are depth 0.
     ///
     /// The result of the callback is a [`ScanEvaluation`]. To read children
-    /// nodes, return [`ScanEvalution::ReadData`].
+    /// nodes, return [`ScanEvaluation::ReadData`].
     ///
     /// `key_evaluator` is invoked for each key encountered that is contained
     /// within `range`. For all [`ScanEvaluation::ReadData`] results returned,

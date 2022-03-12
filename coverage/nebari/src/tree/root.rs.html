@@ -255,7 +255,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">        btree_entry::ScanArgs, state::AnyTreeState, KeyEvaluation, Modification, PageHeader,</pre>
+                <pre class="has-background-white py-0 px-2">        btree_entry::ScanArgs, state::AnyTreeState, Modification, PageHeader, PagedWriter, Reducer,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -268,7 +268,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">        PagedWriter, State, TreeFile,</pre>
+                <pre class="has-background-white py-0 px-2">        ScanEvaluation, State, TreeFile,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -450,7 +450,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">    type ReducedIndex: Clone + Debug + &#x27;static;</pre>
+                <pre class="has-background-white py-0 px-2">    type ReducedIndex: Reducer&lt;Self::Index&gt; + Clone + Debug + &#x27;static;</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -1256,7 +1256,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">        KeyEvaluator: FnMut(&amp;ArcBytes&lt;&#x27;static&gt;) -&gt; KeyEvaluation,</pre>
+                <pre class="has-background-white py-0 px-2">        KeyEvaluator: FnMut(&amp;ArcBytes&lt;&#x27;static&gt;) -&gt; ScanEvaluation,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -1659,7 +1659,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">        NodeEvaluator: FnMut(&amp;ArcBytes&lt;&#x27;static&gt;, &amp;Self::ReducedIndex, usize) -&gt; bool,</pre>
+                <pre class="has-background-white py-0 px-2">        NodeEvaluator: FnMut(&amp;ArcBytes&lt;&#x27;static&gt;, &amp;Self::ReducedIndex, usize) -&gt; ScanEvaluation,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -1672,7 +1672,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">        KeyEvaluator: FnMut(&amp;ArcBytes&lt;&#x27;static&gt;, &amp;Self::Index) -&gt; KeyEvaluation,</pre>
+                <pre class="has-background-white py-0 px-2">        KeyEvaluator: FnMut(&amp;ArcBytes&lt;&#x27;static&gt;, &amp;Self::Index) -&gt; ScanEvaluation,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -2964,7 +2964,7 @@
         </div></div>
         <footer class="footer">
             <div class="content has-text-centered">
-                <p class="heading">Date: 2022-03-01 18:40</p>
+                <p class="heading">Date: 2022-03-12 21:50</p>
             </div>
         </footer>
     </body>

@@ -511,8 +511,9 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     /// If `forwards` is true, the tree is scanned in ascending order.
     /// Otherwise, the tree is scanned in descending order.
     ///
-    /// `node_evaluator` is invoked for each [`Interior`] node to determine if
-    /// the node should be traversed. The parameters to the callback are:
+    /// `node_evaluator` is invoked for each [`Interior`](crate::tree::Interior)
+    /// node to determine if the node should be traversed. The parameters to the
+    /// callback are:
     ///
     /// - `&ArcBytes<'static>`: The maximum key stored within the all children
     ///   nodes.
@@ -563,7 +564,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     /// aggregation function that builds atop the `scan()` operation which calls
     /// [`Reducer::reduce()`] and [`Reducer::rereduce()`] on all matching
     /// indexes stored within the nodes of this tree, producing a single
-    /// aggregated [`Root::ReducedIndex`] value.
+    /// aggregated [`Root::ReducedIndex`](tree::Root::ReducedIndex) value.
     ///
     /// If no keys match, the returned result is what [`Reducer::rereduce()`]
     /// returns when an empty slice is provided.
@@ -889,7 +890,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// If `forwards` is true, the tree is scanned in ascending order.
     /// Otherwise, the tree is scanned in descending order.
     ///
-    /// `node_evaluator` is invoked for each [`Interior`] node to determine if
+    /// `node_evaluator` is invoked for each [`Interior`](crate::tree::Interior) node to determine if
     /// the node should be traversed. The parameters to the callback are:
     ///
     /// - `&ArcBytes<'static>`: The maximum key stored within the all children
@@ -945,7 +946,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// aggregation function that builds atop the `scan()` operation which calls
     /// [`Reducer::reduce()`] and [`Reducer::rereduce()`] on all matching
     /// indexes stored within the nodes of this tree, producing a single
-    /// aggregated [`Root::ReducedIndex`] value.
+    /// aggregated [`Root::ReducedIndex`](tree::Root::ReducedIndex) value.
     ///
     /// If no keys match, the returned result is what [`Reducer::rereduce()`]
     /// returns when an empty slice is provided.
@@ -1070,7 +1071,7 @@ where
     /// is true, scanning starts at the lowest sort-order key and scans forward.
     /// Otherwise, scanning starts at the highest sort-order key and scans
     /// backwards. `key_evaluator` is invoked for each key as it is encountered.
-    /// For all [`KeyEvaluation::ReadData`] results returned, `callback` will be
+    /// For all [`ScanEvaluation::ReadData`] results returned, `callback` will be
     /// invoked with the key and values. The callback may not be invoked in the
     /// same order as the keys are scanned.
     #[cfg_attr(

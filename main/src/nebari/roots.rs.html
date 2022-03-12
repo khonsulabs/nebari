@@ -1525,6 +1525,77 @@
 <span id="1523">1523</span>
 <span id="1524">1524</span>
 <span id="1525">1525</span>
+<span id="1526">1526</span>
+<span id="1527">1527</span>
+<span id="1528">1528</span>
+<span id="1529">1529</span>
+<span id="1530">1530</span>
+<span id="1531">1531</span>
+<span id="1532">1532</span>
+<span id="1533">1533</span>
+<span id="1534">1534</span>
+<span id="1535">1535</span>
+<span id="1536">1536</span>
+<span id="1537">1537</span>
+<span id="1538">1538</span>
+<span id="1539">1539</span>
+<span id="1540">1540</span>
+<span id="1541">1541</span>
+<span id="1542">1542</span>
+<span id="1543">1543</span>
+<span id="1544">1544</span>
+<span id="1545">1545</span>
+<span id="1546">1546</span>
+<span id="1547">1547</span>
+<span id="1548">1548</span>
+<span id="1549">1549</span>
+<span id="1550">1550</span>
+<span id="1551">1551</span>
+<span id="1552">1552</span>
+<span id="1553">1553</span>
+<span id="1554">1554</span>
+<span id="1555">1555</span>
+<span id="1556">1556</span>
+<span id="1557">1557</span>
+<span id="1558">1558</span>
+<span id="1559">1559</span>
+<span id="1560">1560</span>
+<span id="1561">1561</span>
+<span id="1562">1562</span>
+<span id="1563">1563</span>
+<span id="1564">1564</span>
+<span id="1565">1565</span>
+<span id="1566">1566</span>
+<span id="1567">1567</span>
+<span id="1568">1568</span>
+<span id="1569">1569</span>
+<span id="1570">1570</span>
+<span id="1571">1571</span>
+<span id="1572">1572</span>
+<span id="1573">1573</span>
+<span id="1574">1574</span>
+<span id="1575">1575</span>
+<span id="1576">1576</span>
+<span id="1577">1577</span>
+<span id="1578">1578</span>
+<span id="1579">1579</span>
+<span id="1580">1580</span>
+<span id="1581">1581</span>
+<span id="1582">1582</span>
+<span id="1583">1583</span>
+<span id="1584">1584</span>
+<span id="1585">1585</span>
+<span id="1586">1586</span>
+<span id="1587">1587</span>
+<span id="1588">1588</span>
+<span id="1589">1589</span>
+<span id="1590">1590</span>
+<span id="1591">1591</span>
+<span id="1592">1592</span>
+<span id="1593">1593</span>
+<span id="1594">1594</span>
+<span id="1595">1595</span>
+<span id="1596">1596</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">any::Any</span>,
     <span class="ident">borrow</span>::{<span class="ident">Borrow</span>, <span class="ident">Cow</span>},
@@ -1550,8 +1621,8 @@
     <span class="ident">io</span>::{<span class="ident">fs::StdFileManager</span>, <span class="ident">FileManager</span>, <span class="ident">ManagedFile</span>},
     <span class="ident">transaction</span>::{<span class="ident">LogEntry</span>, <span class="ident">ManagedTransaction</span>, <span class="ident">TransactionManager</span>},
     <span class="ident">tree</span>::{
-        <span class="self">self</span>, <span class="ident">root::AnyTreeRoot</span>, <span class="ident">state::AnyTreeState</span>, <span class="ident">EmbeddedIndex</span>, <span class="ident">KeyEvaluation</span>, <span class="ident">KeySequence</span>,
-        <span class="ident">Modification</span>, <span class="ident">Operation</span>, <span class="ident">Reducer</span>, <span class="ident">State</span>, <span class="ident">TransactableCompaction</span>, <span class="ident">TreeFile</span>, <span class="ident">TreeRoot</span>,
+        <span class="self">self</span>, <span class="ident">root::AnyTreeRoot</span>, <span class="ident">state::AnyTreeState</span>, <span class="ident">EmbeddedIndex</span>, <span class="ident">KeySequence</span>, <span class="ident">Modification</span>,
+        <span class="ident">Operation</span>, <span class="ident">Reducer</span>, <span class="ident">ScanEvaluation</span>, <span class="ident">State</span>, <span class="ident">TransactableCompaction</span>, <span class="ident">TreeFile</span>, <span class="ident">TreeRoot</span>,
         <span class="ident">VersionedTreeRoot</span>,
     },
     <span class="ident">vault::AnyVault</span>,
@@ -2033,12 +2104,27 @@
         <span class="self">self</span>.<span class="ident">tree</span>.<span class="ident">get_range</span>(<span class="ident">range</span>, <span class="bool-val">true</span>)
     }
 
-    <span class="doccomment">/// Scans the tree. Each key that is contained `range` will be passed to</span>
-    <span class="doccomment">/// `key_evaluator`, which can opt to read the data for the key, skip, or</span>
-    <span class="doccomment">/// stop scanning. If `KeyEvaluation::ReadData` is returned, `callback` will</span>
-    <span class="doccomment">/// be invoked with the key and stored value. The order in which `callback`</span>
-    <span class="doccomment">/// is invoked is not necessarily the same order in which the keys are</span>
-    <span class="doccomment">/// found.</span>
+    <span class="doccomment">/// Scans the tree across all nodes that might contain nodes within `range`.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// If `forwards` is true, the tree is scanned in ascending order.</span>
+    <span class="doccomment">/// Otherwise, the tree is scanned in descending order.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// `node_evaluator` is invoked for each [`Interior`](crate::tree::Interior)</span>
+    <span class="doccomment">/// node to determine if the node should be traversed. The parameters to the</span>
+    <span class="doccomment">/// callback are:</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// - `&amp;ArcBytes&lt;&#39;static&gt;`: The maximum key stored within the all children</span>
+    <span class="doccomment">///   nodes.</span>
+    <span class="doccomment">/// - `&amp;Root::ReducedIndex`: The reduced index value stored within the node.</span>
+    <span class="doccomment">/// - `usize`: The depth of the node. The root nodes are depth 0.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// The result of the callback is a [`ScanEvaluation`]. To read children</span>
+    <span class="doccomment">/// nodes, return [`ScanEvaluation::ReadData`].</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// `key_evaluator` is invoked for each key encountered that is contained</span>
+    <span class="doccomment">/// within `range`. For all [`ScanEvaluation::ReadData`] results returned,</span>
+    <span class="doccomment">/// `callback` will be invoked with the key and values. `callback` may not</span>
+    <span class="doccomment">/// be invoked in the same order as the keys are scanned.</span>
     <span class="attribute">#[<span class="ident">cfg_attr</span>(
         <span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>,
         <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>, <span class="ident">node_evaluator</span>, <span class="ident">key_evaluator</span>, <span class="ident">callback</span>))
@@ -2053,8 +2139,8 @@
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
     <span class="kw">where</span>
         <span class="ident">KeyRangeBounds</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;keys</span> [<span class="ident">u8</span>]<span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="question-mark">?</span><span class="ident">Sized</span>,
-        <span class="ident">NodeEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::ReducedIndex</span>, <span class="ident">usize</span>) -&gt; <span class="ident">bool</span>,
-        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>) -&gt; <span class="ident">KeyEvaluation</span>,
+        <span class="ident">NodeEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::ReducedIndex</span>, <span class="ident">usize</span>) -&gt; <span class="ident">ScanEvaluation</span>,
+        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>) -&gt; <span class="ident">ScanEvaluation</span>,
         <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(
             <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
             <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>,
@@ -2070,6 +2156,25 @@
             <span class="kw-2">&amp;mut</span> <span class="ident">key_evaluator</span>,
             <span class="kw-2">&amp;mut</span> <span class="ident">callback</span>,
         )
+    }
+
+    <span class="doccomment">/// Returns the reduced index over the provided range. This is an</span>
+    <span class="doccomment">/// aggregation function that builds atop the `scan()` operation which calls</span>
+    <span class="doccomment">/// [`Reducer::reduce()`] and [`Reducer::rereduce()`] on all matching</span>
+    <span class="doccomment">/// indexes stored within the nodes of this tree, producing a single</span>
+    <span class="doccomment">/// aggregated [`Root::ReducedIndex`](tree::Root::ReducedIndex) value.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// If no keys match, the returned result is what [`Reducer::rereduce()`]</span>
+    <span class="doccomment">/// returns when an empty slice is provided.</span>
+    <span class="attribute">#[<span class="ident">cfg_attr</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>, <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>)))]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">reduce</span><span class="op">&lt;</span><span class="lifetime">&#39;keys</span>, <span class="ident">KeyRangeBounds</span><span class="op">&gt;</span>(
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
+        <span class="ident">range</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;keys</span> <span class="ident">KeyRangeBounds</span>,
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Root::ReducedIndex</span>, <span class="ident">Error</span><span class="op">&gt;</span>
+    <span class="kw">where</span>
+        <span class="ident">KeyRangeBounds</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;keys</span> [<span class="ident">u8</span>]<span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="question-mark">?</span><span class="ident">Sized</span>,
+    {
+        <span class="self">self</span>.<span class="ident">tree</span>.<span class="ident">reduce</span>(<span class="ident">range</span>, <span class="bool-val">true</span>)
     }
 
     <span class="doccomment">/// Returns the first key of the tree.</span>
@@ -2378,12 +2483,26 @@
         })
     }
 
-    <span class="doccomment">/// Scans the tree. Each key that is contained `range` will be passed to</span>
-    <span class="doccomment">/// `key_evaluator`, which can opt to read the data for the key, skip, or</span>
-    <span class="doccomment">/// stop scanning. If `KeyEvaluation::ReadData` is returned, `callback` will</span>
-    <span class="doccomment">/// be invoked with the key and stored value. The order in which `callback`</span>
-    <span class="doccomment">/// is invoked is not necessarily the same order in which the keys are</span>
-    <span class="doccomment">/// found.</span>
+    <span class="doccomment">/// Scans the tree across all nodes that might contain nodes within `range`.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// If `forwards` is true, the tree is scanned in ascending order.</span>
+    <span class="doccomment">/// Otherwise, the tree is scanned in descending order.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// `node_evaluator` is invoked for each [`Interior`](crate::tree::Interior) node to determine if</span>
+    <span class="doccomment">/// the node should be traversed. The parameters to the callback are:</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// - `&amp;ArcBytes&lt;&#39;static&gt;`: The maximum key stored within the all children</span>
+    <span class="doccomment">///   nodes.</span>
+    <span class="doccomment">/// - `&amp;Root::ReducedIndex`: The reduced index value stored within the node.</span>
+    <span class="doccomment">/// - `usize`: The depth of the node. The root nodes are depth 0.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// The result of the callback is a [`ScanEvaluation`]. To read children</span>
+    <span class="doccomment">/// nodes, return [`ScanEvaluation::ReadData`].</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// `key_evaluator` is invoked for each key encountered that is contained</span>
+    <span class="doccomment">/// within `range`. For all [`ScanEvaluation::ReadData`] results returned,</span>
+    <span class="doccomment">/// `callback` will be invoked with the key and values. `callback` may not</span>
+    <span class="doccomment">/// be invoked in the same order as the keys are scanned.</span>
     <span class="attribute">#[<span class="ident">cfg_attr</span>(
         <span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>,
         <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>, <span class="ident">node_evaluator</span>, <span class="ident">key_evaluator</span>, <span class="ident">callback</span>))
@@ -2398,8 +2517,8 @@
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
     <span class="kw">where</span>
         <span class="ident">KeyRangeBounds</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;keys</span> [<span class="ident">u8</span>]<span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="question-mark">?</span><span class="ident">Sized</span>,
-        <span class="ident">NodeEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::ReducedIndex</span>, <span class="ident">usize</span>) -&gt; <span class="ident">bool</span>,
-        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>) -&gt; <span class="ident">KeyEvaluation</span>,
+        <span class="ident">NodeEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::ReducedIndex</span>, <span class="ident">usize</span>) -&gt; <span class="ident">ScanEvaluation</span>,
+        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>) -&gt; <span class="ident">ScanEvaluation</span>,
         <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(
             <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
             <span class="kw-2">&amp;</span><span class="ident">Root::Index</span>,
@@ -2418,6 +2537,29 @@
                 <span class="kw-2">&amp;mut</span> <span class="ident">key_evaluator</span>,
                 <span class="kw-2">&amp;mut</span> <span class="ident">callback</span>,
             )
+        })
+    }
+
+    <span class="doccomment">/// Returns the reduced index over the provided range. This is an</span>
+    <span class="doccomment">/// aggregation function that builds atop the `scan()` operation which calls</span>
+    <span class="doccomment">/// [`Reducer::reduce()`] and [`Reducer::rereduce()`] on all matching</span>
+    <span class="doccomment">/// indexes stored within the nodes of this tree, producing a single</span>
+    <span class="doccomment">/// aggregated [`Root::ReducedIndex`](tree::Root::ReducedIndex) value.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// If no keys match, the returned result is what [`Reducer::rereduce()`]</span>
+    <span class="doccomment">/// returns when an empty slice is provided.</span>
+    <span class="attribute">#[<span class="ident">cfg_attr</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>, <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>)))]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">reduce</span><span class="op">&lt;</span><span class="lifetime">&#39;keys</span>, <span class="ident">KeyRangeBounds</span><span class="op">&gt;</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">range</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;keys</span> <span class="ident">KeyRangeBounds</span>,
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Root::ReducedIndex</span>, <span class="ident">Error</span><span class="op">&gt;</span>
+    <span class="kw">where</span>
+        <span class="ident">KeyRangeBounds</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;keys</span> [<span class="ident">u8</span>]<span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="question-mark">?</span><span class="ident">Sized</span>,
+    {
+        <span class="ident">catch_compaction_and_retry</span>(<span class="kw">move</span> <span class="op">|</span><span class="op">|</span> {
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tree</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">open_for_read</span>()<span class="question-mark">?</span>;
+
+            <span class="ident">tree</span>.<span class="ident">reduce</span>(<span class="ident">range</span>, <span class="bool-val">false</span>)
         })
     }
 
@@ -2527,7 +2669,7 @@
     <span class="doccomment">/// is true, scanning starts at the lowest sort-order key and scans forward.</span>
     <span class="doccomment">/// Otherwise, scanning starts at the highest sort-order key and scans</span>
     <span class="doccomment">/// backwards. `key_evaluator` is invoked for each key as it is encountered.</span>
-    <span class="doccomment">/// For all [`KeyEvaluation::ReadData`] results returned, `callback` will be</span>
+    <span class="doccomment">/// For all [`ScanEvaluation::ReadData`] results returned, `callback` will be</span>
     <span class="doccomment">/// invoked with the key and values. The callback may not be invoked in the</span>
     <span class="doccomment">/// same order as the keys are scanned.</span>
     <span class="attribute">#[<span class="ident">cfg_attr</span>(
@@ -2543,7 +2685,7 @@
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
     <span class="kw">where</span>
         <span class="ident">Range</span>: <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
-        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="ident">KeySequence</span>) -&gt; <span class="ident">KeyEvaluation</span>,
+        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="ident">KeySequence</span>) -&gt; <span class="ident">ScanEvaluation</span>,
         <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(<span class="ident">KeySequence</span>, <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
     {

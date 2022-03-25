@@ -120,7 +120,7 @@ however, as long as you can guarantee two things:
 The B-Tree implementation in Nebari is designed to offer those exact guarantees.
 
 The major downside of append-only formats is that deleted data isn't cleaned up
-until a maintenance process occurs: compaction. This process rewrites the files
+until a maintenance process occurs: compaction. This process rewrites the file's
 contents, skipping over entries that are no longer alive. This process can
 happen without blocking the file from being operated on, but it does
 introduce IO overhead during the operation.

@@ -183,7 +183,7 @@ where
     }
 
     fn clean_up_leaf(
-        children: &mut Vec<KeyEntry<Index>>,
+        children: &mut [KeyEntry<Index>],
         current_order: usize,
         minimum_children: usize,
     ) -> ChangeResult {
@@ -201,7 +201,7 @@ where
     }
 
     fn clean_up_interior(
-        children: &mut Vec<Interior<Index, ReducedIndex>>,
+        children: &mut [Interior<Index, ReducedIndex>],
         current_order: usize,
         minimum_children: usize,
     ) -> ChangeResult {
@@ -633,7 +633,7 @@ where
 
     fn steal_children_from_start<IndexedType, Context, Indexer, Loader>(
         child_index: usize,
-        children: &mut Vec<Interior<Index, ReducedIndex>>,
+        children: &mut [Interior<Index, ReducedIndex>],
         context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
         writer: &mut PagedWriter<'_>,
     ) -> Result<(ChangeResult, bool), Error>
@@ -721,7 +721,7 @@ where
 
     fn steal_children_from_end<IndexedType, Context, Indexer, Loader>(
         child_index: usize,
-        children: &mut Vec<Interior<Index, ReducedIndex>>,
+        children: &mut [Interior<Index, ReducedIndex>],
         context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
         writer: &mut PagedWriter<'_>,
     ) -> Result<ChangeResult, Error>

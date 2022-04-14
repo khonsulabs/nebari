@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking Changes
 
 - `KeyEvaluation` has been renamed to `ScanEvaluation`.
-- All ``scan()` functions have been updated with the `node_evaluator`callback
+- All `scan()` functions have been updated with the `node_evaluator` callback
 now returns a`ScanEvaluation` instead of a `bool`. To preserve existing
 behavior, return`ScanEvaluation::ReadData`instead of true and
 `ScanEvaluation::Stop` instead of false.

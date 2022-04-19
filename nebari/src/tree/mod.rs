@@ -28,7 +28,7 @@
 //!
 //! To locate the most recent header, take the file's length and find the
 //! largest multiple of [`PAGE_SIZE`]. Check the first three bytes at that
-//! offset for the nagic code. If found, attempt to read a chunk. If successful,
+//! offset for the magic code. If found, attempt to read a chunk. If successful,
 //! attempt to deserialize the Root.
 //!
 //! If any step fails, loop back through the file at each [`PAGE_SIZE`] offset

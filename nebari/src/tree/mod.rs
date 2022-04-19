@@ -628,7 +628,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         Ok(reduce_state.finish())
     }
 
-    /// Returns the last key of the tree.
+    /// Returns the first key of the tree.
     pub fn first_key(&mut self, in_transaction: bool) -> Result<Option<ArcBytes<'static>>, Error> {
         let mut result = None;
         self.scan(

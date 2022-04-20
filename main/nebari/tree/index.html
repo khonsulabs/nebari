@@ -27,7 +27,7 @@ end of the file, except for the Root.</p>
 <p>The Root is then serialized and written as a chunk.</p>
 <p>To locate the most recent header, take the file’s length and find the
 largest multiple of <a href="constant.PAGE_SIZE.html" title="PAGE_SIZE"><code>PAGE_SIZE</code></a>. Check the first three bytes at that
-offset for the nagic code. If found, attempt to read a chunk. If successful,
+offset for the magic code. If found, attempt to read a chunk. If successful,
 attempt to deserialize the Root.</p>
 <p>If any step fails, loop back through the file at each <a href="constant.PAGE_SIZE.html" title="PAGE_SIZE"><code>PAGE_SIZE</code></a> offset
 until a valid header is found.</p>

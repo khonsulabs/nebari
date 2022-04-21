@@ -1,15 +1,15 @@
-use std::convert::TryFrom;
-
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};
-use crate::{error::Error, io::ManagedFile, Buffer, ErrorKind};
+use crate::{error::Error, tree::key_entry::ValueIndex, ArcBytes, ErrorKind};
 
 /// The index stored within [`VersionedTreeRoot::by_sequence_root`](crate::tree::VersionedTreeRoot::by_sequence_root).
 #[derive(Clone, Debug)]
 pub struct BySequenceIndex {
     /// The key associated with this sequence id.
-    pub key: Buffer<'static>,
+    pub key: ArcBytes<'static>,
+    /// The previous sequence of this key.
+    pub last_sequence: Option<u64>,
     /// The size of the value stored on disk.
     pub value_length: u32,
     /// The position of the value on disk.
@@ -17,15 +17,17 @@ pub struct BySequenceIndex {
 }
 
 impl BinarySerialization for BySequenceIndex {
-    fn serialize_to<File: ManagedFile>(
+    fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_, File>,
+        _paged_writer: &mut PagedWriter<'_>,
     ) -> Result<usize, Error> {
         let mut bytes_written = 0;
         writer.write_u32::<BigEndian>(self.value_length)?;
         bytes_written += 4;
         writer.write_u64::<BigEndian>(self.position)?;
+        bytes_written += 8;
+        writer.write_u64::<BigEndian>(self.last_sequence.unwrap_or(0))?;
         bytes_written += 8;
 
         let key_length = u16::try_from(self.key.len()).map_err(|_| ErrorKind::KeyTooLarge)?;
@@ -36,9 +38,13 @@ impl BinarySerialization for BySequenceIndex {
         Ok(bytes_written)
     }
 
-    fn deserialize_from(reader: &mut Buffer<'_>, _current_order: usize) -> Result<Self, Error> {
+    fn deserialize_from(
+        reader: &mut ArcBytes<'_>,
+        _current_order: Option<usize>,
+    ) -> Result<Self, Error> {
         let value_length = reader.read_u32::<BigEndian>()?;
         let position = reader.read_u64::<BigEndian>()?;
+        let last_sequence = reader.read_u64::<BigEndian>()?;
         let key_length = reader.read_u16::<BigEndian>()? as usize;
         if key_length > reader.len() {
             return Err(Error::data_integrity(format!(
@@ -47,13 +53,24 @@ impl BinarySerialization for BySequenceIndex {
                 reader.len()
             )));
         }
-        let key = reader.read_bytes(key_length)?.to_owned();
+        let key = reader.read_bytes(key_length)?.into_owned();
 
         Ok(Self {
             key,
+            last_sequence: if last_sequence > 0 {
+                Some(last_sequence)
+            } else {
+                None
+            },
             value_length,
             position,
         })
+    }
+}
+
+impl ValueIndex for BySequenceIndex {
+    fn position(&self) -> u64 {
+        self.position
     }
 }
 
@@ -65,16 +82,19 @@ pub struct BySequenceStats {
 }
 
 impl BinarySerialization for BySequenceStats {
-    fn serialize_to<File: ManagedFile>(
+    fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_, File>,
+        _paged_writer: &mut PagedWriter<'_>,
     ) -> Result<usize, Error> {
         writer.write_u64::<BigEndian>(self.total_sequences)?;
         Ok(8)
     }
 
-    fn deserialize_from(reader: &mut Buffer<'_>, _current_order: usize) -> Result<Self, Error> {
+    fn deserialize_from(
+        reader: &mut ArcBytes<'_>,
+        _current_order: Option<usize>,
+    ) -> Result<Self, Error> {
         let number_of_records = reader.read_u64::<BigEndian>()?;
         Ok(Self {
             total_sequences: number_of_records,
@@ -82,20 +102,28 @@ impl BinarySerialization for BySequenceStats {
     }
 }
 
-impl<'a> Reducer<BySequenceIndex> for BySequenceStats {
-    fn key_count(&self) -> u64 {
-        self.total_sequences
-    }
-
-    fn reduce(values: &[&BySequenceIndex]) -> Self {
+impl Reducer<BySequenceIndex> for BySequenceStats {
+    fn reduce<'a, Indexes, IndexesIter>(indexes: Indexes) -> Self
+    where
+        BySequenceIndex: 'a,
+        Indexes:
+            IntoIterator<Item = &'a BySequenceIndex, IntoIter = IndexesIter> + ExactSizeIterator,
+        IndexesIter: Iterator<Item = &'a BySequenceIndex> + ExactSizeIterator + Clone,
+    {
         Self {
-            total_sequences: values.len() as u64,
+            total_sequences: indexes.len() as u64,
         }
     }
 
-    fn rereduce(values: &[&Self]) -> Self {
+    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(values: ReducedIndexes) -> Self
+    where
+        Self: 'a,
+        ReducedIndexes:
+            IntoIterator<Item = &'a Self, IntoIter = ReducedIndexesIter> + ExactSizeIterator,
+        ReducedIndexesIter: Iterator<Item = &'a Self> + ExactSizeIterator,
+    {
         Self {
-            total_sequences: values.iter().map(|v| v.total_sequences).sum(),
+            total_sequences: values.into_iter().map(|v| v.total_sequences).sum(),
         }
     }
 }

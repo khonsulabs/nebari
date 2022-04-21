@@ -1,5 +1,4 @@
-//! Transactional append-only B-Tree storage for `BonsaiDb`.
-
+#![doc = include_str!("./crate-docs.md")]
 #![forbid(unsafe_code)]
 #![warn(
     clippy::cargo,
@@ -25,20 +24,20 @@ pub mod transaction;
 pub mod tree;
 mod vault;
 
-mod buffer;
 mod chunk_cache;
 mod context;
 #[cfg(test)]
 mod test_util;
 
+pub use arc_bytes::ArcBytes;
+
 pub use self::{
-    buffer::Buffer,
     chunk_cache::ChunkCache,
     context::Context,
     error::{Error, ErrorKind},
     roots::{
-        AbortError, CompareAndSwapError, Config, ExecutingTransaction, Roots, ThreadPool,
-        TransactionTree, Tree,
+        AbortError, CompareAndSwapError, Config, ExecutingTransaction, LockedTransactionTree,
+        Roots, ThreadPool, TransactionTree, Tree, UnlockedTransactionTree,
     },
     vault::Vault,
 };

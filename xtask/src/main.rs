@@ -1,42 +1,38 @@
-use chrono::Utc;
 use devx_cmd::read;
 use khonsu_tools::{
-    anyhow,
-    code_coverage::{self, CodeCoverage},
-};
-use structopt::StructOpt;
-use sysinfo::{RefreshKind, System, SystemExt};
-
-#[derive(StructOpt, Debug)]
-pub enum Commands {
-    GenerateCodeCoverageReport {
-        #[structopt(long = "install-dependencies")]
-        install_dependencies: bool,
+    publish,
+    universal::{
+        anyhow,
+        audit::{self},
+        clap::{self, Parser},
+        DefaultConfig,
     },
+};
+use sysinfo::{RefreshKind, System, SystemExt};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+
+#[derive(Parser, Debug)]
+pub enum Commands {
     GenerateBenchmarkOverview,
+    #[clap(flatten)]
+    Tools(khonsu_tools::Commands),
 }
 
 fn main() -> anyhow::Result<()> {
-    let command = Commands::from_args();
+    let command = Commands::parse();
     match command {
         Commands::GenerateBenchmarkOverview => generate_benchmark_overview(),
-        Commands::GenerateCodeCoverageReport {
-            install_dependencies,
-        } => CodeCoverage::<CoverageConfig>::execute(install_dependencies),
+        Commands::Tools(command) => command.execute::<Config>(),
     }
 }
 
-struct CoverageConfig;
-
-impl code_coverage::Config for CoverageConfig {}
-
 fn generate_benchmark_overview() -> anyhow::Result<()> {
     let overview = std::fs::read_to_string("benchmarks/overview.html")?;
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     let git_rev = read!("git", "rev-parse", "HEAD")?;
     let git_rev = git_rev.trim();
 
-    let overview = overview.replace("TIMESTAMP", &now.to_rfc2822());
+    let overview = overview.replace("TIMESTAMP", &now.format(&Rfc3339).unwrap());
     let overview = overview.replace("GITREV", git_rev);
     let environment = match std::env::var("ENVIRONMENT") {
         Ok(environment) => environment,
@@ -59,4 +55,34 @@ fn generate_benchmark_overview() -> anyhow::Result<()> {
     std::fs::write("target/criterion/index.html", &overview)?;
 
     Ok(())
+}
+
+enum Config {}
+
+impl khonsu_tools::Config for Config {
+    type Publish = Self;
+
+    type Universal = Self;
+}
+
+impl khonsu_tools::universal::Config for Config {
+    type Audit = Self;
+
+    type CodeCoverage = DefaultConfig;
+}
+
+impl audit::Config for Config {
+    fn args() -> Vec<String> {
+        vec![
+            String::from("--all-features"),
+            String::from("--exclude=xtask"),
+            String::from("--exclude=benchmarks"),
+        ]
+    }
+}
+
+impl publish::Config for Config {
+    fn paths() -> Vec<String> {
+        vec![String::from("nebari")]
+    }
 }

@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    convert::TryFrom,
     fmt::{Debug, Display},
 };
 
@@ -11,8 +10,12 @@ use super::{
     read_chunk, BinarySerialization, PagedWriter,
 };
 use crate::{
-    chunk_cache::CacheEntry, error::Error, io::ManagedFile, tree::btree_entry::NodeInclusion,
-    AbortError, Buffer, ChunkCache, ErrorKind, Vault,
+    chunk_cache::CacheEntry,
+    error::Error,
+    io::File,
+    tree::{btree_entry::NodeInclusion, key_entry::ValueIndex},
+    vault::AnyVault,
+    AbortError, ArcBytes, ChunkCache, ErrorKind,
 };
 
 /// An interior B-Tree node. Does not contain values directly, and instead
@@ -20,7 +23,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct Interior<Index, ReducedIndex> {
     /// The key with the highest sort value within.
-    pub key: Buffer<'static>,
+    pub key: ArcBytes<'static>,
     /// The location of the node.
     pub position: Pointer<Index, ReducedIndex>,
     /// The reduced statistics.
@@ -29,7 +32,7 @@ pub struct Interior<Index, ReducedIndex> {
 
 impl<Index, ReducedIndex> From<BTreeEntry<Index, ReducedIndex>> for Interior<Index, ReducedIndex>
 where
-    Index: Clone + Debug + BinarySerialization + 'static,
+    Index: Clone + Debug + ValueIndex + BinarySerialization + 'static,
     ReducedIndex: Reducer<Index> + Clone + Debug + BinarySerialization + 'static,
 {
     fn from(entry: BTreeEntry<Index, ReducedIndex>) -> Self {
@@ -68,20 +71,19 @@ impl<
 {
     /// Attempts to load the node from disk. If the node is already loaded, this
     /// function does nothing.
-    // TODO this isn't a well-designed public function signature. current_order should be optional at a minimum.
     #[allow(clippy::missing_panics_doc)] // Currently the only panic is if the types don't match, which shouldn't happen due to these nodes always being accessed through a root.
-    pub fn load<File: ManagedFile>(
+    pub fn load(
         &mut self,
-        file: &mut File,
+        file: &mut dyn File,
         validate_crc: bool,
-        vault: Option<&dyn Vault>,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
-        current_order: usize,
+        current_order: Option<usize>,
     ) -> Result<(), Error> {
         match self {
             Pointer::OnDisk(position) => {
                 let entry = match read_chunk(*position, validate_crc, file, vault, cache)? {
-                    CacheEntry::Buffer(mut buffer) => {
+                    CacheEntry::ArcBytes(mut buffer) => {
                         // It's worthless to store this node in the cache
                         // because if we mutate, we'll be rewritten.
                         Box::new(BTreeEntry::deserialize_from(&mut buffer, current_order)?)
@@ -138,22 +140,21 @@ impl<
     pub fn map_loaded_entry<
         Output,
         CallerError: Display + Debug,
-        File: ManagedFile,
         Cb: FnOnce(
             &BTreeEntry<Index, ReducedIndex>,
-            &mut File,
+            &mut dyn File,
         ) -> Result<Output, AbortError<CallerError>>,
     >(
         &self,
-        file: &mut File,
-        vault: Option<&dyn Vault>,
+        file: &mut dyn File,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
-        current_order: usize,
+        current_order: Option<usize>,
         callback: Cb,
     ) -> Result<Output, AbortError<CallerError>> {
         match self {
             Pointer::OnDisk(position) => match read_chunk(*position, false, file, vault, cache)? {
-                CacheEntry::Buffer(mut buffer) => {
+                CacheEntry::ArcBytes(mut buffer) => {
                     let decoded = BTreeEntry::deserialize_from(&mut buffer, current_order)?;
 
                     let result = callback(&decoded, file);
@@ -177,33 +178,32 @@ impl<
 }
 
 impl<
-        Index: Clone + BinarySerialization + Debug + 'static,
+        Index: Clone + ValueIndex + BinarySerialization + Debug + 'static,
         ReducedIndex: Reducer<Index> + Clone + BinarySerialization + Debug + 'static,
     > Interior<Index, ReducedIndex>
 {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn copy_data_to<File, Callback>(
+    pub(crate) fn copy_data_to<Callback>(
         &mut self,
         include_nodes: NodeInclusion,
-        file: &mut File,
+        file: &mut dyn File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_, File>,
-        vault: Option<&dyn Vault>,
+        writer: &mut PagedWriter<'_>,
+        vault: Option<&dyn AnyVault>,
         scratch: &mut Vec<u8>,
         index_callback: &mut Callback,
     ) -> Result<bool, Error>
     where
-        File: ManagedFile,
         Callback: FnMut(
-            &Buffer<'static>,
+            &ArcBytes<'static>,
             &mut Index,
-            &mut File,
+            &mut dyn File,
             &mut HashMap<u64, u64>,
-            &mut PagedWriter<'_, File>,
-            Option<&dyn Vault>,
+            &mut PagedWriter<'_>,
+            Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,
     {
-        self.position.load(file, true, vault, None, 0)?;
+        self.position.load(file, true, vault, None, None)?;
         let node = self.position.get_mut().unwrap();
         let mut any_data_copied = node.copy_data_to(
             include_nodes,
@@ -220,7 +220,7 @@ impl<
             any_data_copied = true;
             scratch.clear();
             node.serialize_to(scratch, writer)?;
-            Some(writer.write_chunk(scratch, false)?)
+            Some(writer.write_chunk(scratch)?)
         } else {
             self.position.position()
         };
@@ -239,10 +239,10 @@ impl<
         ReducedIndex: Reducer<Index> + Clone + BinarySerialization + Debug + 'static,
     > BinarySerialization for Interior<Index, ReducedIndex>
 {
-    fn serialize_to<File: ManagedFile>(
+    fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        paged_writer: &mut PagedWriter<'_, File>,
+        paged_writer: &mut PagedWriter<'_>,
     ) -> Result<usize, Error> {
         let mut pointer = Pointer::OnDisk(0);
         std::mem::swap(&mut pointer, &mut self.position);
@@ -257,8 +257,8 @@ impl<
                     entry.dirty = false;
                     let old_writer_length = writer.len();
                     entry.serialize_to(writer, paged_writer)?;
-                    let position = paged_writer
-                        .write_chunk(&writer[old_writer_length..writer.len()], false)?;
+                    let position =
+                        paged_writer.write_chunk(&writer[old_writer_length..writer.len()])?;
                     writer.truncate(old_writer_length);
                     if let (Some(cache), Some(file_id)) = (paged_writer.cache, paged_writer.id()) {
                         cache.replace_with_decoded(file_id, position, entry);
@@ -284,7 +284,10 @@ impl<
         Ok(bytes_written)
     }
 
-    fn deserialize_from(reader: &mut Buffer<'_>, current_order: usize) -> Result<Self, Error> {
+    fn deserialize_from(
+        reader: &mut ArcBytes<'_>,
+        current_order: Option<usize>,
+    ) -> Result<Self, Error> {
         let key_len = reader.read_u16::<BigEndian>()? as usize;
         if key_len > reader.len() {
             return Err(Error::data_integrity(format!(
@@ -293,7 +296,7 @@ impl<
                 reader.len()
             )));
         }
-        let key = reader.read_bytes(key_len)?.to_owned();
+        let key = reader.read_bytes(key_len)?.into_owned();
 
         let position = reader.read_u64::<BigEndian>()?;
         let stats = ReducedIndex::deserialize_from(reader, current_order)?;

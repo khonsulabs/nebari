@@ -1,5 +1,6 @@
-use std::fmt::Display;
+use std::{fmt::Display, time::Duration};
 
+mod blobs;
 mod logs;
 
 pub trait SimpleBench: Sized {
@@ -61,7 +62,11 @@ pub trait SimpleBench: Sized {
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error>;
 
-    fn execute_measured(&mut self, config: &Self::Config) -> Result<(), anyhow::Error>;
+    fn execute_measured(
+        &mut self,
+        config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error>;
 
     fn execute_iterations(group: &mut BenchmarkGroup<WallTime>, config: &Self::Config) {
         let config_group_state = config.initialize_group();
@@ -73,7 +78,7 @@ pub trait SimpleBench: Sized {
             |b, config| {
                 let mut bench =
                     Self::initialize(&group_state, config, &config_group_state).unwrap();
-                b.iter(|| bench.execute_measured(config))
+                b.iter_custom(|iters| bench.execute_measured(config, iters).unwrap())
             },
         );
     }
@@ -91,9 +96,36 @@ pub trait BenchConfig: Display {
     fn throughput(&self) -> Throughput;
 }
 
-use criterion::{
-    criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Throughput,
-};
+pub trait NebariBenchmark {
+    const BACKEND: &'static str;
+    type Root: Root;
+}
 
-criterion_group!(benches, logs::benches);
+pub struct VersionedBenchmark;
+pub struct UnversionedBenchmark;
+
+impl NebariBenchmark for VersionedBenchmark {
+    const BACKEND: &'static str = "nebari-versioned";
+
+    type Root = Versioned;
+}
+
+impl NebariBenchmark for UnversionedBenchmark {
+    const BACKEND: &'static str = "nebari";
+
+    type Root = Unversioned;
+}
+
+use criterion::{
+    criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
+    Throughput,
+};
+use nebari::tree::{Root, Unversioned, Versioned};
+
+fn all_benches(c: &mut Criterion) {
+    blobs::benches(c);
+    logs::benches(c);
+}
+
+criterion_group!(benches, all_benches);
 criterion_main!(benches);

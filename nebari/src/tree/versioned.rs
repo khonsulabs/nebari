@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    convert::TryFrom,
     fmt::{Debug, Display},
     marker::PhantomData,
     ops::RangeBounds,
@@ -15,30 +14,37 @@ use super::{
     modify::Modification,
     read_chunk,
     serialization::BinarySerialization,
-    KeyEvaluation, KeyRange, PagedWriter, PAGE_SIZE,
+    KeyRange, PagedWriter, ScanEvaluation, PAGE_SIZE,
 };
 use crate::{
     chunk_cache::CacheEntry,
     error::{Error, InternalError},
-    io::ManagedFile,
+    io::File,
     roots::AbortError,
     tree::{
         btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
         copy_chunk, dynamic_order,
         key_entry::KeyEntry,
         modify::Operation,
-        Interior, PageHeader, Root, DEFAULT_MAX_ORDER,
+        BTreeNode, Interior, PageHeader, Reducer, Root,
     },
-    Buffer, ChunkCache, ErrorKind, Vault,
+    vault::AnyVault,
+    ArcBytes, ChunkCache, ErrorKind,
 };
 
 const UNINITIALIZED_SEQUENCE: u64 = 0;
 
+/// An versioned tree with no additional indexed data.
+pub type Versioned = VersionedTreeRoot<()>;
+
 /// A versioned B-Tree root. This tree root internally uses two btrees, one to
 /// keep track of all writes using a unique "sequence" ID, and one that keeps
 /// track of all key-value pairs.
-#[derive(Clone, Default, Debug)]
-pub struct VersionedTreeRoot {
+#[derive(Clone, Debug)]
+pub struct VersionedTreeRoot<EmbeddedIndex>
+where
+    EmbeddedIndex: super::EmbeddedIndex,
+{
     /// The transaction ID of the tree root. If this transaction ID isn't
     /// present in the transaction log, this root should not be trusted.
     pub transaction_id: u64,
@@ -47,9 +53,21 @@ pub struct VersionedTreeRoot {
     /// The by-sequence B-Tree.
     pub by_sequence_root: BTreeEntry<BySequenceIndex, BySequenceStats>,
     /// The by-id B-Tree.
-    pub by_id_root: BTreeEntry<VersionedByIdIndex, ByIdStats>,
+    pub by_id_root: BTreeEntry<VersionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedIndex>>,
 }
-
+impl<EmbeddedIndex> Default for VersionedTreeRoot<EmbeddedIndex>
+where
+    EmbeddedIndex: super::EmbeddedIndex + Reducer<EmbeddedIndex> + Clone + Debug + 'static,
+{
+    fn default() -> Self {
+        Self {
+            transaction_id: 0,
+            sequence: UNINITIALIZED_SEQUENCE,
+            by_sequence_root: BTreeEntry::default(),
+            by_id_root: BTreeEntry::default(),
+        }
+    }
+}
 #[derive(Debug)]
 pub enum ChangeResult {
     Unchanged,
@@ -65,11 +83,14 @@ pub enum Children<Index, ReducedIndex> {
     Interiors(Vec<Interior<Index, ReducedIndex>>),
 }
 
-impl VersionedTreeRoot {
-    fn modify_sequence_root<File: ManagedFile>(
+impl<EmbeddedIndex> VersionedTreeRoot<EmbeddedIndex>
+where
+    EmbeddedIndex: super::EmbeddedIndex + Reducer<EmbeddedIndex> + Clone + Debug + 'static,
+{
+    fn modify_sequence_root(
         &mut self,
         mut modification: Modification<'_, BySequenceIndex>,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
         // Reverse so that pop is efficient.
@@ -89,16 +110,14 @@ impl VersionedTreeRoot {
                 &ModificationContext {
                     current_order: by_sequence_order,
                     minimum_children: by_sequence_minimum_children,
-                    indexer: |_key: &Buffer<'_>,
+                    indexer: |_key: &ArcBytes<'_>,
                               value: Option<&BySequenceIndex>,
                               _existing_index: Option<&BySequenceIndex>,
                               _changes: &mut EntryChanges,
-                              _writer: &mut PagedWriter<'_, File>| {
+                              _writer: &mut PagedWriter<'_>| {
                         Ok(KeyOperation::Set(value.unwrap().clone()))
                     },
-                    loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_, File>| {
-                        Ok(None)
-                    },
+                    loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_>| Ok(None),
                     _phantom: PhantomData,
                 },
                 None,
@@ -117,11 +136,11 @@ impl VersionedTreeRoot {
         Ok(())
     }
 
-    fn modify_id_root<File: ManagedFile>(
+    fn modify_id_root(
         &mut self,
-        mut modification: Modification<'_, Buffer<'static>>,
+        mut modification: Modification<'_, ArcBytes<'static>>,
         changes: &mut EntryChanges,
-        writer: &mut PagedWriter<'_, File>,
+        writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
         modification.reverse()?;
@@ -140,13 +159,13 @@ impl VersionedTreeRoot {
                 &ModificationContext {
                     current_order: by_id_order,
                     minimum_children: by_id_minimum_children,
-                    indexer: |key: &Buffer<'_>,
-                              value: Option<&Buffer<'static>>,
-                              _existing_index: Option<&VersionedByIdIndex>,
+                    indexer: |key: &ArcBytes<'_>,
+                              value: Option<&ArcBytes<'static>>,
+                              existing_index: Option<&VersionedByIdIndex<EmbeddedIndex>>,
                               changes: &mut EntryChanges,
-                              writer: &mut PagedWriter<'_, File>| {
+                              writer: &mut PagedWriter<'_>| {
                         let (position, value_size) = if let Some(value) = value {
-                            let new_position = writer.write_chunk(value, false)?;
+                            let new_position = writer.write_chunk(value)?;
                             // write_chunk errors if it can't fit within a u32
                             #[allow(clippy::cast_possible_truncation)]
                             let value_length = value.len() as u32;
@@ -154,14 +173,18 @@ impl VersionedTreeRoot {
                         } else {
                             (0, 0)
                         };
+                        let embedded = EmbeddedIndex::index(key, value);
                         changes.current_sequence = changes
                             .current_sequence
                             .checked_add(1)
                             .expect("sequence rollover prevented");
                         let key = key.to_owned();
                         changes.changes.push(EntryChange {
-                            key: key.clone(),
-                            sequence: changes.current_sequence,
+                            key_sequence: KeySequence {
+                                key: key.clone(),
+                                sequence: changes.current_sequence,
+                                last_sequence: existing_index.map(|idx| idx.sequence_id),
+                            },
                             value_position: position,
                             value_size,
                         });
@@ -169,12 +192,13 @@ impl VersionedTreeRoot {
                             sequence_id: changes.current_sequence,
                             position,
                             value_length: value_size,
+                            embedded,
                         }))
                     },
                     loader: |index, writer| {
                         if index.position > 0 {
                             match writer.read_chunk(index.position) {
-                                Ok(CacheEntry::Buffer(buffer)) => Ok(Some(buffer)),
+                                Ok(CacheEntry::ArcBytes(buffer)) => Ok(Some(buffer)),
                                 Ok(CacheEntry::Decoded(_)) => unreachable!(),
                                 Err(err) => Err(err),
                             }
@@ -188,10 +212,11 @@ impl VersionedTreeRoot {
                 changes,
                 writer,
             )? {
-                ChangeResult::Absorb
-                | ChangeResult::Remove
-                | ChangeResult::Changed
-                | ChangeResult::Unchanged => {}
+                ChangeResult::Absorb | ChangeResult::Changed | ChangeResult::Unchanged => {}
+                ChangeResult::Remove => {
+                    self.by_id_root.node = BTreeNode::Leaf(vec![]);
+                    self.by_id_root.dirty = true;
+                }
                 ChangeResult::Split => {
                     self.by_id_root.split_root();
                 }
@@ -204,8 +229,13 @@ impl VersionedTreeRoot {
     }
 }
 
-impl Root for VersionedTreeRoot {
+impl<EmbeddedIndex> Root for VersionedTreeRoot<EmbeddedIndex>
+where
+    EmbeddedIndex: super::EmbeddedIndex + Reducer<EmbeddedIndex> + Clone + Debug + 'static,
+{
     const HEADER: PageHeader = PageHeader::VersionedHeader;
+    type Index = VersionedByIdIndex<EmbeddedIndex>;
+    type ReducedIndex = ByIdStats<EmbeddedIndex>;
 
     fn initialized(&self) -> bool {
         self.sequence != UNINITIALIZED_SEQUENCE
@@ -223,7 +253,7 @@ impl Root for VersionedTreeRoot {
         self.by_id_root.stats().alive_keys
     }
 
-    fn deserialize(mut bytes: Buffer<'_>) -> Result<Self, Error> {
+    fn deserialize(mut bytes: ArcBytes<'_>) -> Result<Self, Error> {
         let transaction_id = bytes.read_u64::<BigEndian>()?;
         let sequence = bytes.read_u64::<BigEndian>()?;
         let by_sequence_size = bytes.read_u32::<BigEndian>()? as usize;
@@ -240,9 +270,8 @@ impl Root for VersionedTreeRoot {
         let mut by_sequence_bytes = bytes.read_bytes(by_sequence_size)?.to_owned();
         let mut by_id_bytes = bytes.read_bytes(by_id_size)?.to_owned();
 
-        let by_sequence_root =
-            BTreeEntry::deserialize_from(&mut by_sequence_bytes, DEFAULT_MAX_ORDER)?;
-        let by_id_root = BTreeEntry::deserialize_from(&mut by_id_bytes, DEFAULT_MAX_ORDER)?;
+        let by_sequence_root = BTreeEntry::deserialize_from(&mut by_sequence_bytes, None)?;
+        let by_id_root = BTreeEntry::deserialize_from(&mut by_id_bytes, None)?;
 
         Ok(Self {
             transaction_id,
@@ -252,10 +281,10 @@ impl Root for VersionedTreeRoot {
         })
     }
 
-    fn serialize<File: ManagedFile>(
+    fn serialize(
         &mut self,
-        paged_writer: &mut PagedWriter<'_, File>,
-        mut output: &mut Vec<u8>,
+        paged_writer: &mut PagedWriter<'_>,
+        output: &mut Vec<u8>,
     ) -> Result<(), Error> {
         output.reserve(PAGE_SIZE);
         output.write_u64::<BigEndian>(self.transaction_id)?;
@@ -263,11 +292,9 @@ impl Root for VersionedTreeRoot {
         // Reserve space for by_sequence and by_id sizes (2xu16).
         output.write_u64::<BigEndian>(0)?;
 
-        let by_sequence_size = self
-            .by_sequence_root
-            .serialize_to(&mut output, paged_writer)?;
+        let by_sequence_size = self.by_sequence_root.serialize_to(output, paged_writer)?;
 
-        let by_id_size = self.by_id_root.serialize_to(&mut output, paged_writer)?;
+        let by_id_size = self.by_id_root.serialize_to(output, paged_writer)?;
 
         let by_sequence_size = u32::try_from(by_sequence_size)
             .ok()
@@ -285,10 +312,10 @@ impl Root for VersionedTreeRoot {
         self.transaction_id
     }
 
-    fn modify<File: ManagedFile>(
+    fn modify(
         &mut self,
-        modification: Modification<'_, Buffer<'static>>,
-        writer: &mut PagedWriter<'_, File>,
+        modification: Modification<'_, ArcBytes<'static>>,
+        writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
         let transaction_id = modification.transaction_id;
@@ -307,11 +334,12 @@ impl Root for VersionedTreeRoot {
             .into_iter()
             .map(|change| {
                 values.push(BySequenceIndex {
-                    key: change.key,
+                    key: change.key_sequence.key,
+                    last_sequence: change.key_sequence.last_sequence,
                     value_length: change.value_size,
                     position: change.value_position,
                 });
-                Buffer::from(change.sequence.to_be_bytes())
+                ArcBytes::from(change.key_sequence.sequence.to_be_bytes())
             })
             .collect();
         let sequence_modifications = Modification {
@@ -322,30 +350,32 @@ impl Root for VersionedTreeRoot {
 
         self.modify_sequence_root(sequence_modifications, writer, max_order)?;
 
-        if transaction_id != 0 {
+        // Only update the transaction id if a new one was specified.
+        if let Some(transaction_id) = transaction_id {
             self.transaction_id = transaction_id;
         }
 
         Ok(())
     }
 
-    fn get_multiple<File: ManagedFile, KeyEvaluator, KeyReader>(
+    fn get_multiple<'keys, KeyEvaluator, KeyReader, Keys>(
         &self,
-        keys: &mut KeyRange<'_>,
+        keys: &mut Keys,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut File,
-        vault: Option<&dyn Vault>,
+        file: &mut dyn File,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
     where
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
+        KeyEvaluator: FnMut(&ArcBytes<'static>) -> ScanEvaluation,
+        KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
+        Keys: Iterator<Item = &'keys [u8]>,
     {
         let mut positions_to_read = Vec::new();
         self.by_id_root.get(
-            keys,
-            key_evaluator,
+            &mut KeyRange::new(keys),
+            &mut |key, _index| key_evaluator(key),
             &mut |key, index| {
                 // Deleted keys are stored with a 0 position.
                 if index.position > 0 {
@@ -364,7 +394,7 @@ impl Root for VersionedTreeRoot {
         for (key, position) in positions_to_read {
             if position > 0 {
                 match read_chunk(position, false, file, vault, cache)? {
-                    CacheEntry::Buffer(contents) => {
+                    CacheEntry::ArcBytes(contents) => {
                         key_reader(key, contents)?;
                     }
                     CacheEntry::Decoded(_) => unreachable!(),
@@ -377,63 +407,45 @@ impl Root for VersionedTreeRoot {
     fn scan<
         'keys,
         CallerError: Display + Debug,
-        File: ManagedFile,
+        NodeEvaluator,
         KeyRangeBounds,
         KeyEvaluator,
-        KeyReader,
+        ScanDataCallback,
     >(
         &self,
-        range: &KeyRangeBounds,
-        args: &mut ScanArgs<Buffer<'static>, CallerError, KeyEvaluator, KeyReader>,
-        file: &mut File,
-        vault: Option<&dyn Vault>,
+        range: &'keys KeyRangeBounds,
+        args: &mut ScanArgs<
+            Self::Index,
+            Self::ReducedIndex,
+            CallerError,
+            NodeEvaluator,
+            KeyEvaluator,
+            ScanDataCallback,
+        >,
+        file: &mut dyn File,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
-    ) -> Result<(), AbortError<CallerError>>
+    ) -> Result<bool, AbortError<CallerError>>
     where
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
-        KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &Self::ReducedIndex, usize) -> ScanEvaluation,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Self::Index) -> ScanEvaluation,
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+        ScanDataCallback: FnMut(
+            ArcBytes<'static>,
+            &Self::Index,
+            ArcBytes<'static>,
+        ) -> Result<(), AbortError<CallerError>>,
     {
-        let mut positions_to_read = Vec::new();
-        self.by_id_root.scan(
-            range,
-            &mut ScanArgs::new(
-                args.forwards,
-                &mut args.key_evaluator,
-                &mut |key, index: &VersionedByIdIndex| {
-                    positions_to_read.push((key, index.position));
-                    Ok(())
-                },
-            ),
-            file,
-            vault,
-            cache,
-        )?;
-
-        // Sort by position on disk
-        positions_to_read.sort_by(|a, b| a.1.cmp(&b.1));
-
-        for (key, position) in positions_to_read {
-            if position > 0 {
-                match read_chunk(position, false, file, vault, cache)? {
-                    CacheEntry::Buffer(contents) => {
-                        (args.key_reader)(key, contents)?;
-                    }
-                    CacheEntry::Decoded(_) => unreachable!(),
-                };
-            }
-        }
-        Ok(())
+        self.by_id_root.scan(range, args, file, vault, cache, 0)
     }
 
-    // TODO can we make compaction smarter to not get rid of *all* old data in a versioned file?
-    fn copy_data_to<File: ManagedFile>(
+    fn copy_data_to(
         &mut self,
         include_nodes: bool,
-        file: &mut File,
+        file: &mut dyn File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_, File>,
-        vault: Option<&dyn Vault>,
+        writer: &mut PagedWriter<'_>,
+        vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error> {
         // Copy all of the data using the ID root.
         let mut sequence_indexes = Vec::with_capacity(
@@ -451,7 +463,12 @@ impl Root for VersionedTreeRoot {
             writer,
             vault,
             &mut scratch,
-            &mut |key, index: &mut VersionedByIdIndex, from_file, copied_chunks, to_file, vault| {
+            &mut |key,
+                  index: &mut VersionedByIdIndex<EmbeddedIndex>,
+                  from_file,
+                  copied_chunks,
+                  to_file,
+                  vault| {
                 let new_position =
                     copy_chunk(index.position, from_file, copied_chunks, to_file, vault)?;
 
@@ -459,6 +476,7 @@ impl Root for VersionedTreeRoot {
                     key.clone(),
                     BySequenceIndex {
                         key: key.clone(),
+                        last_sequence: None,
                         value_length: index.value_length,
                         position: new_position,
                     },
@@ -482,7 +500,7 @@ impl Root for VersionedTreeRoot {
         }
 
         let mut modification = Modification {
-            transaction_id: self.transaction_id,
+            transaction_id: Some(self.transaction_id),
             keys,
             operation: Operation::SetEach(indexes),
         };
@@ -496,14 +514,14 @@ impl Root for VersionedTreeRoot {
             &ModificationContext {
                 current_order: by_sequence_order,
                 minimum_children,
-                indexer: |_key: &Buffer<'_>,
+                indexer: |_key: &ArcBytes<'_>,
                           value: Option<&BySequenceIndex>,
                           _existing_index: Option<&BySequenceIndex>,
                           _changes: &mut EntryChanges,
-                          _writer: &mut PagedWriter<'_, File>| {
+                          _writer: &mut PagedWriter<'_>| {
                     Ok(KeyOperation::Set(value.unwrap().clone()))
                 },
-                loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_, File>| unreachable!(),
+                loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_>| unreachable!(),
                 _phantom: PhantomData,
             },
             None,
@@ -521,8 +539,18 @@ pub struct EntryChanges {
     pub changes: Vec<EntryChange>,
 }
 pub struct EntryChange {
-    pub sequence: u64,
-    pub key: Buffer<'static>,
+    pub key_sequence: KeySequence,
     pub value_position: u64,
     pub value_size: u32,
+}
+
+/// A stored revision of a key.
+#[derive(Debug)]
+pub struct KeySequence {
+    /// The key that this entry was written for.
+    pub key: ArcBytes<'static>,
+    /// The unique sequence id.
+    pub sequence: u64,
+    /// The previous sequence id for this key, if any.
+    pub last_sequence: Option<u64>,
 }

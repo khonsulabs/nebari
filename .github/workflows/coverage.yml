@@ -5,9 +5,12 @@ on: [push]
 jobs:
   coverage:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v2
+      
+      - name: Install Rust
+        uses: hecrj/setup-rust-action@v1
 
       - name: Run code coverage
         run: |

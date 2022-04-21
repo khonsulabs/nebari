@@ -1,10 +1,8 @@
 use std::{
     borrow::Cow,
     cmp::Ordering,
-    convert::TryFrom,
     fs::OpenOptions,
     io::{SeekFrom, Write},
-    marker::PhantomData,
     ops::{Bound, RangeBounds},
     path::Path,
     sync::Arc,
@@ -15,15 +13,16 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use super::{State, TransactionHandle};
 use crate::{
     error::Error,
-    io::{FileManager, FileOp, ManagedFile, OpenableFile},
-    Buffer, Context, ErrorKind, Vault,
+    io::{File, FileManager, FileOp, ManagedFile, OpenableFile, OperableFile},
+    vault::AnyVault,
+    ArcBytes, Context, ErrorKind,
 };
 
 const PAGE_SIZE: usize = 1024;
 
 /// A transaction log that records changes for one or more trees.
 pub struct TransactionLog<File: ManagedFile> {
-    vault: Option<Arc<dyn Vault>>,
+    vault: Option<Arc<dyn AnyVault>>,
     state: State,
     log: <File::Manager as FileManager>::FileHandle,
 }
@@ -59,20 +58,22 @@ impl<File: ManagedFile> TransactionLog<File> {
 
     /// Returns the total size of the transaction log file.
     pub fn total_size(&self) -> u64 {
-        let state = self.state.lock_for_write();
-        *state
+        self.state.len()
     }
 
     /// Initializes `state` to contain the information about the transaction log
     /// located at `log_path`.
     pub fn initialize_state(state: &State, context: &Context<File::Manager>) -> Result<(), Error> {
-        let mut log_length = if context.file_manager.exists(state.path())? {
-            context.file_manager.file_length(state.path())?
-        } else {
-            0
+        let mut log_length = match context.file_manager.file_length(state.path()) {
+            Ok(length) => length,
+            Err(Error {
+                kind: ErrorKind::Io(err),
+                ..
+            }) if err.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(other) => return Err(other),
         };
         if log_length == 0 {
-            state.initialize(1, 0);
+            state.initialize(0, 0);
             return Ok(());
         }
 
@@ -97,18 +98,22 @@ impl<File: ManagedFile> TransactionLog<File> {
             state,
             log_length,
             vault: context.vault(),
-            _file: PhantomData,
         })
     }
 
     /// Logs one or more transactions. After this call returns, the transaction
     /// log is guaranteed to be fully written to disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ErrorKind::TransactionPushedOutOfOrder`] if `handles` is out of
+    /// order, or if any handle contains an id older than one already written to
+    /// the log.
     pub fn push(&mut self, handles: Vec<LogEntry<'static>>) -> Result<(), Error> {
         self.log.execute(LogWriter {
             state: self.state.clone(),
             vault: self.vault.clone(),
             transactions: handles,
-            _file: PhantomData,
         })
     }
 
@@ -150,7 +155,14 @@ impl<File: ManagedFile> TransactionLog<File> {
     }
 
     /// Begins a new transaction, exclusively locking `trees`.
-    pub fn new_transaction(&self, trees: &[&[u8]]) -> TransactionHandle {
+    pub fn new_transaction<
+        'a,
+        I: IntoIterator<Item = &'a [u8], IntoIter = II>,
+        II: ExactSizeIterator<Item = &'a [u8]>,
+    >(
+        &self,
+        trees: I,
+    ) -> TransactionHandle {
         self.state.new_transaction(trees)
     }
 
@@ -160,16 +172,14 @@ impl<File: ManagedFile> TransactionLog<File> {
     }
 }
 
-struct StateInitializer<'a, F> {
+struct StateInitializer<'a> {
     state: &'a State,
     log_length: u64,
-    vault: Option<&'a dyn Vault>,
-    _file: PhantomData<F>,
+    vault: Option<&'a dyn AnyVault>,
 }
 
-impl<'a, F: ManagedFile> FileOp<F> for StateInitializer<'a, F> {
-    type Output = Result<(), Error>;
-    fn execute(&mut self, log: &mut F) -> Result<(), Error> {
+impl<'a> FileOp<Result<(), Error>> for StateInitializer<'a> {
+    fn execute(self, log: &mut dyn File) -> Result<(), Error> {
         // Scan back block by block until we find a page header with a value of 1.
         let block_start = self.log_length - PAGE_SIZE as u64;
         let mut scratch_buffer = Vec::new();
@@ -186,8 +196,7 @@ impl<'a, F: ManagedFile> FileOp<F> for StateInitializer<'a, F> {
                 }
             };
 
-        self.state
-            .initialize(last_transaction.id + 1, self.log_length);
+        self.state.initialize(last_transaction.id, self.log_length);
         Ok(())
     }
 }
@@ -203,12 +212,12 @@ pub enum ScanResult {
     },
 }
 
-fn scan_for_transaction<File: ManagedFile>(
-    log: &mut File,
+fn scan_for_transaction(
+    log: &mut dyn File,
     scratch_buffer: &mut Vec<u8>,
     mut block_start: u64,
     scan_forward: bool,
-    vault: Option<&dyn Vault>,
+    vault: Option<&dyn AnyVault>,
 ) -> Result<ScanResult, Error> {
     if scratch_buffer.len() < 4 {
         scratch_buffer.resize(4, 0);
@@ -243,13 +252,33 @@ fn scan_for_transaction<File: ManagedFile>(
                 let length = (scratch_buffer[1] as usize) << 16
                     | (scratch_buffer[2] as usize) << 8
                     | scratch_buffer[3] as usize;
-                if scratch_buffer.len() < length {
-                    scratch_buffer.resize(length, 0);
+                scratch_buffer.resize(length, 0);
+                let mut initial_page = true;
+                let mut bytes_to_read = length;
+                let mut offset = 0;
+                while bytes_to_read > 0 {
+                    let page_header_length = if initial_page {
+                        // The initial page has 4 bytes at the start, which we've already read.
+                        initial_page = false;
+                        4
+                    } else {
+                        // Subsequent pages have a 0 byte at the start of the
+                        // page, denoting that it's not a valid page header. We
+                        // need to skip that byte, so that the read call reads
+                        // the stored data, not the header byte.
+                        log.seek(SeekFrom::Current(1))?;
+                        1
+                    };
+
+                    let page_length = (PAGE_SIZE - page_header_length).min(length - offset);
+                    log.read_exact(&mut scratch_buffer[offset..offset + page_length])?;
+                    offset += page_length;
+                    bytes_to_read -= page_length;
                 }
-                log.read_exact(scratch_buffer)?;
+
                 let payload = &scratch_buffer[0..length];
                 let decrypted = match &vault {
-                    Some(vault) => Cow::Owned(vault.decrypt(payload)),
+                    Some(vault) => Cow::Owned(vault.decrypt(payload)?),
                     None => Cow::Borrowed(payload),
                 };
                 let entry = LogEntry::deserialize(&decrypted)
@@ -270,23 +299,22 @@ fn scan_for_transaction<File: ManagedFile>(
 pub(crate) struct EntryFetcher<'a> {
     pub state: &'a State,
     pub id: u64,
-    pub vault: Option<&'a dyn Vault>,
+    pub vault: Option<&'a dyn AnyVault>,
 }
 
-impl<'a, File: ManagedFile> FileOp<File> for EntryFetcher<'a> {
-    type Output = Result<ScanResult, Error>;
-    fn execute(&mut self, log: &mut File) -> Result<ScanResult, Error> {
+impl<'a> FileOp<Result<ScanResult, Error>> for EntryFetcher<'a> {
+    fn execute(self, log: &mut dyn File) -> Result<ScanResult, Error> {
         let mut scratch = Vec::with_capacity(PAGE_SIZE);
         fetch_entry(log, &mut scratch, self.state, self.id, self.vault)
     }
 }
 
-fn fetch_entry<File: ManagedFile>(
-    log: &mut File,
+fn fetch_entry(
+    log: &mut dyn File,
     scratch_buffer: &mut Vec<u8>,
     state: &State,
     id: u64,
-    vault: Option<&dyn Vault>,
+    vault: Option<&dyn AnyVault>,
 ) -> Result<ScanResult, Error> {
     if id == 0 {
         return Ok(ScanResult::NotFound {
@@ -304,8 +332,20 @@ fn fetch_entry<File: ManagedFile>(
     let mut lower_id = None;
     let mut lower_location = None;
     loop {
-        let guessed_location = guess_page(id, lower_location, lower_id, upper_location, upper_id);
-        debug_assert_ne!(guessed_location, upper_location);
+        let guessed_location = if let Some(page) =
+            guess_page(id, lower_location, lower_id, upper_location, upper_id)
+        {
+            page
+        } else {
+            return Ok(ScanResult::NotFound {
+                nearest_position: upper_location,
+            });
+        };
+        if guessed_location == upper_location {
+            return Ok(ScanResult::NotFound {
+                nearest_position: upper_location,
+            });
+        }
 
         // load the transaction at this location
         #[allow(clippy::cast_possible_wrap)]
@@ -319,8 +359,14 @@ fn fetch_entry<File: ManagedFile>(
                 state.note_transaction_id_status(entry.id, Some(position));
                 match entry.id.cmp(&id) {
                     Ordering::Less => {
-                        lower_id = Some(entry.id);
-                        lower_location = Some(position);
+                        if lower_id.is_none() || entry.id > lower_id.unwrap() {
+                            lower_id = Some(entry.id);
+                            lower_location = Some(position);
+                        } else {
+                            return Ok(ScanResult::NotFound {
+                                nearest_position: position,
+                            });
+                        }
                     }
                     Ordering::Equal => {
                         return Ok(ScanResult::Found {
@@ -330,8 +376,14 @@ fn fetch_entry<File: ManagedFile>(
                         });
                     }
                     Ordering::Greater => {
-                        upper_id = entry.id;
-                        upper_location = position;
+                        if entry.id < upper_id {
+                            upper_id = entry.id;
+                            upper_location = position;
+                        } else {
+                            return Ok(ScanResult::NotFound {
+                                nearest_position: position,
+                            });
+                        }
                     }
                 }
             }
@@ -345,19 +397,16 @@ fn fetch_entry<File: ManagedFile>(
 pub struct EntryScanner<'a, Range: RangeBounds<u64>, Callback: FnMut(LogEntry<'static>) -> bool> {
     pub state: &'a State,
     pub ids: Range,
-    pub vault: Option<&'a dyn Vault>,
+    pub vault: Option<&'a dyn AnyVault>,
     pub callback: Callback,
 }
 
-impl<
-        'a,
-        Range: RangeBounds<u64>,
-        File: ManagedFile,
-        Callback: FnMut(LogEntry<'static>) -> bool,
-    > FileOp<File> for EntryScanner<'a, Range, Callback>
+impl<'a, Range, Callback> FileOp<Result<(), Error>> for EntryScanner<'a, Range, Callback>
+where
+    Range: RangeBounds<u64>,
+    Callback: FnMut(LogEntry<'static>) -> bool,
 {
-    type Output = Result<(), Error>;
-    fn execute(&mut self, log: &mut File) -> Self::Output {
+    fn execute(mut self, log: &mut dyn File) -> Result<(), Error> {
         let mut scratch = Vec::with_capacity(PAGE_SIZE);
         let (start_location, start_transaction, start_length) = match self.ids.start_bound() {
             Bound::Included(start_key) | Bound::Excluded(start_key) => {
@@ -402,24 +451,27 @@ const fn next_page_start(position: u64) -> u64 {
     (position + page_size - 1) / page_size * page_size
 }
 
-struct LogWriter<File> {
+struct LogWriter {
     state: State,
     transactions: Vec<LogEntry<'static>>,
-    vault: Option<Arc<dyn Vault>>,
-    _file: PhantomData<File>,
+    vault: Option<Arc<dyn AnyVault>>,
 }
 
-impl<File: ManagedFile> FileOp<File> for LogWriter<File> {
-    type Output = Result<(), Error>;
-    fn execute(&mut self, log: &mut File) -> Result<(), Error> {
+impl FileOp<Result<(), Error>> for LogWriter {
+    fn execute(mut self, log: &mut dyn File) -> Result<(), Error> {
         let mut log_position = self.state.lock_for_write();
         let mut scratch = [0_u8; PAGE_SIZE];
         let mut completed_transactions = Vec::with_capacity(self.transactions.len());
         for transaction in self.transactions.drain(..) {
-            completed_transactions.push((transaction.id, Some(*log_position)));
+            if transaction.id > log_position.last_written_transaction {
+                log_position.last_written_transaction = transaction.id;
+            } else {
+                return Err(Error::from(ErrorKind::TransactionPushedOutOfOrder));
+            }
+            completed_transactions.push((transaction.id, Some(log_position.file_offset)));
             let mut bytes = transaction.serialize()?;
             if let Some(vault) = &self.vault {
-                bytes = vault.encrypt(&bytes);
+                bytes = vault.encrypt(&bytes)?;
             }
             // Write out the transaction in pages.
             let total_length = bytes.len() + 3;
@@ -454,7 +506,7 @@ impl<File: ManagedFile> FileOp<File> for LogWriter<File> {
                     .copy_from_slice(&bytes[offset..offset + bytes_to_write]);
                 log.write_all(&scratch)?;
                 offset += bytes_to_write;
-                *log_position += PAGE_SIZE as u64;
+                log_position.file_offset += PAGE_SIZE as u64;
             }
         }
 
@@ -474,7 +526,7 @@ impl<File: ManagedFile> FileOp<File> for LogWriter<File> {
 pub struct LogEntry<'a> {
     /// The unique id of this entry.
     pub id: u64,
-    pub(crate) data: Option<Buffer<'a>>,
+    pub(crate) data: Option<ArcBytes<'a>>,
 }
 
 impl<'a> LogEntry<'a> {
@@ -483,7 +535,7 @@ impl<'a> LogEntry<'a> {
     pub fn into_owned(self) -> LogEntry<'static> {
         LogEntry {
             id: self.id,
-            data: self.data.as_ref().map(Buffer::to_owned),
+            data: self.data.map(ArcBytes::into_owned),
         }
     }
 }
@@ -491,13 +543,13 @@ impl<'a> LogEntry<'a> {
 impl<'a> LogEntry<'a> {
     /// Returns the associated data, if any.
     #[must_use]
-    pub const fn data(&self) -> Option<&Buffer<'a>> {
+    pub const fn data(&self) -> Option<&ArcBytes<'a>> {
         self.data.as_ref()
     }
 
     /// Sets the associated data that will be stored in the transaction log.
     /// Limited to a length 16,777,208 (2^24 - 8) bytes -- just shy of 16MB.
-    pub fn set_data(&mut self, data: impl Into<Buffer<'a>>) -> Result<(), Error> {
+    pub fn set_data(&mut self, data: impl Into<ArcBytes<'a>>) -> Result<(), Error> {
         let data = data.into();
         if data.len() <= 2_usize.pow(24) - 8 {
             self.data = Some(data);
@@ -508,7 +560,7 @@ impl<'a> LogEntry<'a> {
     }
 
     pub(crate) fn serialize(&self) -> Result<Vec<u8>, Error> {
-        let mut buffer = Vec::new();
+        let mut buffer = Vec::with_capacity(8 + self.data.as_ref().map_or(0, |data| data.len()));
         // Transaction ID
         buffer.write_u64::<BigEndian>(self.id)?;
         if let Some(data) = &self.data {
@@ -525,7 +577,7 @@ impl<'a> LogEntry<'a> {
         let data = if buffer.is_empty() {
             None
         } else {
-            Some(Buffer::from(buffer))
+            Some(ArcBytes::from(buffer))
         };
         Ok(Self { id, data })
     }
@@ -535,7 +587,7 @@ impl<'a> LogEntry<'a> {
 fn serialization_tests() {
     let transaction = LogEntry {
         id: 1,
-        data: Some(Buffer::from(b"hello")),
+        data: Some(ArcBytes::from(b"hello")),
     };
     let serialized = transaction.serialize().unwrap();
     let deserialized = LogEntry::deserialize(&serialized).unwrap();
@@ -553,7 +605,7 @@ fn serialization_tests() {
     let mut transaction = LogEntry { id: 0, data: None };
     let mut big_data = Vec::new();
     big_data.resize(2_usize.pow(24), 0);
-    let mut big_data = Buffer::from(big_data);
+    let mut big_data = ArcBytes::from(big_data);
     assert!(matches!(
         transaction.set_data(big_data.clone()),
         Err(Error {
@@ -581,7 +633,7 @@ fn guess_page(
     lower_id: Option<u64>,
     upper_location: u64,
     upper_id: u64,
-) -> u64 {
+) -> Option<u64> {
     debug_assert_ne!(looking_for, upper_id);
     let total_pages = upper_location / PAGE_SIZE as u64;
 
@@ -592,19 +644,29 @@ fn guess_page(
         let local_avg_per_page = (upper_id - lower_id) as f64 / (total_pages - current_page) as f64;
         let delta_estimated_pages = (delta_from_current as f64 * local_avg_per_page).floor() as u64;
         let guess = lower_location + delta_estimated_pages.max(1) * PAGE_SIZE as u64;
-        // If our estimate is that the location is beyond or equal to the upper, we'll guess the page before it.
+        // If our estimate is that the location is beyond or equal to the upper,
+        // we'll guess the page before it.
         if guess >= upper_location {
-            upper_location - PAGE_SIZE as u64
+            let capped_guess = upper_location - PAGE_SIZE as u64;
+            // If the page before the upper is the lower, we can't find the
+            // transaction in question.
+            if capped_guess > lower_location {
+                Some(capped_guess)
+            } else {
+                None
+            }
         } else {
-            guess
+            Some(guess)
         }
-    } else {
+    } else if upper_id > looking_for {
         // Go backwards from upper
         let avg_per_page = upper_id as f64 / total_pages as f64;
         let id_delta = upper_id - looking_for;
         let delta_estimated_pages = (id_delta as f64 * avg_per_page).ceil() as u64;
-        let delta_bytes = delta_estimated_pages * PAGE_SIZE as u64;
-        upper_location.saturating_sub(delta_bytes)
+        let delta_bytes = delta_estimated_pages.saturating_mul(PAGE_SIZE as u64);
+        Some(upper_location.saturating_sub(delta_bytes))
+    } else {
+        None
     }
 }
 
@@ -612,15 +674,17 @@ fn guess_page(
 #[allow(clippy::semicolon_if_nothing_returned, clippy::future_not_send)]
 mod tests {
 
+    use std::collections::{BTreeSet, HashSet};
+
     use nanorand::{Pcg64, Rng};
     use tempfile::tempdir;
 
     use super::*;
     use crate::{
         io::{
+            any::AnyFileManager,
             fs::{StdFile, StdFileManager},
-            memory::MemoryFile,
-            ManagedFile,
+            memory::MemoryFileManager,
         },
         test_util::RotatorVault,
         transaction::TransactionManager,
@@ -629,21 +693,39 @@ mod tests {
 
     #[test]
     fn file_log_file_tests() {
-        log_file_tests::<StdFile>("file_log_file", None, None);
+        log_file_tests("file_log_file", StdFileManager::default(), None, None);
+        log_file_tests(
+            "file_log_file_encrypted",
+            StdFileManager::default(),
+            Some(Arc::new(RotatorVault::new(13))),
+            None,
+        );
     }
 
     #[test]
     fn memory_log_file_tests() {
-        log_file_tests::<MemoryFile>("memory_log_file", None, None);
+        log_file_tests("memory_log_file", MemoryFileManager::default(), None, None);
+        log_file_tests(
+            "memory_log_file",
+            MemoryFileManager::default(),
+            Some(Arc::new(RotatorVault::new(13))),
+            None,
+        );
     }
 
-    fn log_file_tests<File: ManagedFile>(
+    #[test]
+    fn any_log_file_tests() {
+        log_file_tests("any_file_log_file", AnyFileManager::std(), None, None);
+        log_file_tests("any_memory_log_file", AnyFileManager::memory(), None, None);
+    }
+
+    fn log_file_tests<Manager: FileManager>(
         file_name: &str,
-        vault: Option<Arc<dyn Vault>>,
+        file_manager: Manager,
+        vault: Option<Arc<dyn AnyVault>>,
         cache: Option<ChunkCache>,
     ) {
         let temp_dir = crate::test_util::TestDirectory::new(file_name);
-        let file_manager = <File::Manager as Default>::default();
         let context = Context {
             file_manager,
             vault,
@@ -652,57 +734,113 @@ mod tests {
         std::fs::create_dir(&temp_dir).unwrap();
         let log_path = {
             let directory: &Path = &temp_dir;
-            directory.join("transactions")
+            directory.join("_transactions")
         };
+
+        let mut rng = Pcg64::new_seed(1);
+        let data = (0..PAGE_SIZE * 10)
+            .map(|_| rng.generate())
+            .collect::<Vec<u8>>();
 
         for id in 1..=1_000 {
             let state = State::from_path(&log_path);
-            TransactionLog::<File>::initialize_state(&state, &context).unwrap();
+            TransactionLog::<Manager::File>::initialize_state(&state, &context).unwrap();
             let mut transactions =
-                TransactionLog::<File>::open(&log_path, state, context.clone()).unwrap();
+                TransactionLog::<Manager::File>::open(&log_path, state, context.clone()).unwrap();
             assert_eq!(transactions.current_transaction_id(), id);
-            let mut tx = transactions.new_transaction(&[b"hello"]);
+            let mut tx = transactions.new_transaction([&b"hello"[..]]);
 
-            tx.transaction.data = Some(Buffer::from(id.to_be_bytes()));
+            tx.transaction.data = Some(ArcBytes::from(id.to_be_bytes()));
+            // We want to have varying sizes to try to test the scan algorithm thoroughly.
+            #[allow(clippy::cast_possible_truncation)]
+            if id % 2 == 0 {
+                // Larger than PAGE_SIZE
+                if id % 3 == 0 {
+                    tx.set_data(data[0..PAGE_SIZE * (id as usize % 10).max(3)].to_vec())
+                        .unwrap();
+                } else {
+                    tx.set_data(data[0..PAGE_SIZE * (id as usize % 10).max(2)].to_vec())
+                        .unwrap();
+                }
+            } else {
+                tx.set_data(data[0..id as usize].to_vec()).unwrap();
+            }
+
+            assert!(tx.data.as_ref().unwrap().len() > 0);
 
             transactions.push(vec![tx.transaction]).unwrap();
             transactions.close().unwrap();
         }
 
-        if context.vault.is_some() {
-            // Test that we can't open it without encryption
-            let state = State::from_path(&temp_dir);
-            assert!(TransactionLog::<File>::initialize_state(&state, &context).is_err());
-            let mut transactions = TransactionLog::<File>::open(&log_path, state, context).unwrap();
+        let state = State::from_path(&log_path);
+        if context.vault.is_none() {
+            // Test that we can't open it with encryption. Without
+            // https://github.com/khonsulabs/nebari/issues/35, the inverse isn't
+            // able to be tested.
+            assert!(TransactionLog::<Manager::File>::initialize_state(
+                &state,
+                &Context {
+                    file_manager: context.file_manager.clone(),
+                    vault: Some(Arc::new(RotatorVault::new(13))),
+                    cache: None
+                }
+            )
+            .is_err());
+        }
 
-            for id in 0..1_000 {
-                let transaction = transactions.get(id).unwrap();
-                match transaction {
-                    Some(transaction) => assert_eq!(transaction.id, id),
-                    None => {
-                        unreachable!("failed to fetch transaction {}", id)
-                    }
+        TransactionLog::<Manager::File>::initialize_state(&state, &context).unwrap();
+        let mut transactions =
+            TransactionLog::<Manager::File>::open(&log_path, state, context).unwrap();
+
+        let out_of_order = transactions.new_transaction([&b"test"[..]]);
+        transactions
+            .push(vec![
+                transactions.new_transaction([&b"test2"[..]]).transaction,
+            ])
+            .unwrap();
+        assert!(matches!(
+            transactions
+                .push(vec![out_of_order.transaction])
+                .unwrap_err()
+                .kind,
+            ErrorKind::TransactionPushedOutOfOrder
+        ));
+
+        assert!(transactions.get(0).unwrap().is_none());
+        for id in 1..=1_000 {
+            let transaction = transactions.get(id).unwrap();
+            match transaction {
+                Some(transaction) => {
+                    assert_eq!(transaction.id, id);
+                    assert_eq!(
+                        &data[..transaction.data().unwrap().len()],
+                        transaction.data().unwrap().as_slice()
+                    );
+                }
+                None => {
+                    unreachable!("failed to fetch transaction {}", id)
                 }
             }
-
-            // Test scanning
-            let mut first_ten = Vec::new();
-            transactions
-                .scan(.., |entry| {
-                    first_ten.push(entry);
-                    first_ten.len() < 10
-                })
-                .unwrap();
-            assert_eq!(first_ten.len(), 10);
-            let mut after_first = None;
-            transactions
-                .scan(first_ten[0].id + 1.., |entry| {
-                    after_first = Some(entry);
-                    false
-                })
-                .unwrap();
-            assert_eq!(after_first.as_ref(), first_ten.get(1));
         }
+        assert!(transactions.get(1001).unwrap().is_none());
+
+        // Test scanning
+        let mut first_ten = Vec::new();
+        transactions
+            .scan(.., |entry| {
+                first_ten.push(entry);
+                first_ten.len() < 10
+            })
+            .unwrap();
+        assert_eq!(first_ten.len(), 10);
+        let mut after_first = None;
+        transactions
+            .scan(first_ten[0].id + 1.., |entry| {
+                after_first = Some(entry);
+                false
+            })
+            .unwrap();
+        assert_eq!(after_first.as_ref(), first_ten.get(1));
     }
 
     #[test]
@@ -714,32 +852,32 @@ mod tests {
             vault: None,
             cache: None,
         };
-        let log_path = temp_dir.path().join("transactions");
+        let log_path = temp_dir.path().join("_transactions");
         let mut rng = Pcg64::new_seed(1);
 
         let state = State::from_path(&log_path);
         TransactionLog::<StdFile>::initialize_state(&state, &context).unwrap();
         let mut transactions = TransactionLog::<StdFile>::open(&log_path, state, context).unwrap();
 
-        let mut valid_ids = Vec::new();
+        let mut valid_ids = HashSet::new();
         for id in 1..=10_000 {
             assert_eq!(transactions.current_transaction_id(), id);
-            let tx = transactions.new_transaction(&[b"hello"]);
+            let tx = transactions.new_transaction([&b"hello"[..]]);
             if rng.generate::<u8>() < 8 {
                 // skip a few ids.
                 continue;
             }
-            valid_ids.push(tx.id);
+            valid_ids.insert(tx.id);
 
             transactions.push(vec![tx.transaction]).unwrap();
         }
 
-        for id in valid_ids {
+        for id in 1..=10_000 {
             let transaction = transactions.get(id).unwrap();
             match transaction {
                 Some(transaction) => assert_eq!(transaction.id, id),
                 None => {
-                    unreachable!("failed to fetch transaction {}", id)
+                    assert!(!valid_ids.contains(&id));
                 }
             }
         }
@@ -747,31 +885,43 @@ mod tests {
 
     #[test]
     fn file_log_manager_tests() {
-        log_manager_tests::<StdFile>("file_log_manager", None, None);
+        log_manager_tests("file_log_manager", StdFileManager::default(), None, None);
     }
 
     #[test]
     fn memory_log_manager_tests() {
-        log_manager_tests::<MemoryFile>("memory_log_manager", None, None);
+        log_manager_tests(
+            "memory_log_manager",
+            MemoryFileManager::default(),
+            None,
+            None,
+        );
+    }
+
+    #[test]
+    fn any_log_manager_tests() {
+        log_manager_tests("any_log_manager", AnyFileManager::std(), None, None);
+        log_manager_tests("any_log_manager", AnyFileManager::memory(), None, None);
     }
 
     #[test]
     fn file_encrypted_log_manager_tests() {
-        log_manager_tests::<StdFile>(
+        log_manager_tests(
             "encrypted_file_log_manager",
+            MemoryFileManager::default(),
             Some(Arc::new(RotatorVault::new(13))),
             None,
         );
     }
 
-    fn log_manager_tests<File: ManagedFile>(
+    fn log_manager_tests<Manager: FileManager>(
         file_name: &str,
-        vault: Option<Arc<dyn Vault>>,
+        file_manager: Manager,
+        vault: Option<Arc<dyn AnyVault>>,
         cache: Option<ChunkCache>,
     ) {
         let temp_dir = crate::test_util::TestDirectory::new(file_name);
         std::fs::create_dir(&temp_dir).unwrap();
-        let file_manager = <File::Manager as Default>::default();
         let context = Context {
             file_manager,
             vault,
@@ -787,8 +937,8 @@ mod tests {
             let manager = manager.clone();
             handles.push(std::thread::spawn(move || {
                 for id in 0_u32..1_000 {
-                    let tx = manager.new_transaction(&[&id.to_be_bytes()]);
-                    manager.push(tx).unwrap();
+                    let tx = manager.new_transaction([&id.to_be_bytes()[..]]);
+                    tx.commit().unwrap();
                 }
             }));
         }
@@ -816,5 +966,105 @@ mod tests {
             })
             .unwrap();
         assert_eq!(ten.unwrap().id, 10);
+    }
+
+    #[test]
+    fn file_out_of_order_log_manager_tests() {
+        out_of_order_log_manager_tests(
+            "file_out_of_order_log_manager",
+            StdFileManager::default(),
+            None,
+            None,
+        );
+    }
+
+    #[test]
+    fn memory_out_of_order_log_manager_tests() {
+        out_of_order_log_manager_tests(
+            "memory_out_of_order_log_manager",
+            MemoryFileManager::default(),
+            None,
+            None,
+        );
+    }
+
+    #[test]
+    fn any_out_of_order_log_manager_tests() {
+        out_of_order_log_manager_tests(
+            "any_out_of_order_log_manager",
+            AnyFileManager::std(),
+            None,
+            None,
+        );
+        out_of_order_log_manager_tests(
+            "any_out_of_order_log_manager",
+            AnyFileManager::memory(),
+            None,
+            None,
+        );
+    }
+
+    fn out_of_order_log_manager_tests<Manager: FileManager>(
+        file_name: &str,
+        file_manager: Manager,
+        vault: Option<Arc<dyn AnyVault>>,
+        cache: Option<ChunkCache>,
+    ) {
+        let temp_dir = crate::test_util::TestDirectory::new(file_name);
+        std::fs::create_dir(&temp_dir).unwrap();
+        let context = Context {
+            file_manager,
+            vault,
+            cache,
+        };
+        let manager = TransactionManager::spawn(&temp_dir, context).unwrap();
+        let mut rng = Pcg64::new_seed(1);
+
+        for batch in 1..=100_u8 {
+            println!("New batch");
+            // Generate a bunch of transactions.
+            let mut handles = Vec::new();
+            for tree in 1..=batch {
+                handles.push(manager.new_transaction([&tree.to_be_bytes()[..]]));
+            }
+            rng.shuffle(&mut handles);
+            let (handle_sender, handle_receiver) = flume::unbounded();
+            let mut should_commit_handles = Vec::new();
+            let mut expected_ids = BTreeSet::new();
+            for (index, handle) in handles.into_iter().enumerate() {
+                let should_commit_handle = rng.generate::<f32>() > 0.25 || expected_ids.is_empty();
+                if should_commit_handle {
+                    expected_ids.insert(handle.id);
+                }
+                should_commit_handles.push(should_commit_handle);
+                handle_sender.send((index, handle)).unwrap();
+            }
+            let should_commit_handles = Arc::new(should_commit_handles);
+            let mut threads = Vec::new();
+            for _ in 1..=batch {
+                let handle_receiver = handle_receiver.clone();
+                let should_commit_handles = should_commit_handles.clone();
+                threads.push(std::thread::spawn(move || {
+                    let (handle_index, handle) = handle_receiver.recv().unwrap();
+                    if should_commit_handles[handle_index] {
+                        println!("Committing handle {}", handle.id);
+                        handle.commit().unwrap();
+                    } else {
+                        println!("Dropping handle {}", handle.id);
+                        handle.rollback();
+                    }
+                }));
+            }
+            for thread in threads {
+                thread.join().unwrap();
+            }
+            manager
+                .scan(dbg!(*expected_ids.iter().next().unwrap()).., |tx| {
+                    expected_ids.remove(&tx.id);
+                    true
+                })
+                .unwrap();
+            assert!(expected_ids.is_empty(), "{:?}", expected_ids);
+        }
     }
 }

@@ -1,4 +1,7 @@
-use std::{io::ErrorKind, time::Duration};
+use std::{
+    io::ErrorKind,
+    time::{Duration, Instant},
+};
 
 use _sled::{transaction::ConflictableTransactionError, Db, IVec};
 use tempfile::TempDir;
@@ -41,19 +44,28 @@ impl SimpleBench for InsertLogs {
         })
     }
 
-    fn execute_measured(&mut self, _config: &Self::Config) -> Result<(), anyhow::Error> {
-        let batch = self.state.next().unwrap();
-        self.db.transaction(|db| {
-            for entry in &batch {
-                db.insert(
-                    &entry.id.to_be_bytes(),
-                    pot::to_vec(&entry).map_err(ConflictableTransactionError::Abort)?,
-                )?;
-            }
-            db.flush();
-            Ok(())
-        })?;
-        Ok(())
+    fn execute_measured(
+        &mut self,
+        _config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            let batch = self.state.next().unwrap();
+            let start = Instant::now();
+            self.db.transaction(|db| {
+                for entry in &batch {
+                    db.insert(
+                        &entry.id.to_be_bytes(),
+                        pot::to_vec(&entry).map_err(ConflictableTransactionError::Abort)?,
+                    )?;
+                }
+                db.flush();
+                Ok(())
+            })?;
+            total_duration += Instant::now() - start;
+        }
+        Ok(total_duration)
     }
 }
 
@@ -114,25 +126,40 @@ impl SimpleBench for ReadLogs {
         Ok(Self { db, state })
     }
 
-    fn execute_measured(&mut self, config: &Self::Config) -> Result<(), anyhow::Error> {
+    fn execute_measured(
+        &mut self,
+        config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
         // To be fair, we're only evaluating that content equals when it's a single get
-        if config.get_count == 1 {
-            let entry = self.state.next().unwrap();
-            let bytes = self
-                .db
-                .get(&entry.id.to_be_bytes())?
-                .expect("value not found");
-            let decoded = pot::from_slice::<LogEntry>(&bytes)?;
-            assert_eq!(&decoded, &entry);
-        } else {
-            for _ in 0..config.get_count {
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            if config.get_count == 1 {
                 let entry = self.state.next().unwrap();
-                self.db
+                let start = Instant::now();
+                let bytes = self
+                    .db
                     .get(&entry.id.to_be_bytes())?
                     .expect("value not found");
+                let decoded = pot::from_slice::<LogEntry>(&bytes)?;
+                assert_eq!(&decoded, &entry);
+                total_duration += Instant::now() - start;
+            } else {
+                let entries = (0..config.get_count)
+                    .filter_map(|_| self.state.next())
+                    .collect::<Vec<_>>();
+
+                let start = Instant::now();
+                for _ in entries {
+                    let entry = self.state.next().unwrap();
+                    self.db
+                        .get(&entry.id.to_be_bytes())?
+                        .expect("value not found");
+                }
+                total_duration += Instant::now() - start;
             }
         }
-        Ok(())
+        Ok(total_duration)
     }
 }
 
@@ -193,15 +220,24 @@ impl SimpleBench for ScanLogs {
         Ok(Self { db, state })
     }
 
-    fn execute_measured(&mut self, config: &Self::Config) -> Result<(), anyhow::Error> {
-        let range = self.state.next().unwrap();
-        let range = IVec::from(range.start().to_be_bytes().to_vec())
-            ..=IVec::from(range.end().to_be_bytes().to_vec());
-        let entries = self
-            .db
-            .range(range)
-            .collect::<Result<Vec<(IVec, IVec)>, _sled::Error>>()?;
-        assert_eq!(entries.len(), config.element_count);
-        Ok(())
+    fn execute_measured(
+        &mut self,
+        config: &Self::Config,
+        iters: u64,
+    ) -> Result<Duration, anyhow::Error> {
+        let mut total_duration = Duration::default();
+        for _ in 0..iters {
+            let range = self.state.next().unwrap();
+            let start = Instant::now();
+            let range = IVec::from(range.start().to_be_bytes().to_vec())
+                ..=IVec::from(range.end().to_be_bytes().to_vec());
+            let entries = self
+                .db
+                .range(range)
+                .collect::<Result<Vec<(IVec, IVec)>, _sled::Error>>()?;
+            assert_eq!(entries.len(), config.element_count);
+            total_duration += Instant::now() - start;
+        }
+        Ok(total_duration)
     }
 }

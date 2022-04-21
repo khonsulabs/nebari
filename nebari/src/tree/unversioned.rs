@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    convert::TryFrom,
     fmt::{Debug, Display},
     marker::PhantomData,
     ops::RangeBounds,
@@ -14,39 +13,61 @@ use super::{
     modify::Modification,
     read_chunk,
     serialization::BinarySerialization,
-    KeyEvaluation, KeyRange, PagedWriter,
+    KeyRange, PagedWriter, ScanEvaluation,
 };
 use crate::{
     chunk_cache::CacheEntry,
     error::{Error, InternalError},
-    io::ManagedFile,
+    io::File,
     roots::AbortError,
     tree::{
         btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
         copy_chunk, dynamic_order,
         versioned::ChangeResult,
-        PageHeader, Root, DEFAULT_MAX_ORDER,
+        BTreeNode, PageHeader, Reducer, Root,
     },
-    Buffer, ChunkCache, ErrorKind, Vault,
+    vault::AnyVault,
+    ArcBytes, ChunkCache, ErrorKind,
 };
+
+/// An unversioned tree with no additional indexed data.
+pub type Unversioned = UnversionedTreeRoot<()>;
 
 /// A versioned B-Tree root. This tree root internally uses two btrees, one to
 /// keep track of all writes using a unique "sequence" ID, and one that keeps
 /// track of all key-value pairs.
-#[derive(Clone, Default, Debug)]
-pub struct UnversionedTreeRoot {
+#[derive(Clone, Debug)]
+pub struct UnversionedTreeRoot<Index>
+where
+    Index: Clone + super::EmbeddedIndex + Reducer<Index> + Debug + 'static,
+{
     /// The transaction ID of the tree root. If this transaction ID isn't
     /// present in the transaction log, this root should not be trusted.
     pub transaction_id: Option<u64>,
     /// The by-id B-Tree.
-    pub by_id_root: BTreeEntry<UnversionedByIdIndex, ByIdStats>,
+    pub by_id_root: BTreeEntry<UnversionedByIdIndex<Index>, ByIdStats<Index>>,
 }
 
-impl UnversionedTreeRoot {
-    fn modify_id_root<'a, 'w, File: ManagedFile>(
+impl<Index> Default for UnversionedTreeRoot<Index>
+where
+    Index: Clone + Reducer<Index> + super::EmbeddedIndex + Debug + 'static,
+{
+    fn default() -> Self {
+        Self {
+            transaction_id: None,
+            by_id_root: BTreeEntry::default(),
+        }
+    }
+}
+
+impl<Index> UnversionedTreeRoot<Index>
+where
+    Index: Clone + Reducer<Index> + super::EmbeddedIndex + Debug + 'static,
+{
+    fn modify_id_root<'a, 'w>(
         &'a mut self,
-        mut modification: Modification<'_, Buffer<'static>>,
-        writer: &'a mut PagedWriter<'w, File>,
+        mut modification: Modification<'_, ArcBytes<'static>>,
+        writer: &'a mut PagedWriter<'w>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
         modification.reverse()?;
@@ -63,26 +84,27 @@ impl UnversionedTreeRoot {
                 &ModificationContext {
                     current_order: by_id_order,
                     minimum_children,
-                    indexer: |_key: &Buffer<'_>,
-                              value: Option<&Buffer<'static>>,
+                    indexer: |key: &ArcBytes<'_>,
+                              value: Option<&ArcBytes<'static>>,
                               _existing_index,
                               _changes,
-                              writer: &mut PagedWriter<'_, File>| {
+                              writer: &mut PagedWriter<'_>| {
                         if let Some(value) = value {
-                            let position = writer.write_chunk(value, false)?;
+                            let position = writer.write_chunk(value)?;
                             // write_chunk errors if it can't fit within a u32
                             #[allow(clippy::cast_possible_truncation)]
                             let value_length = value.len() as u32;
                             Ok(KeyOperation::Set(UnversionedByIdIndex {
                                 value_length,
                                 position,
+                                embedded: Index::index(key, Some(value)),
                             }))
                         } else {
                             Ok(KeyOperation::Remove)
                         }
                     },
                     loader: |index, writer| match writer.read_chunk(index.position)? {
-                        CacheEntry::Buffer(buffer) => Ok(Some(buffer.clone())),
+                        CacheEntry::ArcBytes(buffer) => Ok(Some(buffer.clone())),
                         CacheEntry::Decoded(_) => unreachable!(),
                     },
                     _phantom: PhantomData,
@@ -91,10 +113,11 @@ impl UnversionedTreeRoot {
                 &mut (),
                 writer,
             )? {
-                ChangeResult::Absorb
-                | ChangeResult::Changed
-                | ChangeResult::Unchanged
-                | ChangeResult::Remove => {}
+                ChangeResult::Absorb | ChangeResult::Changed | ChangeResult::Unchanged => {}
+                ChangeResult::Remove => {
+                    self.by_id_root.node = BTreeNode::Leaf(vec![]);
+                    self.by_id_root.dirty = true;
+                }
                 ChangeResult::Split => {
                     self.by_id_root.split_root();
                 }
@@ -105,8 +128,13 @@ impl UnversionedTreeRoot {
     }
 }
 
-impl Root for UnversionedTreeRoot {
+impl<EmbeddedIndex> Root for UnversionedTreeRoot<EmbeddedIndex>
+where
+    EmbeddedIndex: Clone + super::EmbeddedIndex + Reducer<EmbeddedIndex> + Debug + 'static,
+{
     const HEADER: PageHeader = PageHeader::UnversionedHeader;
+    type Index = UnversionedByIdIndex<EmbeddedIndex>;
+    type ReducedIndex = ByIdStats<EmbeddedIndex>;
 
     fn count(&self) -> u64 {
         self.by_id_root.stats().alive_keys
@@ -124,7 +152,7 @@ impl Root for UnversionedTreeRoot {
         self.transaction_id = Some(0);
     }
 
-    fn deserialize(mut bytes: Buffer<'_>) -> Result<Self, Error> {
+    fn deserialize(mut bytes: ArcBytes<'_>) -> Result<Self, Error> {
         let transaction_id = Some(bytes.read_u64::<BigEndian>()?);
         let by_id_size = bytes.read_u32::<BigEndian>()? as usize;
         if by_id_size != bytes.len() {
@@ -137,7 +165,7 @@ impl Root for UnversionedTreeRoot {
 
         let mut by_id_bytes = bytes.read_bytes(by_id_size)?.to_owned();
 
-        let by_id_root = BTreeEntry::deserialize_from(&mut by_id_bytes, DEFAULT_MAX_ORDER)?;
+        let by_id_root = BTreeEntry::deserialize_from(&mut by_id_bytes, None)?;
 
         Ok(Self {
             transaction_id,
@@ -145,10 +173,10 @@ impl Root for UnversionedTreeRoot {
         })
     }
 
-    fn serialize<File: ManagedFile>(
+    fn serialize(
         &mut self,
-        paged_writer: &mut PagedWriter<'_, File>,
-        mut output: &mut Vec<u8>,
+        paged_writer: &mut PagedWriter<'_>,
+        output: &mut Vec<u8>,
     ) -> Result<(), Error> {
         output.write_u64::<BigEndian>(
             self.transaction_id
@@ -157,7 +185,7 @@ impl Root for UnversionedTreeRoot {
         // Reserve space for by_id size.
         output.write_u32::<BigEndian>(0)?;
 
-        let by_id_size = self.by_id_root.serialize_to(&mut output, paged_writer)?;
+        let by_id_size = self.by_id_root.serialize_to(output, paged_writer)?;
         let by_id_size = u32::try_from(by_id_size)
             .ok()
             .ok_or(ErrorKind::Internal(InternalError::HeaderTooLarge))?;
@@ -170,40 +198,42 @@ impl Root for UnversionedTreeRoot {
         self.transaction_id.unwrap_or_default()
     }
 
-    fn modify<File: ManagedFile>(
+    fn modify(
         &mut self,
-        modification: Modification<'_, Buffer<'static>>,
-        writer: &mut PagedWriter<'_, File>,
+        modification: Modification<'_, ArcBytes<'static>>,
+        writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
         let transaction_id = modification.transaction_id;
 
         self.modify_id_root(modification, writer, max_order)?;
 
-        if transaction_id != 0 {
+        // Only update the transaction id if a new one was specified.
+        if let Some(transaction_id) = transaction_id {
             self.transaction_id = Some(transaction_id);
         }
 
         Ok(())
     }
 
-    fn get_multiple<File: ManagedFile, KeyEvaluator, KeyReader>(
+    fn get_multiple<'keys, KeyEvaluator, KeyReader, Keys>(
         &self,
-        keys: &mut KeyRange<'_>,
+        keys: &mut Keys,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut File,
-        vault: Option<&dyn Vault>,
+        file: &mut dyn File,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
     where
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), Error>,
+        KeyEvaluator: FnMut(&ArcBytes<'static>) -> ScanEvaluation,
+        KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
+        Keys: Iterator<Item = &'keys [u8]>,
     {
         let mut positions_to_read = Vec::new();
         self.by_id_root.get(
-            keys,
-            key_evaluator,
+            &mut KeyRange::new(keys),
+            &mut |key, _index| key_evaluator(key),
             &mut |key, index| {
                 // Deleted keys are stored with a 0 position.
                 if index.position > 0 {
@@ -222,7 +252,7 @@ impl Root for UnversionedTreeRoot {
         for (key, position) in positions_to_read {
             if position > 0 {
                 match read_chunk(position, false, file, vault, cache)? {
-                    CacheEntry::Buffer(contents) => {
+                    CacheEntry::ArcBytes(contents) => {
                         key_reader(key, contents)?;
                     }
                     CacheEntry::Decoded(_) => unreachable!(),
@@ -235,62 +265,45 @@ impl Root for UnversionedTreeRoot {
     fn scan<
         'keys,
         CallerError: Display + Debug,
-        File: ManagedFile,
+        NodeEvaluator,
         KeyRangeBounds,
         KeyEvaluator,
-        KeyReader,
+        DataCallback,
     >(
         &self,
-        range: &KeyRangeBounds,
-        args: &mut ScanArgs<Buffer<'static>, CallerError, KeyEvaluator, KeyReader>,
-        file: &mut File,
-        vault: Option<&dyn Vault>,
+        range: &'keys KeyRangeBounds,
+        args: &mut ScanArgs<
+            Self::Index,
+            Self::ReducedIndex,
+            CallerError,
+            NodeEvaluator,
+            KeyEvaluator,
+            DataCallback,
+        >,
+        file: &mut dyn File,
+        vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
-    ) -> Result<(), AbortError<CallerError>>
+    ) -> Result<bool, AbortError<CallerError>>
     where
-        KeyEvaluator: FnMut(&Buffer<'static>) -> KeyEvaluation,
-        KeyReader: FnMut(Buffer<'static>, Buffer<'static>) -> Result<(), AbortError<CallerError>>,
-        KeyRangeBounds: RangeBounds<Buffer<'keys>> + Debug,
+        NodeEvaluator: FnMut(&ArcBytes<'static>, &Self::ReducedIndex, usize) -> ScanEvaluation,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Self::Index) -> ScanEvaluation,
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+        DataCallback: FnMut(
+            ArcBytes<'static>,
+            &Self::Index,
+            ArcBytes<'static>,
+        ) -> Result<(), AbortError<CallerError>>,
     {
-        let mut positions_to_read = Vec::new();
-        self.by_id_root.scan(
-            range,
-            &mut ScanArgs::new(
-                args.forwards,
-                &mut args.key_evaluator,
-                &mut |key, index: &UnversionedByIdIndex| {
-                    positions_to_read.push((key, index.position));
-                    Ok(())
-                },
-            ),
-            file,
-            vault,
-            cache,
-        )?;
-
-        // Sort by position on disk
-        positions_to_read.sort_by(|a, b| a.1.cmp(&b.1));
-
-        for (key, position) in positions_to_read {
-            if position > 0 {
-                match read_chunk(position, false, file, vault, cache)? {
-                    CacheEntry::Buffer(contents) => {
-                        (args.key_reader)(key, contents)?;
-                    }
-                    CacheEntry::Decoded(_) => unreachable!(),
-                };
-            }
-        }
-        Ok(())
+        self.by_id_root.scan(range, args, file, vault, cache, 0)
     }
 
-    fn copy_data_to<File: ManagedFile>(
+    fn copy_data_to(
         &mut self,
         include_nodes: bool,
-        file: &mut File,
+        file: &mut dyn File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_, File>,
-        vault: Option<&dyn Vault>,
+        writer: &mut PagedWriter<'_>,
+        vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error> {
         let mut scratch = Vec::new();
         self.by_id_root.copy_data_to(
@@ -305,7 +318,7 @@ impl Root for UnversionedTreeRoot {
             vault,
             &mut scratch,
             &mut |_key,
-                  index: &mut UnversionedByIdIndex,
+                  index: &mut UnversionedByIdIndex<EmbeddedIndex>,
                   from_file,
                   copied_chunks,
                   to_file,

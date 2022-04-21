@@ -3,7 +3,7 @@ use std::{any::Any, sync::Arc};
 use lru::LruCache;
 use parking_lot::Mutex;
 
-use crate::Buffer;
+use crate::ArcBytes;
 
 /// A configurable cache that operates at the "chunk" level.
 ///
@@ -59,10 +59,10 @@ impl ChunkCache {
     }
 
     /// Adds a new cached chunk for `file_path` at `position`.
-    pub fn insert(&self, file_id: u64, position: u64, buffer: Buffer<'static>) {
+    pub fn insert(&self, file_id: u64, position: u64, buffer: ArcBytes<'static>) {
         if buffer.len() <= self.max_block_length {
             let mut cache = self.cache.lock();
-            cache.put(ChunkKey { position, file_id }, CacheEntry::Buffer(buffer));
+            cache.put(ChunkKey { position, file_id }, CacheEntry::ArcBytes(buffer));
         }
     }
 
@@ -90,6 +90,6 @@ impl ChunkCache {
 
 #[derive(Clone)]
 pub enum CacheEntry {
-    Buffer(Buffer<'static>),
+    ArcBytes(ArcBytes<'static>),
     Decoded(Arc<dyn AnySendSync>),
 }

@@ -13,11 +13,11 @@ use gooey::{
 };
 use gooey_canvas::Renderable;
 use nebari::{
-    io::ManagedFile,
+    io::{File, ManagedFile},
     tree::{
         ActiveState, BTreeEntry, BTreeNode, ByIdStats, UnversionedByIdIndex, UnversionedTreeRoot,
     },
-    AbortError, Buffer,
+    AbortError, ArcBytes,
 };
 use parking_lot::Mutex;
 
@@ -28,11 +28,11 @@ const LEAF_COLOR: Color = rgb!(0, 97, 8);
 const FOCUSED_COLOR: Color = rgb!(0, 141, 34);
 
 pub struct TreeCanvas {
-    tree: Arc<Mutex<Tree<UnversionedByIdIndex, ByIdStats>>>,
+    tree: Arc<Mutex<Tree<UnversionedByIdIndex<()>, ByIdStats<()>>>>,
 }
 
 impl TreeCanvas {
-    pub fn new(tree: Arc<Mutex<Tree<UnversionedByIdIndex, ByIdStats>>>) -> Self {
+    pub fn new(tree: Arc<Mutex<Tree<UnversionedByIdIndex<()>, ByIdStats<()>>>>) -> Self {
         Self { tree }
     }
 }
@@ -43,7 +43,7 @@ pub struct Tree<Index, ReducedIndex> {
     pub last_row_height: Figure<f32, Scaled>,
     nodes: HashMap<u64, CanvasNode<Index, ReducedIndex>>,
     root: u64,
-    focus_on: Option<Buffer<'static>>,
+    focus_on: Option<ArcBytes<'static>>,
 }
 
 impl<Index, ReducedIndex> Default for Tree<Index, ReducedIndex> {
@@ -58,11 +58,11 @@ impl<Index, ReducedIndex> Default for Tree<Index, ReducedIndex> {
     }
 }
 
-impl Tree<UnversionedByIdIndex, ByIdStats> {
-    pub fn update<File: ManagedFile>(
+impl Tree<UnversionedByIdIndex<()>, ByIdStats<()>> {
+    pub fn update(
         &mut self,
-        state: &ActiveState<UnversionedTreeRoot>,
-        file: &mut File,
+        state: &ActiveState<UnversionedTreeRoot<()>>,
+        file: &mut dyn File,
     ) -> Result<(), nebari::Error> {
         self.root = state.current_position;
         self.nodes.clear();
@@ -99,11 +99,11 @@ impl Tree<UnversionedByIdIndex, ByIdStats> {
         Ok(())
     }
 
-    fn convert_node<File: ManagedFile>(
+    fn convert_node(
         &mut self,
         position: u64,
-        entry: &BTreeEntry<UnversionedByIdIndex, ByIdStats>,
-        file: &mut File,
+        entry: &BTreeEntry<UnversionedByIdIndex<()>, ByIdStats<()>>,
+        file: &mut dyn File,
     ) -> Result<(), nebari::Error> {
         let node = match &entry.node {
             BTreeNode::Leaf(children) => TreeNode::Leaf(
@@ -122,7 +122,7 @@ impl Tree<UnversionedByIdIndex, ByIdStats> {
                     let pointing_to = child.position.position().expect("node had no position");
                     child
                         .position
-                        .map_loaded_entry(file, None, None, 0, |child, file| {
+                        .map_loaded_entry(file, None, None, None, |child, file| {
                             self.convert_node(pointing_to, child, file)
                                 .map_err(AbortError::Nebari)
                         })
@@ -151,7 +151,7 @@ impl Tree<UnversionedByIdIndex, ByIdStats> {
 #[derive(Debug)]
 pub struct CanvasNode<Index, ReducedIndex> {
     pub position: u64,
-    pub max_key: Buffer<'static>,
+    pub max_key: ArcBytes<'static>,
     pub node: TreeNode<Index, ReducedIndex>,
 }
 
@@ -172,14 +172,14 @@ impl<Index, ReducedIndex> TreeNode<Index, ReducedIndex> {
 
 #[derive(Debug)]
 pub struct TreeInterior<ReducedIndex> {
-    pub max_key: Buffer<'static>,
+    pub max_key: ArcBytes<'static>,
     pub pointing_to: u64,
     pub stats: ReducedIndex,
 }
 
 #[derive(Debug)]
 pub struct TreeLeaf<Index> {
-    pub key: Buffer<'static>,
+    pub key: ArcBytes<'static>,
     pub value: Index,
 }
 
@@ -388,5 +388,5 @@ impl Renderable for TreeCanvas {
 
 enum ClickResult {
     PushNode(u64),
-    FocusOn(Buffer<'static>),
+    FocusOn(ArcBytes<'static>),
 }

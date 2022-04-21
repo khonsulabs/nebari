@@ -16,27 +16,18 @@ use gooey_canvas::{AppExt, Canvas};
 use nebari::{
     io::{
         memory::{MemoryFile, MemoryFileManager},
-        FileOp, ManagedFile, OpenableFile,
+        File, FileOp, ManagedFile, OpenableFile, OperableFile,
     },
     tree::{ByIdStats, State, TreeFile, UnversionedByIdIndex, UnversionedTreeRoot},
-    Buffer,
+    ArcBytes,
 };
 use parking_lot::Mutex;
 
 use crate::tree_canvas::{Tree, TreeCanvas};
 
 fn app() -> App {
-    let file = TreeFile::write(
-        "path",
-        State::default(),
-        &nebari::Context {
-            file_manager: MemoryFileManager::default(),
-            vault: None,
-            cache: None,
-        },
-        None,
-    )
-    .unwrap();
+    let file =
+        TreeFile::write("path", State::default(), &nebari::Context::default(), None).unwrap();
     let tree = Arc::default();
     App::from(
         WindowBuilder::new(|storage| {
@@ -54,8 +45,8 @@ fn main() {
 
 #[derive(Debug)]
 struct Visualizer {
-    file: TreeFile<UnversionedTreeRoot, MemoryFile>,
-    tree: Arc<Mutex<Tree<UnversionedByIdIndex, ByIdStats>>>,
+    file: TreeFile<UnversionedTreeRoot<()>, MemoryFile>,
+    tree: Arc<Mutex<Tree<UnversionedByIdIndex<()>, ByIdStats<()>>>>,
 }
 
 impl Behavior for Visualizer {
@@ -124,7 +115,7 @@ impl Behavior for Visualizer {
                     component
                         .behavior
                         .file
-                        .push(0, Buffer::from(id.to_be_bytes()), Buffer::default())
+                        .set(None, ArcBytes::from(id.to_be_bytes()), ArcBytes::default())
                         .unwrap();
                     component.map_widget_mut(
                         &VisualizerWidget::IdField,
@@ -157,14 +148,12 @@ impl Behavior for Visualizer {
 }
 
 struct TreeUpdater<'a> {
-    tree: &'a Arc<Mutex<Tree<UnversionedByIdIndex, ByIdStats>>>,
-    state: State<UnversionedTreeRoot>,
+    tree: &'a Arc<Mutex<Tree<UnversionedByIdIndex<()>, ByIdStats<()>>>>,
+    state: State<UnversionedTreeRoot<()>>,
 }
 
-impl<'a, File: ManagedFile> FileOp<File> for TreeUpdater<'a> {
-    type Output = Result<(), nebari::Error>;
-
-    fn execute(&mut self, file: &mut File) -> Self::Output {
+impl<'a> FileOp<Result<(), nebari::Error>> for TreeUpdater<'a> {
+    fn execute(self, file: &mut dyn File) -> Result<(), nebari::Error> {
         let mut tree = self.tree.lock();
         let state = self.state.read();
         tree.update(&state, file)

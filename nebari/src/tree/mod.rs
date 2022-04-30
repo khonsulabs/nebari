@@ -1806,7 +1806,10 @@ impl Serializable for () {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, convert::Infallible};
+    use std::{
+        collections::{BTreeMap, HashSet},
+        convert::Infallible,
+    };
 
     use nanorand::{Pcg64, Rng};
     use tempfile::NamedTempFile;
@@ -2599,5 +2602,96 @@ mod tests {
     fn any_first_last_unversioned() {
         first_last::<Unversioned, _>("any-unversioned", AnyFileManager::std());
         first_last::<Unversioned, _>("any-unversioned", AnyFileManager::memory());
+    }
+
+    fn bulk_compare_swaps<R: Root, M: FileManager>(label: &str, file_manager: M) {
+        const BATCH: usize = 10_000;
+        let context = Context {
+            file_manager,
+            vault: None,
+            cache: None,
+        };
+        let temp_dir = crate::test_util::TestDirectory::new(format!("bulk-swap-{}", label));
+        std::fs::create_dir(&temp_dir).unwrap();
+        let file_path = temp_dir.join("tree");
+
+        let mut tree =
+            TreeFile::<R, M::File>::write(&file_path, State::new(None, None), &context, None)
+                .unwrap();
+        let mut rng = Pcg64::new_seed(1);
+
+        let mut database_state = HashMap::new();
+        for index in 1..=10 {
+            println!("Batch {index}");
+            // Generate a series of operations by randomly inserting or deleting
+            // keys. Because the keyspace is u32, this first loop will mostly
+            // append records.
+            let mut batch = Vec::new();
+            let mut operated_keys = HashSet::new();
+            while batch.len() < BATCH {
+                let key = ArcBytes::from(rng.generate::<u32>().to_be_bytes());
+                let key_state = database_state.entry(key.clone()).or_insert(false);
+                if operated_keys.insert(key.clone()) {
+                    batch.push((key, *key_state));
+                    *key_state = !*key_state;
+                }
+            }
+
+            // Half of the time, expire a significant number of keys, allowing
+            // for our absorbtion rules to apply. We make sure not to consider
+            // any keys that are already in the list above, as `modify()` can't
+            // modify the same key twice.
+            if rng.generate::<f32>() < 0.5 {
+                for (key, key_state) in &mut database_state {
+                    if *key_state
+                        && operated_keys.insert(key.clone())
+                        && rng.generate::<f32>() < 0.75
+                    {
+                        batch.push((key.clone(), true));
+                        *key_state = !*key_state;
+                    }
+                }
+            }
+
+            for batch in batch.chunks(1) {
+                let key_operations = batch
+                    .iter()
+                    .cloned()
+                    .collect::<BTreeMap<ArcBytes<'static>, bool>>();
+                tree.modify(Modification {
+                    transaction_id: None,
+                    keys: key_operations.keys().cloned().collect(),
+                    operation: Operation::CompareSwap(CompareSwap::new(
+                        &mut |key, existing_value| {
+                            let should_remove = *key_operations.get(key).unwrap();
+                            if should_remove {
+                                assert!(
+                                    existing_value.is_some(),
+                                    "key {key:?} had no existing value"
+                                );
+                                KeyOperation::Remove
+                            } else {
+                                assert!(
+                                    existing_value.is_none(),
+                                    "key {key:?} already had a value"
+                                );
+                                KeyOperation::Set(key.to_owned())
+                            }
+                        },
+                    )),
+                })
+                .unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn std_bulk_compare_swaps_unversioned() {
+        bulk_compare_swaps::<Unversioned, _>("unversioned", StdFileManager::default());
+    }
+
+    #[test]
+    fn std_bulk_compare_swaps_versioned() {
+        bulk_compare_swaps::<Versioned, _>("versioned", StdFileManager::default());
     }
 }

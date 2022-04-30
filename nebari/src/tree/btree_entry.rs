@@ -242,6 +242,10 @@ where
         let max_len = children.len().max(context.current_order);
         while !modification.keys.is_empty() && children.len() <= max_len {
             let key = modification.keys.last().unwrap();
+            if max_key.map(|max_key| key > max_key).unwrap_or_default() {
+                break;
+            }
+
             let search_result = children[last_index..].binary_search_by(|child| child.key.cmp(key));
             match search_result {
                 Ok(matching_index) => {
@@ -394,7 +398,7 @@ where
             {
                 break;
             }
-            let containing_node_index = children[last_index..]
+            let (containing_node_index, pushing_end) = children[last_index..]
                 .binary_search_by(|child| child.key.cmp(&key))
                 .map_or_else(
                     |not_found| {
@@ -402,12 +406,12 @@ where
                             // If we can't find a key less than what would fit
                             // within our children, this key will become the new key
                             // of the last child.
-                            not_found - 1
+                            (not_found - 1, true)
                         } else {
-                            not_found
+                            (not_found, false)
                         }
                     },
-                    |found| found,
+                    |found| (found, false),
                 );
 
             last_index += containing_node_index;
@@ -420,11 +424,19 @@ where
                 Some(context.current_order),
             )?;
             let child_entry = child.position.get_mut().unwrap();
+            let max_key_for_modification = if pushing_end {
+                // The new key is being added to the end of the node.
+                key
+            } else if let Some(max_key) = max_key {
+                child.key.clone().min(max_key.clone())
+            } else {
+                child.key.clone()
+            };
             let (change_result, should_backup) = Self::process_interior_change_result(
                 child_entry.modify(
                     modification,
                     context,
-                    Some(&key.max(child.key.clone())),
+                    Some(&max_key_for_modification),
                     changes,
                     writer,
                 )?,
@@ -444,7 +456,7 @@ where
                 }
                 ChangeResult::Changed => any_changes = true,
             }
-            if should_backup {
+            if should_backup && last_index > 0 {
                 last_index -= 1;
             }
             debug_assert!(children.windows(2).all(|w| w[0].key < w[1].key));
@@ -580,6 +592,7 @@ where
         ) -> Result<KeyOperation<Index>, Error>,
         Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
+        let mut should_backup = false;
         // Before adding a new node, we want to first try to use neighboring
         // nodes to absorb enough such that a split is no longer needed. With
         // the dynamic ordering used, we will likely end up with nodes that have
@@ -589,7 +602,9 @@ where
         // the tree will be during a compaction phase.
         if child_index > 0 {
             match Self::steal_children_from_start(child_index, children, context, writer)? {
-                (ChangeResult::Unchanged, _) => {}
+                (ChangeResult::Unchanged, steal_results_in_should_backup) => {
+                    should_backup = steal_results_in_should_backup;
+                }
                 (ChangeResult::Changed, should_backup) => {
                     return Ok((ChangeResult::Changed, should_backup))
                 }
@@ -600,7 +615,7 @@ where
         if child_index + 1 < children.len() {
             match Self::steal_children_from_end(child_index, children, context, writer)? {
                 ChangeResult::Unchanged => {}
-                ChangeResult::Changed => return Ok((ChangeResult::Changed, false)),
+                ChangeResult::Changed => return Ok((ChangeResult::Changed, should_backup)),
                 _ => unreachable!(),
             }
         }
@@ -628,7 +643,7 @@ where
 
         children.insert(child_index + 1, Interior::from(next_node));
 
-        Ok((ChangeResult::Changed, false))
+        Ok((ChangeResult::Changed, should_backup))
     }
 
     fn steal_children_from_start<IndexedType, Context, Indexer, Loader>(
@@ -706,11 +721,12 @@ where
                 // Update the current child.
                 let child = children[child_index].position.get_mut().unwrap();
                 child.dirty = true;
-                let child_count = child.count();
                 let (max_key, stats) = { (child.max_key().clone(), child.stats()) };
                 children[child_index].key = max_key;
                 children[child_index].stats = stats;
-                if child_count <= context.current_order {
+                // If we couldn't balance enough, the caller will still need to
+                // balance further.
+                if child.count() <= context.current_order {
                     return Ok((ChangeResult::Changed, should_backup));
                 }
             }
@@ -791,11 +807,12 @@ where
                 // Update the current child.
                 let child = children[child_index].position.get_mut().unwrap();
                 child.dirty = true;
-                let child_count = child.count();
                 let (max_key, stats) = { (child.max_key().clone(), child.stats()) };
                 children[child_index].key = max_key;
                 children[child_index].stats = stats;
-                if child_count <= context.current_order {
+                // If we couldn't balance enough, the caller will still need to
+                // balance further.
+                if child.count() <= context.current_order {
                     return Ok(ChangeResult::Changed);
                 }
             }

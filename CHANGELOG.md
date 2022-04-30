@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- `modify()` operations on larger trees (> 50k entries) that performed multiple
+  modification operations could trigger a debug_assert in debug builds, or
+  worse, yield incorrect databases in release builds.
+
+  The offending situations occur with edge cases surrounding "absorbing" nodes
+  to rebalance trees as entries are deleted. This particular edge case only
+  arose when the absorb phase moved entries in both directions and performed
+  subsequent operations before the next save to disk occurred.
+
+  This bug should only have been able to be experienced if you were using large
+  `modify()` operations that did many deletions as well as insertions, and even
+  then, only in certain circumstances.
+
 ## v0.5.0
 
 ### Breaking Changes

@@ -2693,13 +2693,6 @@
 <span id="2688">2688</span>
 <span id="2689">2689</span>
 <span id="2690">2690</span>
-<span id="2691">2691</span>
-<span id="2692">2692</span>
-<span id="2693">2693</span>
-<span id="2694">2694</span>
-<span id="2695">2695</span>
-<span id="2696">2696</span>
-<span id="2697">2697</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Append-only B-Tree implementation</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! The file format is loosely inspired by</span>
@@ -5355,35 +5348,28 @@
                 }
             }
 
-            <span class="kw">for</span> <span class="ident">batch</span> <span class="kw">in</span> <span class="ident">batch</span>.<span class="ident">chunks</span>(<span class="number">1</span>) {
-                <span class="kw">let</span> <span class="ident">key_operations</span> <span class="op">=</span> <span class="ident">batch</span>
-                    .<span class="ident">iter</span>()
-                    .<span class="ident">cloned</span>()
-                    .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">bool</span><span class="op">&gt;</span><span class="op">&gt;</span>();
-                <span class="ident">tree</span>.<span class="ident">modify</span>(<span class="ident">Modification</span> {
-                    <span class="ident">transaction_id</span>: <span class="prelude-val">None</span>,
-                    <span class="ident">keys</span>: <span class="ident">key_operations</span>.<span class="ident">keys</span>().<span class="ident">cloned</span>().<span class="ident">collect</span>(),
-                    <span class="ident">operation</span>: <span class="ident">Operation::CompareSwap</span>(<span class="ident">CompareSwap::new</span>(
-                        <span class="kw-2">&amp;mut</span> <span class="op">|</span><span class="ident">key</span>, <span class="ident">existing_value</span><span class="op">|</span> {
-                            <span class="kw">let</span> <span class="ident">should_remove</span> <span class="op">=</span> <span class="kw-2">*</span><span class="ident">key_operations</span>.<span class="ident">get</span>(<span class="ident">key</span>).<span class="ident">unwrap</span>();
-                            <span class="kw">if</span> <span class="ident">should_remove</span> {
-                                <span class="macro">assert!</span>(
-                                    <span class="ident">existing_value</span>.<span class="ident">is_some</span>(),
-                                    <span class="string">&quot;key {key:?} had no existing value&quot;</span>
-                                );
-                                <span class="ident">KeyOperation::Remove</span>
-                            } <span class="kw">else</span> {
-                                <span class="macro">assert!</span>(
-                                    <span class="ident">existing_value</span>.<span class="ident">is_none</span>(),
-                                    <span class="string">&quot;key {key:?} already had a value&quot;</span>
-                                );
-                                <span class="ident">KeyOperation::Set</span>(<span class="ident">key</span>.<span class="ident">to_owned</span>())
-                            }
-                        },
-                    )),
-                })
-                .<span class="ident">unwrap</span>();
-            }
+            <span class="kw">let</span> <span class="ident">key_operations</span> <span class="op">=</span> <span class="ident">batch</span>
+                .<span class="ident">iter</span>()
+                .<span class="ident">cloned</span>()
+                .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>, <span class="ident">bool</span><span class="op">&gt;</span><span class="op">&gt;</span>();
+            <span class="ident">tree</span>.<span class="ident">modify</span>(<span class="ident">Modification</span> {
+                <span class="ident">transaction_id</span>: <span class="prelude-val">None</span>,
+                <span class="ident">keys</span>: <span class="ident">key_operations</span>.<span class="ident">keys</span>().<span class="ident">cloned</span>().<span class="ident">collect</span>(),
+                <span class="ident">operation</span>: <span class="ident">Operation::CompareSwap</span>(<span class="ident">CompareSwap::new</span>(<span class="kw-2">&amp;mut</span> <span class="op">|</span><span class="ident">key</span>, <span class="ident">existing_value</span><span class="op">|</span> {
+                    <span class="kw">let</span> <span class="ident">should_remove</span> <span class="op">=</span> <span class="kw-2">*</span><span class="ident">key_operations</span>.<span class="ident">get</span>(<span class="ident">key</span>).<span class="ident">unwrap</span>();
+                    <span class="kw">if</span> <span class="ident">should_remove</span> {
+                        <span class="macro">assert!</span>(
+                            <span class="ident">existing_value</span>.<span class="ident">is_some</span>(),
+                            <span class="string">&quot;key {key:?} had no existing value&quot;</span>
+                        );
+                        <span class="ident">KeyOperation::Remove</span>
+                    } <span class="kw">else</span> {
+                        <span class="macro">assert!</span>(<span class="ident">existing_value</span>.<span class="ident">is_none</span>(), <span class="string">&quot;key {key:?} already had a value&quot;</span>);
+                        <span class="ident">KeyOperation::Set</span>(<span class="ident">key</span>.<span class="ident">to_owned</span>())
+                    }
+                })),
+            })
+            .<span class="ident">unwrap</span>();
         }
     }
 

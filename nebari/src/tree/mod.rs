@@ -2653,35 +2653,28 @@ mod tests {
                 }
             }
 
-            for batch in batch.chunks(1) {
-                let key_operations = batch
-                    .iter()
-                    .cloned()
-                    .collect::<BTreeMap<ArcBytes<'static>, bool>>();
-                tree.modify(Modification {
-                    transaction_id: None,
-                    keys: key_operations.keys().cloned().collect(),
-                    operation: Operation::CompareSwap(CompareSwap::new(
-                        &mut |key, existing_value| {
-                            let should_remove = *key_operations.get(key).unwrap();
-                            if should_remove {
-                                assert!(
-                                    existing_value.is_some(),
-                                    "key {key:?} had no existing value"
-                                );
-                                KeyOperation::Remove
-                            } else {
-                                assert!(
-                                    existing_value.is_none(),
-                                    "key {key:?} already had a value"
-                                );
-                                KeyOperation::Set(key.to_owned())
-                            }
-                        },
-                    )),
-                })
-                .unwrap();
-            }
+            let key_operations = batch
+                .iter()
+                .cloned()
+                .collect::<BTreeMap<ArcBytes<'static>, bool>>();
+            tree.modify(Modification {
+                transaction_id: None,
+                keys: key_operations.keys().cloned().collect(),
+                operation: Operation::CompareSwap(CompareSwap::new(&mut |key, existing_value| {
+                    let should_remove = *key_operations.get(key).unwrap();
+                    if should_remove {
+                        assert!(
+                            existing_value.is_some(),
+                            "key {key:?} had no existing value"
+                        );
+                        KeyOperation::Remove
+                    } else {
+                        assert!(existing_value.is_none(), "key {key:?} already had a value");
+                        KeyOperation::Set(key.to_owned())
+                    }
+                })),
+            })
+            .unwrap();
         }
     }
 

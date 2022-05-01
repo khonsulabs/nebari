@@ -367,7 +367,7 @@ where
                     }
                 }
             }
-            debug_assert!(children.windows(2).all(|w| w[0].key < w[1].key),);
+            assert!(children.windows(2).all(|w| w[0].key < w[1].key),);
         }
         Ok(any_changes)
     }
@@ -459,7 +459,7 @@ where
             if should_backup && last_index > 0 {
                 last_index -= 1;
             }
-            debug_assert!(children.windows(2).all(|w| w[0].key < w[1].key));
+            assert!(children.windows(2).all(|w| w[0].key < w[1].key));
         }
         Ok(if any_changes {
             ChangeResult::Changed
@@ -1261,7 +1261,7 @@ impl<
         // The next byte determines the node type.
         match &mut self.node {
             BTreeNode::Leaf(leafs) => {
-                debug_assert!(leafs.windows(2).all(|w| w[0].key < w[1].key));
+                assert!(leafs.windows(2).all(|w| w[0].key < w[1].key));
                 writer.write_u8(1)?;
                 bytes_written += 1;
                 for leaf in leafs {
@@ -1269,7 +1269,7 @@ impl<
                 }
             }
             BTreeNode::Interior(interiors) => {
-                debug_assert!(interiors.windows(2).all(|w| w[0].key < w[1].key));
+                assert!(interiors.windows(2).all(|w| w[0].key < w[1].key));
                 writer.write_u8(0)?;
                 bytes_written += 1;
                 for interior in interiors {

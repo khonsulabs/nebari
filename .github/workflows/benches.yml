@@ -14,11 +14,11 @@ jobs:
 
       - name: Build benchmarks
         run: |
-          cargo bench --no-run --features sqlite
+          cargo bench -p benchmarks --no-run --features sqlite
 
       - name: Run benchmarks
         run: |
-          cargo bench --features sqlite
+          cargo bench -p benchmarks --features sqlite
 
       - name: Generate overview
         run: |

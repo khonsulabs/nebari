@@ -5,6 +5,7 @@ use khonsu_tools::{
         anyhow,
         audit::{self},
         clap::{self, Parser},
+        code_coverage::{self},
         DefaultConfig,
     },
 };
@@ -68,7 +69,7 @@ impl khonsu_tools::Config for Config {
 impl khonsu_tools::universal::Config for Config {
     type Audit = Self;
 
-    type CodeCoverage = DefaultConfig;
+    type CodeCoverage = Self;
 }
 
 impl audit::Config for Config {
@@ -84,5 +85,11 @@ impl audit::Config for Config {
 impl publish::Config for Config {
     fn paths() -> Vec<String> {
         vec![String::from("nebari")]
+    }
+}
+
+impl code_coverage::Config for Config {
+    fn cargo_args() -> Vec<String> {
+        vec![String::from("test"), String::from("--all-features")]
     }
 }

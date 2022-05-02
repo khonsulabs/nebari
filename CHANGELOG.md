@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.5.2
+
+### Fixed
+
+- Another edge case similar to the one found in v0.5.1 was discovered through
+  newly implemented fuzzer-based testing. When a node is fully absorbed to the
+  bottom of the next, in some cases, the modification iterator would not back up
+  to reconsider the node. When inserting a new key in this situation, if the new
+  key was greater than the lowest key in the next node, the tree would get out
+  of order.
+
+  The exact circumstances of this bug are similarly as rare as described in
+  v0.5.1's entry.
+
+### Added
+
+- Feature `paranoid` enables extra sanity checks. This feature flag was added
+  for purposes of fuzzing. It enables extra sanity checks in release builds that
+  are always present in debug builds. These sanity checks are useful in catching
+  bugs, but they represent that a database would be corrupted if the state was
+  persisted to disk.
+
+  These checks slow down modifications to the database significantly.
+
 ## v0.5.1
 
 ### Fixed

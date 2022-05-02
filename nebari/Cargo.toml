@@ -12,6 +12,11 @@ rust-version = "1.56.1"
 
 [features]
 default = []
+# Enable extra checks in release mode for Nebari. These checks are in all debug
+# builds, but are normally disabled on release builds. These checks are meant to
+# detect algorithmic problems, and do not help in any way against bit rot or
+# drive related failures.
+paranoid = []
 
 [dependencies]
 thiserror = "1.0.30"

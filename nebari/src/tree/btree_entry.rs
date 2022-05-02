@@ -122,6 +122,22 @@ where
     pub _phantom: PhantomData<(IndexedType, Index, Context)>,
 }
 
+#[cfg(any(debug_assertions, feature = "paranoid"))]
+macro_rules! assert_children_order {
+    ($children:expr) => {
+        assert_eq!(
+            $children
+                .windows(2)
+                .find_map(|w| (w[0].key > w[1].key).then(|| (&w[0].key, &w[1].key))),
+            None
+        );
+    };
+}
+#[cfg(not(any(debug_assertions, feature = "paranoid")))]
+macro_rules! assert_children_order {
+    ($children:expr) => {};
+}
+
 impl<Index, ReducedIndex> BTreeEntry<Index, ReducedIndex>
 where
     Index: ValueIndex + Clone + BinarySerialization + Debug + 'static,
@@ -188,6 +204,7 @@ where
         minimum_children: usize,
     ) -> ChangeResult {
         let child_count = children.len();
+        assert_children_order!(children);
 
         if child_count > current_order {
             ChangeResult::Split
@@ -206,6 +223,7 @@ where
         minimum_children: usize,
     ) -> ChangeResult {
         let child_count = children.len();
+        assert_children_order!(children);
 
         if child_count > current_order {
             ChangeResult::Split
@@ -315,9 +333,6 @@ where
                 }
                 Err(insert_at) => {
                     last_index += insert_at;
-                    if max_key.map(|max_key| key > max_key).unwrap_or_default() {
-                        break;
-                    }
                     let key = modification.keys.pop().unwrap();
                     let operation = match &mut modification.operation {
                         Operation::Set(new_value) => {
@@ -367,7 +382,7 @@ where
                     }
                 }
             }
-            assert!(children.windows(2).all(|w| w[0].key < w[1].key),);
+            assert_children_order!(children);
         }
         Ok(any_changes)
     }
@@ -445,6 +460,7 @@ where
                 context,
                 writer,
             )?;
+            assert_children_order!(children);
             match change_result {
                 ChangeResult::Unchanged => {}
                 ChangeResult::Split => unreachable!(),
@@ -459,7 +475,6 @@ where
             if should_backup && last_index > 0 {
                 last_index -= 1;
             }
-            assert!(children.windows(2).all(|w| w[0].key < w[1].key));
         }
         Ok(if any_changes {
             ChangeResult::Changed
@@ -493,7 +508,7 @@ where
                 let child_entry = child.position.get_mut().unwrap();
                 child.key = child_entry.max_key().clone();
                 child.stats = child_entry.stats();
-                Ok((ChangeResult::Changed, false))
+                Ok((ChangeResult::Changed, result == ChangeResult::Absorb))
             }
             (ChangeResult::Split, _) => {
                 Self::process_interior_split(child_index, children, context, writer)
@@ -504,7 +519,7 @@ where
             (ChangeResult::Remove, _) => {
                 children.remove(child_index);
 
-                Ok((ChangeResult::Changed, false))
+                Ok((ChangeResult::Changed, true))
             }
         }
     }
@@ -566,10 +581,8 @@ where
                 (ChangeResult::Absorb | ChangeResult::Split | ChangeResult::Unchanged, _) => {
                     unreachable!()
                 }
-                (ChangeResult::Remove, should_backup) => Ok((ChangeResult::Remove, should_backup)),
-                (ChangeResult::Changed, should_backup) => {
-                    Ok((ChangeResult::Changed, should_backup))
-                }
+                (ChangeResult::Remove, _) => Ok((ChangeResult::Remove, true)),
+                (ChangeResult::Changed, _) => Ok((ChangeResult::Changed, true)),
             }
         } else {
             Ok((ChangeResult::Unchanged, false))
@@ -1261,7 +1274,7 @@ impl<
         // The next byte determines the node type.
         match &mut self.node {
             BTreeNode::Leaf(leafs) => {
-                assert!(leafs.windows(2).all(|w| w[0].key < w[1].key));
+                assert_children_order!(leafs);
                 writer.write_u8(1)?;
                 bytes_written += 1;
                 for leaf in leafs {
@@ -1269,7 +1282,7 @@ impl<
                 }
             }
             BTreeNode::Interior(interiors) => {
-                assert!(interiors.windows(2).all(|w| w[0].key < w[1].key));
+                assert_children_order!(interiors);
                 writer.write_u8(0)?;
                 bytes_written += 1;
                 for interior in interiors {

@@ -10,9 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 tempfile = "3.3.0"
-
-[dependencies.nebari]
-path = "../nebari"
+nebari = { path = "../nebari", features = ["paranoid"] }
 
 [[bin]]
 name = "compare_swap"

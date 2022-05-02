@@ -2,11 +2,9 @@ use devx_cmd::read;
 use khonsu_tools::{
     publish,
     universal::{
-        anyhow,
-        audit::{self},
+        anyhow, audit,
         clap::{self, Parser},
-        code_coverage::{self},
-        DefaultConfig,
+        code_coverage,
     },
 };
 use sysinfo::{RefreshKind, System, SystemExt};

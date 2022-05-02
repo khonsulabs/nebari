@@ -1,8 +1,7 @@
 #![no_main]
-use libfuzzer_sys::fuzz_target;
-
 use std::collections::{BTreeMap, BTreeSet};
 
+use libfuzzer_sys::fuzz_target;
 use nebari::{
     io::{fs::StdFile, FileManager},
     tree::{CompareSwap, KeyOperation, Modification, Operation, State, TreeFile, Unversioned},

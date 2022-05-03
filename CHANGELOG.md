@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.5.3
+
+- File operations are now fully persisted to disk to the best ability provided
+  by each operating system. @justinj discovered that no `fsync()` operations
+  were happening, and reported the finding. Nebari's TreeFile was using
+  `File::flush()` instead of `File::sync_data()/sync_all()`. This means that it
+  would be possible for an OS-level buffer to not be flushed to disk before
+  Nebari reported a successful write.
+
+  Interestingly, this change has no noticable impact on performance on Linux.
+  However, on Mac OS, `File::sync_data()` performs a `fcntl` with `F_FULLFSYNC`,
+  which has a significant impact on performance. This is the correct behavior,
+  however, as without this level of guarantee, sudden power loss could result in
+  data loss.
+
+  Many people argue that using `F_BARRIERFSYNC` is sufficient for most people,
+  but Apple's [own documentation][apple-reducing-disk-writes] states this is
+  necessary:
+
+  > Only use F_FULLFSYNC when your app requires a strong expectation of data
+  > persistence. Note that F_FULLFSYNC represents a best-effort guarantee that
+  > iOS writes data to the disk, but data can still be lost in the case of
+  > sudden power loss.
+
+  For now, the stance of Nebari's authors is that `F_FULLFSYNC` is the proper
+  way to implement true ACID-compliance.
+
+[reducing-disk-writes]: https://developer.apple.com/documentation/xcode/reducing-disk-writes#Minimize-Explicit-Storage-Synchronization
+
 ## v0.5.2
 
 ### Fixed

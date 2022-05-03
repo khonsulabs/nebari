@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## v0.5.3
 
+### Fixed
+
 - File operations are now fully persisted to disk to the best ability provided
   by each operating system. @justinj discovered that no `fsync()` operations
   were happening, and reported the finding. Nebari's TreeFile was using
@@ -32,7 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   For now, the stance of Nebari's authors is that `F_FULLFSYNC` is the proper
   way to implement true ACID-compliance.
 
-[reducing-disk-writes]: https://developer.apple.com/documentation/xcode/reducing-disk-writes#Minimize-Explicit-Storage-Synchronization
+[apple-reducing-disk-writes]:
+    https://developer.apple.com/documentation/xcode/reducing-disk-writes#Minimize-Explicit-Storage-Synchronization
 
 ## v0.5.2
 

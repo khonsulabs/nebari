@@ -97,7 +97,7 @@ impl Write for StdFile {
 
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     fn flush(&mut self) -> std::io::Result<()> {
-        self.file.flush()
+        self.file.sync_all()
     }
 }
 

@@ -46,6 +46,23 @@ impl SimpleBench for InsertLogs {
         // better performance. See:
         // https://www.sqlite.org/pragma.html#pragma_synchronous
         sqlite.pragma_update(None, "synchronous", &"NORMAL")?;
+        // Mac OS does not implement fsync() with the same guarantees as Linux.
+        // From Apple's guide "Reducing Disk Writes"
+        // (https://developer.apple.com/documentation/xcode/reducing-disk-writes#Minimize-Explicit-Storage-Synchronization):
+        //
+        // > Only use F_FULLFSYNC when your app requires a strong expectation of
+        // > data persistence. Note that F_FULLFSYNC represents a best-effort
+        // > guarantee that iOS writes data to the disk, but data can still be
+        // > lost in the case of sudden power loss.
+        //
+        // Rust's implementation of `File::sync_data` calls `fcntl` with
+        // `F_FULLFSYNC` on Mac OS, which means Nebari is performing the
+        // strongest guarantees that Apple provides that bits are fully
+        // persisted to disk before reporting a succesful result. SQLite does
+        // not enable this by default, and instead opts for better performance
+        // over a best-attempt at ACID-compliance.
+        #[cfg(target_os = "mac_os")]
+        sqlite.pragma_update(None, "fullfsync", &"true")?;
         sqlite.execute(
             "create table logs (id integer primary key, timestamp integer, message text)",
             [],

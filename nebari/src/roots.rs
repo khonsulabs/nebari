@@ -790,7 +790,11 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// changes in pending transactions.
     pub fn get(&self, key: &[u8]) -> Result<Option<ArcBytes<'static>>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = self.open_for_read()?;
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => return Ok(None),
+                Err(err) => return Err(err),
+            };
 
             tree.get(key, false)
         })
@@ -864,7 +868,11 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         Keys: Iterator<Item = &'keys [u8]> + ExactSizeIterator + Clone,
     {
         catch_compaction_and_retry(|| {
-            let mut tree = self.open_for_read()?;
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => return Ok(Vec::new()),
+                Err(err) => return Err(err),
+            };
 
             tree.get_multiple(keys.clone(), false)
         })
@@ -879,7 +887,11 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + Clone + ?Sized,
     {
         catch_compaction_and_retry(|| {
-            let mut tree = self.open_for_read()?;
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => return Ok(Vec::new()),
+                Err(err) => return Err(err),
+            };
 
             tree.get_range(range, false)
         })
@@ -929,7 +941,11 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         CallerError: Display + Debug,
     {
         catch_compaction_and_retry_abortable(move || {
-            let mut tree = self.open_for_read()?;
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => return Ok(()),
+                Err(err) => return Err(AbortError::from(err)),
+            };
 
             tree.scan(
                 range,
@@ -959,7 +975,15 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + Clone + ?Sized,
     {
         catch_compaction_and_retry(move || {
-            let mut tree = self.open_for_read()?;
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => {
+                    return Ok(<Root::ReducedIndex as Reducer<Root::Index>>::reduce(
+                        std::iter::empty(),
+                    ))
+                }
+                Err(err) => return Err(err),
+            };
 
             tree.reduce(range, false)
         })
@@ -969,7 +993,11 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn first_key(&self) -> Result<Option<ArcBytes<'static>>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = self.open_for_read()?;
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => return Ok(None),
+                Err(err) => return Err(err),
+            };
 
             tree.first_key(false)
         })
@@ -979,7 +1007,11 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn first(&self) -> Result<Option<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = self.open_for_read()?;
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => return Ok(None),
+                Err(err) => return Err(err),
+            };
 
             tree.first(false)
         })
@@ -989,7 +1021,11 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn last_key(&self) -> Result<Option<ArcBytes<'static>>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = self.open_for_read()?;
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => return Ok(None),
+                Err(err) => return Err(err),
+            };
 
             tree.last_key(false)
         })
@@ -999,7 +1035,11 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn last(&self) -> Result<Option<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
         catch_compaction_and_retry(|| {
-            let mut tree = self.open_for_read()?;
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => return Ok(None),
+                Err(err) => return Err(err),
+            };
 
             tree.last(false)
         })
@@ -1012,7 +1052,11 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// See [`TreeFile::compact()`](crate::tree::TreeFile::compact) for more
     /// information.
     pub fn compact(&self) -> Result<(), Error> {
-        let tree = self.open_for_read()?;
+        let tree = match self.open_for_read() {
+            Ok(tree) => tree,
+            Err(err) if err.kind.is_file_not_found() => return Ok(()),
+            Err(err) => return Err(err),
+        };
         tree.compact(
             &self.roots.context().file_manager,
             Some(TransactableCompaction {

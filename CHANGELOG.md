@@ -37,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [apple-reducing-disk-writes]:
     https://developer.apple.com/documentation/xcode/reducing-disk-writes#Minimize-Explicit-Storage-Synchronization
 
+## Unreleased
+
+### Fixed
+
+- When using `Roots::delete_tree()` on a tree that had previously been opened,
+  an edge case was fixed that could cause a subsequent write operation to return
+  an `InternalCommunication` error.
+- When using `Roots::delete_tree()`, subsequent read operations will now return
+  an appropriate None/empty result instead of returning  a file not found error.
+
 ## v0.5.2
 
 ### Fixed

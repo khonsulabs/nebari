@@ -180,6 +180,10 @@ impl ErrorKind {
     pub(crate) fn data_integrity(error: impl Into<Error>) -> Self {
         Self::DataIntegrity(Box::new(error.into()))
     }
+
+    pub(crate) fn is_file_not_found(&self) -> bool {
+        matches!(self, Self::Io(err) if err.kind() == std::io::ErrorKind::NotFound)
+    }
 }
 
 impl From<&'static str> for ErrorKind {

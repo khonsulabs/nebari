@@ -118,6 +118,14 @@
 <span id="113">113</span>
 <span id="114">114</span>
 <span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">fmt::Debug</span>, <span class="ident">sync::Arc</span>};
 
 <span class="kw">use</span> <span class="ident">parking_lot</span>::{<span class="ident">Mutex</span>, <span class="ident">MutexGuard</span>, <span class="ident">RwLock</span>};
@@ -126,7 +134,7 @@
 
 <span class="doccomment">/// The current state of a tree file. Must be initialized before passing to</span>
 <span class="doccomment">/// `TreeFile::new` if the file already exists.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>, <span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
 <span class="attribute">#[<span class="ident">must_use</span>]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">State</span><span class="op">&lt;</span><span class="ident">Root</span>: <span class="ident"><span class="kw">super</span>::Root</span><span class="op">&gt;</span> {
     <span class="ident">reader</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">ActiveState</span><span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
@@ -138,12 +146,12 @@
     <span class="ident">Root</span>: <span class="ident"><span class="kw">super</span>::Root</span>,
 {
     <span class="doccomment">/// Returns an uninitialized state.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">file_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>, <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">file_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>, <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>, <span class="ident">root</span>: <span class="ident">Root</span>) -&gt; <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">ActiveState</span> {
             <span class="ident">file_id</span>,
             <span class="ident">max_order</span>,
             <span class="ident">current_position</span>: <span class="number">0</span>,
-            <span class="ident">root</span>: <span class="ident">Root::default</span>(),
+            <span class="ident">root</span>,
         };
 
         <span class="self">Self</span> {
@@ -153,14 +161,13 @@
     }
     <span class="doccomment">/// Returns an initialized state. This should only be used if you&#39;re</span>
     <span class="doccomment">/// creating a file from scratch.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">initialized</span>(<span class="ident">file_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>, <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">header</span> <span class="op">=</span> <span class="ident">Root::default</span>();
-        <span class="ident">header</span>.<span class="ident">initialize_default</span>();
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">initialized</span>(<span class="ident">file_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>, <span class="ident">max_order</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>, <span class="kw-2">mut</span> <span class="ident">root</span>: <span class="ident">Root</span>) -&gt; <span class="self">Self</span> {
+        <span class="ident">root</span>.<span class="ident">initialize_default</span>();
         <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">ActiveState</span> {
             <span class="ident">file_id</span>,
             <span class="ident">max_order</span>,
             <span class="ident">current_position</span>: <span class="number">0</span>,
-            <span class="ident">root</span>: <span class="ident">header</span>,
+            <span class="ident">root</span>,
         };
 
         <span class="self">Self</span> {
@@ -179,6 +186,15 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">ActiveState</span><span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">reader</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">reader</span>.<span class="ident">read</span>();
         <span class="ident">reader</span>.<span class="ident">clone</span>()
+    }
+}
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">State</span><span class="op">&lt;</span><span class="ident">Root</span><span class="op">&gt;</span>
+<span class="kw">where</span>
+    <span class="ident">Root</span>: <span class="ident"><span class="kw">super</span>::Root</span> <span class="op">+</span> <span class="ident">Default</span>,
+{
+    <span class="kw">fn</span> <span class="ident">default</span>() -&gt; <span class="self">Self</span> {
+        <span class="ident"><span class="self">Self</span>::new</span>(<span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="ident">Root::default</span>())
     }
 }
 

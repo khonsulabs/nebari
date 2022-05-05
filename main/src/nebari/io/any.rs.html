@@ -259,6 +259,13 @@
 <span id="254">254</span>
 <span id="255">255</span>
 <span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">io</span>::{<span class="ident">Read</span>, <span class="ident">Seek</span>, <span class="ident">Write</span>},
     <span class="ident">path::Path</span>,
@@ -309,6 +316,13 @@
         <span class="kw">match</span> <span class="self">self</span> {
             <span class="ident"><span class="self">Self</span>::Std</span>(<span class="ident">file</span>) =&gt; <span class="ident">file</span>.<span class="ident">close</span>(),
             <span class="ident"><span class="self">Self</span>::Memory</span>(<span class="ident">file</span>) =&gt; <span class="ident">file</span>.<span class="ident">close</span>(),
+        }
+    }
+
+    <span class="kw">fn</span> <span class="ident">synchronize</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident"><span class="kw">crate</span>::Error</span><span class="op">&gt;</span> {
+        <span class="kw">match</span> <span class="self">self</span> {
+            <span class="ident"><span class="self">Self</span>::Std</span>(<span class="ident">file</span>) =&gt; <span class="ident">file</span>.<span class="ident">synchronize</span>(),
+            <span class="ident"><span class="self">Self</span>::Memory</span>(<span class="ident">file</span>) =&gt; <span class="ident">file</span>.<span class="ident">synchronize</span>(),
         }
     }
 }

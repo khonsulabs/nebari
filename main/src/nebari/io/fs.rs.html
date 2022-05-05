@@ -343,6 +343,9 @@
 <span id="338">338</span>
 <span id="339">339</span>
 <span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections</span>::{<span class="ident">HashMap</span>, <span class="ident">VecDeque</span>},
     <span class="ident">fs</span>::{<span class="ident">File</span>, <span class="ident">OpenOptions</span>},
@@ -386,8 +389,11 @@
     }
 
     <span class="kw">fn</span> <span class="ident">close</span>(<span class="kw-2">mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="comment">// Closing is done by just dropping it</span>
-        <span class="self">self</span>.<span class="ident">flush</span>().<span class="ident">map_err</span>(<span class="ident">Error::from</span>)
+        <span class="self">self</span>.<span class="ident">synchronize</span>()
+    }
+
+    <span class="kw">fn</span> <span class="ident">synchronize</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident"><span class="kw">crate</span>::Error</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">sync_all</span>().<span class="ident">map_err</span>(<span class="ident">Error::from</span>)
     }
 }
 
@@ -442,7 +448,7 @@
 
     <span class="attribute">#[<span class="ident">cfg_attr</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>, <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>)))]</span>
     <span class="kw">fn</span> <span class="ident">flush</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="ident">std::io::Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">sync_all</span>()
+        <span class="self">self</span>.<span class="ident">file</span>.<span class="ident">flush</span>()
     }
 }
 

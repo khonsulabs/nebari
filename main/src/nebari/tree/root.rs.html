@@ -228,7 +228,61 @@
 <span id="223">223</span>
 <span id="224">224</span>
 <span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
+    <span class="ident">any::Any</span>,
     <span class="ident">borrow::Cow</span>,
     <span class="ident">collections::HashMap</span>,
     <span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Display</span>},
@@ -252,24 +306,49 @@
 };
 
 <span class="doccomment">/// A B-Tree root implementation.</span>
-<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">Root</span>: <span class="ident">Default</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> {
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">Root</span>: <span class="ident">Debug</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> {
     <span class="doccomment">/// The unique header byte for this root.</span>
     <span class="kw">const</span> <span class="ident">HEADER</span>: <span class="ident">PageHeader</span>;
 
     <span class="doccomment">/// The primary index type contained within this root.</span>
     <span class="kw">type</span> <span class="ident">Index</span>: <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>;
     <span class="doccomment">/// The primary index type contained within this root.</span>
-    <span class="kw">type</span> <span class="ident">ReducedIndex</span>: <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::Index</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>;
+    <span class="kw">type</span> <span class="ident">ReducedIndex</span>: <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>;
+    <span class="doccomment">/// The reducer that reduces `Index`es and re-reduces `ReducedIndex`es.</span>
+    <span class="kw">type</span> <span class="ident">Reducer</span>: <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::Index</span>, <span class="ident"><span class="self">Self</span>::ReducedIndex</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>;
+
+    <span class="doccomment">/// Returns a new instance with the provided reducer.</span>
+    <span class="kw">fn</span> <span class="ident">default_with</span>(<span class="ident">reducer</span>: <span class="ident"><span class="self">Self</span>::Reducer</span>) -&gt; <span class="self">Self</span>;
+
+    <span class="doccomment">/// Returns the instance&#39;s reducer.</span>
+    <span class="kw">fn</span> <span class="ident">reducer</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Reducer</span>;
 
     <span class="doccomment">/// Returns the number of values contained in this tree, not including</span>
     <span class="doccomment">/// deleted records.</span>
     <span class="kw">fn</span> <span class="ident">count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">u64</span>;
 
     <span class="doccomment">/// Returns a reference to a named tree that contains this type of root.</span>
-    <span class="kw">fn</span> <span class="ident">tree</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(<span class="ident">name</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Cow</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span>, <span class="ident">str</span><span class="op">&gt;</span><span class="op">&gt;</span>) -&gt; <span class="ident">TreeRoot</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">File</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">tree</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(<span class="ident">name</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Cow</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span>, <span class="ident">str</span><span class="op">&gt;</span><span class="op">&gt;</span>) -&gt; <span class="ident">TreeRoot</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">File</span><span class="op">&gt;</span>
+    <span class="kw">where</span>
+        <span class="ident"><span class="self">Self</span>::Reducer</span>: <span class="ident">Default</span>,
+    {
         <span class="ident">TreeRoot</span> {
             <span class="ident">name</span>: <span class="ident">name</span>.<span class="ident">into</span>(),
             <span class="ident">vault</span>: <span class="prelude-val">None</span>,
+            <span class="ident">reducer</span>: <span class="ident">Arc::new</span>(<span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::Reducer</span> <span class="kw">as</span> <span class="ident">Default</span><span class="op">&gt;</span><span class="ident">::default</span>()),
+            <span class="ident">_phantom</span>: <span class="ident">PhantomData</span>,
+        }
+    }
+
+    <span class="doccomment">/// Returns a reference to a named tree that contains this type of root.</span>
+    <span class="kw">fn</span> <span class="ident">tree_with_reducer</span><span class="op">&lt;</span><span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span>(
+        <span class="ident">name</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">Cow</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span>, <span class="ident">str</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">reducer</span>: <span class="ident"><span class="self">Self</span>::Reducer</span>,
+    ) -&gt; <span class="ident">TreeRoot</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">File</span><span class="op">&gt;</span> {
+        <span class="ident">TreeRoot</span> {
+            <span class="ident">name</span>: <span class="ident">name</span>.<span class="ident">into</span>(),
+            <span class="ident">vault</span>: <span class="prelude-val">None</span>,
+            <span class="ident">reducer</span>: <span class="ident">Arc::new</span>(<span class="ident">reducer</span>),
             <span class="ident">_phantom</span>: <span class="ident">PhantomData</span>,
         }
     }
@@ -293,7 +372,7 @@
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Deserializes the root from `bytes`.</span>
-    <span class="kw">fn</span> <span class="ident">deserialize</span>(<span class="ident">bytes</span>: <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">deserialize</span>(<span class="ident">bytes</span>: <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>, <span class="ident">reducer</span>: <span class="ident"><span class="self">Self</span>::Reducer</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Returns the current transaction id.</span>
     <span class="kw">fn</span> <span class="ident">transaction_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">TransactionId</span>;
@@ -381,7 +460,22 @@
     <span class="doccomment">/// The vault to use when opening the tree. If not set, the `Context` will</span>
     <span class="doccomment">/// provide the vault.</span>
     <span class="kw">pub</span> <span class="ident">vault</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyVault</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="doccomment">/// The [`Reducer`] for this tree.</span>
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="ident">reducer</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyReducer</span><span class="op">&gt;</span>,
     <span class="ident">_phantom</span>: <span class="ident">PhantomData</span><span class="op">&lt;</span>(<span class="ident">R</span>, <span class="ident">File</span>)<span class="op">&gt;</span>,
+}
+
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">AnyReducer</span>: <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> {
+    <span class="kw">fn</span> <span class="ident">as_any</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Any</span>;
+}
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="ident">AnyReducer</span> <span class="kw">for</span> <span class="ident">T</span>
+<span class="kw">where</span>
+    <span class="ident">T</span>: <span class="ident">Any</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
+{
+    <span class="kw">fn</span> <span class="ident">as_any</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Any</span> {
+        <span class="self">self</span>
+    }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">Root</span>, <span class="ident">File</span>: <span class="ident">ManagedFile</span><span class="op">&gt;</span> <span class="ident">TreeRoot</span><span class="op">&lt;</span><span class="ident">R</span>, <span class="ident">File</span><span class="op">&gt;</span> {
@@ -397,6 +491,7 @@
         <span class="self">Self</span> {
             <span class="ident">name</span>: <span class="self">self</span>.<span class="ident">name</span>.<span class="ident">clone</span>(),
             <span class="ident">vault</span>: <span class="self">self</span>.<span class="ident">vault</span>.<span class="ident">clone</span>(),
+            <span class="ident">reducer</span>: <span class="self">self</span>.<span class="ident">reducer</span>.<span class="ident">clone</span>(),
             <span class="ident">_phantom</span>: <span class="ident">PhantomData</span>,
         }
     }
@@ -425,7 +520,18 @@
     }
 
     <span class="kw">fn</span> <span class="ident">default_state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">AnyTreeState</span><span class="op">&gt;</span> {
-        <span class="ident">Box::new</span>(<span class="ident">State</span>::<span class="op">&lt;</span><span class="ident">R</span><span class="op">&gt;</span><span class="ident">::default</span>())
+        <span class="ident">Box::new</span>(<span class="ident">State</span>::<span class="op">&lt;</span><span class="ident">R</span><span class="op">&gt;</span><span class="ident">::new</span>(
+            <span class="prelude-val">None</span>,
+            <span class="prelude-val">None</span>,
+            <span class="ident">R::default_with</span>(
+                <span class="self">self</span>.<span class="ident">reducer</span>
+                    .<span class="ident">as_ref</span>()
+                    .<span class="ident">as_any</span>()
+                    .<span class="ident">downcast_ref</span>::<span class="op">&lt;</span><span class="ident">R::Reducer</span><span class="op">&gt;</span>()
+                    .<span class="ident">unwrap</span>()
+                    .<span class="ident">clone</span>(),
+            ),
+        ))
     }
 
     <span class="kw">fn</span> <span class="ident">begin_transaction</span>(

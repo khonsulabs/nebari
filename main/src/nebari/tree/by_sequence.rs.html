@@ -171,6 +171,12 @@
 <span id="166">166</span>
 <span id="167">167</span>
 <span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std::fmt::Display</span>;
 
 <span class="kw">use</span> <span class="ident">byteorder</span>::{<span class="ident">BigEndian</span>, <span class="ident">ReadBytesExt</span>, <span class="ident">WriteBytesExt</span>};
@@ -314,27 +320,33 @@
     }
 }
 
-<span class="kw">impl</span> <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">BySequenceIndex</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">BySequenceStats</span> {
-    <span class="kw">fn</span> <span class="ident">reduce</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Indexes</span>, <span class="ident">IndexesIter</span><span class="op">&gt;</span>(<span class="ident">indexes</span>: <span class="ident">Indexes</span>) -&gt; <span class="self">Self</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Default</span>, <span class="ident">Debug</span>)]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">BySequenceReducer</span>;
+
+<span class="kw">impl</span> <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">BySequenceIndex</span>, <span class="ident">BySequenceStats</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">BySequenceReducer</span> {
+    <span class="kw">fn</span> <span class="ident">reduce</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Indexes</span>, <span class="ident">IndexesIter</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">indexes</span>: <span class="ident">Indexes</span>) -&gt; <span class="ident">BySequenceStats</span>
     <span class="kw">where</span>
         <span class="ident">BySequenceIndex</span>: <span class="lifetime">&#39;a</span>,
         <span class="ident">Indexes</span>:
             <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">BySequenceIndex</span>, <span class="ident">IntoIter</span> <span class="op">=</span> <span class="ident">IndexesIter</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">ExactSizeIterator</span>,
         <span class="ident">IndexesIter</span>: <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">BySequenceIndex</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">ExactSizeIterator</span> <span class="op">+</span> <span class="ident">Clone</span>,
     {
-        <span class="self">Self</span> {
+        <span class="ident">BySequenceStats</span> {
             <span class="ident">total_sequences</span>: <span class="ident">indexes</span>.<span class="ident">len</span>() <span class="kw">as</span> <span class="ident">u64</span>,
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">rereduce</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">ReducedIndexes</span>, <span class="ident">ReducedIndexesIter</span><span class="op">&gt;</span>(<span class="ident">values</span>: <span class="ident">ReducedIndexes</span>) -&gt; <span class="self">Self</span>
+    <span class="kw">fn</span> <span class="ident">rereduce</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">ReducedIndexes</span>, <span class="ident">ReducedIndexesIter</span><span class="op">&gt;</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">values</span>: <span class="ident">ReducedIndexes</span>,
+    ) -&gt; <span class="ident">BySequenceStats</span>
     <span class="kw">where</span>
         <span class="self">Self</span>: <span class="lifetime">&#39;a</span>,
-        <span class="ident">ReducedIndexes</span>:
-            <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span>, <span class="ident">IntoIter</span> <span class="op">=</span> <span class="ident">ReducedIndexesIter</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">ExactSizeIterator</span>,
-        <span class="ident">ReducedIndexesIter</span>: <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">ExactSizeIterator</span>,
+        <span class="ident">ReducedIndexes</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">BySequenceStats</span>, <span class="ident">IntoIter</span> <span class="op">=</span> <span class="ident">ReducedIndexesIter</span><span class="op">&gt;</span>
+            <span class="op">+</span> <span class="ident">ExactSizeIterator</span>,
+        <span class="ident">ReducedIndexesIter</span>: <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">BySequenceStats</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">ExactSizeIterator</span>,
     {
-        <span class="self">Self</span> {
+        <span class="ident">BySequenceStats</span> {
             <span class="ident">total_sequences</span>: <span class="ident">values</span>.<span class="ident">into_iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">v</span><span class="op">|</span> <span class="ident">v</span>.<span class="ident">total_sequences</span>).<span class="ident">sum</span>(),
         }
     }

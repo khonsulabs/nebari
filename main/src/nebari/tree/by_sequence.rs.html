@@ -132,10 +132,88 @@
 <span id="127">127</span>
 <span id="128">128</span>
 <span id="129">129</span>
-</pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">byteorder</span>::{<span class="ident">BigEndian</span>, <span class="ident">ReadBytesExt</span>, <span class="ident">WriteBytesExt</span>};
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+</pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std::fmt::Display</span>;
 
-<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">btree_entry::Reducer</span>, <span class="ident">BinarySerialization</span>, <span class="ident">PagedWriter</span>};
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">tree::key_entry::ValueIndex</span>, <span class="ident">ArcBytes</span>, <span class="ident">ErrorKind</span>};
+<span class="kw">use</span> <span class="ident">byteorder</span>::{<span class="ident">BigEndian</span>, <span class="ident">ReadBytesExt</span>, <span class="ident">WriteBytesExt</span>};
+
+<span class="kw">use</span> <span class="kw">crate</span>::{
+    <span class="ident">error::Error</span>,
+    <span class="ident">tree</span>::{<span class="ident">btree_entry::Reducer</span>, <span class="ident">key_entry::ValueIndex</span>, <span class="ident">BinarySerialization</span>, <span class="ident">PagedWriter</span>},
+    <span class="ident">ArcBytes</span>, <span class="ident">ErrorKind</span>,
+};
+
+<span class="doccomment">/// A unique ID of a single modification to a key in a versioned tree file.</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>, <span class="ident">Debug</span>, <span class="ident">Clone</span>, <span class="ident">Copy</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Hash</span>, <span class="ident">Ord</span>, <span class="ident">PartialOrd</span>)]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">SequenceId</span>(<span class="kw">pub</span> <span class="ident">u64</span>);
+
+<span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">SequenceId</span> {
+    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">id</span>: <span class="ident">u64</span>) -&gt; <span class="self">Self</span> {
+        <span class="self">Self</span>(<span class="ident">id</span>)
+    }
+}
+
+<span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">SequenceId</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">u64</span> {
+    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">id</span>: <span class="ident">SequenceId</span>) -&gt; <span class="self">Self</span> {
+        <span class="ident">id</span>.<span class="number">0</span>
+    }
+}
+
+<span class="kw">impl</span> <span class="ident">SequenceId</span> {
+    <span class="attribute">#[<span class="ident">must_use</span>]</span>
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">valid</span>(<span class="self">self</span>) -&gt; <span class="ident">bool</span> {
+        <span class="self">self</span>.<span class="number">0</span> <span class="op">&gt;</span> <span class="number">0</span>
+    }
+
+    <span class="doccomment">/// Returns the nexxt sequence id after `self`.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">next_sequence</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="number">0</span>.<span class="ident">checked_add</span>(<span class="number">1</span>).<span class="ident">map</span>(<span class="self">Self</span>)
+    }
+}
+
+<span class="kw">impl</span> <span class="ident">Display</span> <span class="kw">for</span> <span class="ident">SequenceId</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;mut</span> <span class="ident">std::fmt::Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) -&gt; <span class="ident">std::fmt::Result</span> {
+        <span class="self">self</span>.<span class="number">0</span>.<span class="ident">fmt</span>(<span class="ident">f</span>)
+    }
+}
 
 <span class="doccomment">/// The index stored within [`VersionedTreeRoot::by_sequence_root`](crate::tree::VersionedTreeRoot::by_sequence_root).</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
@@ -143,7 +221,7 @@
     <span class="doccomment">/// The key associated with this sequence id.</span>
     <span class="kw">pub</span> <span class="ident">key</span>: <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The previous sequence of this key.</span>
-    <span class="kw">pub</span> <span class="ident">last_sequence</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">last_sequence</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SequenceId</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The size of the value stored on disk.</span>
     <span class="kw">pub</span> <span class="ident">value_length</span>: <span class="ident">u32</span>,
     <span class="doccomment">/// The position of the value on disk.</span>
@@ -161,7 +239,7 @@
         <span class="ident">bytes_written</span> <span class="op">+</span><span class="op">=</span> <span class="number">4</span>;
         <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">position</span>)<span class="question-mark">?</span>;
         <span class="ident">bytes_written</span> <span class="op">+</span><span class="op">=</span> <span class="number">8</span>;
-        <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">last_sequence</span>.<span class="ident">unwrap_or</span>(<span class="number">0</span>))<span class="question-mark">?</span>;
+        <span class="ident">writer</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">last_sequence</span>.<span class="ident">unwrap_or</span>(<span class="ident">SequenceId</span>(<span class="number">0</span>)).<span class="number">0</span>)<span class="question-mark">?</span>;
         <span class="ident">bytes_written</span> <span class="op">+</span><span class="op">=</span> <span class="number">8</span>;
 
         <span class="kw">let</span> <span class="ident">key_length</span> <span class="op">=</span> <span class="ident">u16::try_from</span>(<span class="self">self</span>.<span class="ident">key</span>.<span class="ident">len</span>()).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">ErrorKind::KeyTooLarge</span>)<span class="question-mark">?</span>;
@@ -178,7 +256,7 @@
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">value_length</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">position</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">last_sequence</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">last_sequence</span> <span class="op">=</span> <span class="ident">SequenceId</span>(<span class="ident">reader</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>);
         <span class="kw">let</span> <span class="ident">key_length</span> <span class="op">=</span> <span class="ident">reader</span>.<span class="ident">read_u16</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span> <span class="kw">as</span> <span class="ident">usize</span>;
         <span class="kw">if</span> <span class="ident">key_length</span> <span class="op">&gt;</span> <span class="ident">reader</span>.<span class="ident">len</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::data_integrity</span>(<span class="macro">format!</span>(
@@ -191,7 +269,7 @@
 
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
             <span class="ident">key</span>,
-            <span class="ident">last_sequence</span>: <span class="kw">if</span> <span class="ident">last_sequence</span> <span class="op">&gt;</span> <span class="number">0</span> {
+            <span class="ident">last_sequence</span>: <span class="kw">if</span> <span class="ident">last_sequence</span>.<span class="ident">valid</span>() {
                 <span class="prelude-val">Some</span>(<span class="ident">last_sequence</span>)
             } <span class="kw">else</span> {
                 <span class="prelude-val">None</span>

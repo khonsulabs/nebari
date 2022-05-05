@@ -344,6 +344,8 @@
 <span id="339">339</span>
 <span id="340">340</span>
 <span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
     <span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Display</span>},
@@ -366,6 +368,7 @@
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="ident">InternalError</span>},
     <span class="ident">io::File</span>,
     <span class="ident">roots::AbortError</span>,
+    <span class="ident">transaction::TransactionId</span>,
     <span class="ident">tree</span>::{
         <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">NodeInclusion</span>, <span class="ident">ScanArgs</span>},
         <span class="ident">copy_chunk</span>, <span class="ident">dynamic_order</span>,
@@ -389,7 +392,7 @@
 {
     <span class="doccomment">/// The transaction ID of the tree root. If this transaction ID isn&#39;t</span>
     <span class="doccomment">/// present in the transaction log, this root should not be trusted.</span>
-    <span class="kw">pub</span> <span class="ident">transaction_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">transaction_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">TransactionId</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The by-id B-Tree.</span>
     <span class="kw">pub</span> <span class="ident">by_id_root</span>: <span class="ident">BTreeEntry</span><span class="op">&lt;</span><span class="ident">UnversionedByIdIndex</span><span class="op">&lt;</span><span class="ident">Index</span><span class="op">&gt;</span>, <span class="ident">ByIdStats</span><span class="op">&lt;</span><span class="ident">Index</span><span class="op">&gt;</span><span class="op">&gt;</span>,
 }
@@ -495,11 +498,11 @@
     }
 
     <span class="kw">fn</span> <span class="ident">initialize_default</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
-        <span class="self">self</span>.<span class="ident">transaction_id</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="number">0</span>);
+        <span class="self">self</span>.<span class="ident">transaction_id</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">TransactionId</span>(<span class="number">0</span>));
     }
 
     <span class="kw">fn</span> <span class="ident">deserialize</span>(<span class="kw-2">mut</span> <span class="ident">bytes</span>: <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">transaction_id</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">bytes</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>);
+        <span class="kw">let</span> <span class="ident">transaction_id</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">TransactionId</span>(<span class="ident">bytes</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>));
         <span class="kw">let</span> <span class="ident">by_id_size</span> <span class="op">=</span> <span class="ident">bytes</span>.<span class="ident">read_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span> <span class="kw">as</span> <span class="ident">usize</span>;
         <span class="kw">if</span> <span class="ident">by_id_size</span> <span class="op">!</span><span class="op">=</span> <span class="ident">bytes</span>.<span class="ident">len</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::data_integrity</span>(<span class="macro">format!</span>(
@@ -526,7 +529,8 @@
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">output</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(
             <span class="self">self</span>.<span class="ident">transaction_id</span>
-                .<span class="ident">expect</span>(<span class="string">&quot;serializing an uninitialized root&quot;</span>),
+                .<span class="ident">expect</span>(<span class="string">&quot;serializing an uninitialized root&quot;</span>)
+                .<span class="number">0</span>,
         )<span class="question-mark">?</span>;
         <span class="comment">// Reserve space for by_id size.</span>
         <span class="ident">output</span>.<span class="ident">write_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="number">0</span>)<span class="question-mark">?</span>;
@@ -540,7 +544,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">transaction_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">u64</span> {
+    <span class="kw">fn</span> <span class="ident">transaction_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">TransactionId</span> {
         <span class="self">self</span>.<span class="ident">transaction_id</span>.<span class="ident">unwrap_or_default</span>()
     }
 

@@ -582,8 +582,10 @@
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="ident">InternalError</span>},
     <span class="ident">io::File</span>,
     <span class="ident">roots::AbortError</span>,
+    <span class="ident">transaction::TransactionId</span>,
     <span class="ident">tree</span>::{
         <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">NodeInclusion</span>, <span class="ident">ScanArgs</span>},
+        <span class="ident">by_sequence::SequenceId</span>,
         <span class="ident">copy_chunk</span>, <span class="ident">dynamic_order</span>,
         <span class="ident">key_entry::KeyEntry</span>,
         <span class="ident">modify::Operation</span>,
@@ -592,8 +594,6 @@
     <span class="ident">vault::AnyVault</span>,
     <span class="ident">ArcBytes</span>, <span class="ident">ChunkCache</span>, <span class="ident">ErrorKind</span>,
 };
-
-<span class="kw">const</span> <span class="ident">UNINITIALIZED_SEQUENCE</span>: <span class="ident">u64</span> <span class="op">=</span> <span class="number">0</span>;
 
 <span class="doccomment">/// An versioned tree with no additional indexed data.</span>
 <span class="kw">pub</span> <span class="kw">type</span> <span class="ident">Versioned</span> <span class="op">=</span> <span class="ident">VersionedTreeRoot</span><span class="op">&lt;</span>()<span class="op">&gt;</span>;
@@ -608,9 +608,9 @@
 {
     <span class="doccomment">/// The transaction ID of the tree root. If this transaction ID isn&#39;t</span>
     <span class="doccomment">/// present in the transaction log, this root should not be trusted.</span>
-    <span class="kw">pub</span> <span class="ident">transaction_id</span>: <span class="ident">u64</span>,
+    <span class="kw">pub</span> <span class="ident">transaction_id</span>: <span class="ident">TransactionId</span>,
     <span class="doccomment">/// The last sequence ID inside of this root.</span>
-    <span class="kw">pub</span> <span class="ident">sequence</span>: <span class="ident">u64</span>,
+    <span class="kw">pub</span> <span class="ident">sequence</span>: <span class="ident">SequenceId</span>,
     <span class="doccomment">/// The by-sequence B-Tree.</span>
     <span class="kw">pub</span> <span class="ident">by_sequence_root</span>: <span class="ident">BTreeEntry</span><span class="op">&lt;</span><span class="ident">BySequenceIndex</span>, <span class="ident">BySequenceStats</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The by-id B-Tree.</span>
@@ -622,8 +622,8 @@
 {
     <span class="kw">fn</span> <span class="ident">default</span>() -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
-            <span class="ident">transaction_id</span>: <span class="number">0</span>,
-            <span class="ident">sequence</span>: <span class="ident">UNINITIALIZED_SEQUENCE</span>,
+            <span class="ident">transaction_id</span>: <span class="ident">TransactionId</span>(<span class="number">0</span>),
+            <span class="ident">sequence</span>: <span class="ident">SequenceId</span>(<span class="number">0</span>),
             <span class="ident">by_sequence_root</span>: <span class="ident">BTreeEntry::default</span>(),
             <span class="ident">by_id_root</span>: <span class="ident">BTreeEntry::default</span>(),
         }
@@ -737,7 +737,7 @@
                         <span class="kw">let</span> <span class="ident">embedded</span> <span class="op">=</span> <span class="ident">EmbeddedIndex::index</span>(<span class="ident">key</span>, <span class="ident">value</span>);
                         <span class="ident">changes</span>.<span class="ident">current_sequence</span> <span class="op">=</span> <span class="ident">changes</span>
                             .<span class="ident">current_sequence</span>
-                            .<span class="ident">checked_add</span>(<span class="number">1</span>)
+                            .<span class="ident">next_sequence</span>()
                             .<span class="ident">expect</span>(<span class="string">&quot;sequence rollover prevented&quot;</span>);
                         <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">key</span>.<span class="ident">to_owned</span>();
                         <span class="ident">changes</span>.<span class="ident">changes</span>.<span class="ident">push</span>(<span class="ident">EntryChange</span> {
@@ -799,7 +799,7 @@
     <span class="kw">type</span> <span class="ident">ReducedIndex</span> <span class="op">=</span> <span class="ident">ByIdStats</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span><span class="op">&gt;</span>;
 
     <span class="kw">fn</span> <span class="ident">initialized</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">sequence</span> <span class="op">!</span><span class="op">=</span> <span class="ident">UNINITIALIZED_SEQUENCE</span>
+        <span class="self">self</span>.<span class="ident">sequence</span>.<span class="ident">valid</span>()
     }
 
     <span class="kw">fn</span> <span class="ident">dirty</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
@@ -807,7 +807,7 @@
     }
 
     <span class="kw">fn</span> <span class="ident">initialize_default</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
-        <span class="self">self</span>.<span class="ident">sequence</span> <span class="op">=</span> <span class="number">1</span>;
+        <span class="self">self</span>.<span class="ident">sequence</span> <span class="op">=</span> <span class="ident">SequenceId</span>(<span class="number">1</span>);
     }
 
     <span class="kw">fn</span> <span class="ident">count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">u64</span> {
@@ -815,8 +815,8 @@
     }
 
     <span class="kw">fn</span> <span class="ident">deserialize</span>(<span class="kw-2">mut</span> <span class="ident">bytes</span>: <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">transaction_id</span> <span class="op">=</span> <span class="ident">bytes</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">sequence</span> <span class="op">=</span> <span class="ident">bytes</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">transaction_id</span> <span class="op">=</span> <span class="ident">TransactionId</span>(<span class="ident">bytes</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>);
+        <span class="kw">let</span> <span class="ident">sequence</span> <span class="op">=</span> <span class="ident">SequenceId</span>(<span class="ident">bytes</span>.<span class="ident">read_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span>);
         <span class="kw">let</span> <span class="ident">by_sequence_size</span> <span class="op">=</span> <span class="ident">bytes</span>.<span class="ident">read_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span> <span class="kw">as</span> <span class="ident">usize</span>;
         <span class="kw">let</span> <span class="ident">by_id_size</span> <span class="op">=</span> <span class="ident">bytes</span>.<span class="ident">read_u32</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>()<span class="question-mark">?</span> <span class="kw">as</span> <span class="ident">usize</span>;
         <span class="kw">if</span> <span class="ident">by_sequence_size</span> <span class="op">+</span> <span class="ident">by_id_size</span> <span class="op">!</span><span class="op">=</span> <span class="ident">bytes</span>.<span class="ident">len</span>() {
@@ -848,8 +848,8 @@
         <span class="ident">output</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
     ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">output</span>.<span class="ident">reserve</span>(<span class="ident">PAGE_SIZE</span>);
-        <span class="ident">output</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">transaction_id</span>)<span class="question-mark">?</span>;
-        <span class="ident">output</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">sequence</span>)<span class="question-mark">?</span>;
+        <span class="ident">output</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">transaction_id</span>.<span class="number">0</span>)<span class="question-mark">?</span>;
+        <span class="ident">output</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">sequence</span>.<span class="number">0</span>)<span class="question-mark">?</span>;
         <span class="comment">// Reserve space for by_sequence and by_id sizes (2xu16).</span>
         <span class="ident">output</span>.<span class="ident">write_u64</span>::<span class="op">&lt;</span><span class="ident">BigEndian</span><span class="op">&gt;</span>(<span class="number">0</span>)<span class="question-mark">?</span>;
 
@@ -869,7 +869,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">transaction_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">u64</span> {
+    <span class="kw">fn</span> <span class="ident">transaction_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">TransactionId</span> {
         <span class="self">self</span>.<span class="ident">transaction_id</span>
     }
 
@@ -900,7 +900,7 @@
                     <span class="ident">value_length</span>: <span class="ident">change</span>.<span class="ident">value_size</span>,
                     <span class="ident">position</span>: <span class="ident">change</span>.<span class="ident">value_position</span>,
                 });
-                <span class="ident">ArcBytes::from</span>(<span class="ident">change</span>.<span class="ident">key_sequence</span>.<span class="ident">sequence</span>.<span class="ident">to_be_bytes</span>())
+                <span class="ident">ArcBytes::from</span>(<span class="ident">change</span>.<span class="ident">key_sequence</span>.<span class="ident">sequence</span>.<span class="number">0</span>.<span class="ident">to_be_bytes</span>())
             })
             .<span class="ident">collect</span>();
         <span class="kw">let</span> <span class="ident">sequence_modifications</span> <span class="op">=</span> <span class="ident">Modification</span> {
@@ -1096,7 +1096,7 @@
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">EntryChanges</span> {
-    <span class="kw">pub</span> <span class="ident">current_sequence</span>: <span class="ident">u64</span>,
+    <span class="kw">pub</span> <span class="ident">current_sequence</span>: <span class="ident">SequenceId</span>,
     <span class="kw">pub</span> <span class="ident">changes</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">EntryChange</span><span class="op">&gt;</span>,
 }
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">EntryChange</span> {
@@ -1111,9 +1111,9 @@
     <span class="doccomment">/// The key that this entry was written for.</span>
     <span class="kw">pub</span> <span class="ident">key</span>: <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The unique sequence id.</span>
-    <span class="kw">pub</span> <span class="ident">sequence</span>: <span class="ident">u64</span>,
+    <span class="kw">pub</span> <span class="ident">sequence</span>: <span class="ident">SequenceId</span>,
     <span class="doccomment">/// The previous sequence id for this key, if any.</span>
-    <span class="kw">pub</span> <span class="ident">last_sequence</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">last_sequence</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SequenceId</span><span class="op">&gt;</span>,
 }
 </code></pre></div>
 </section><section id="search" class="content hidden"></section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="nebari" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.60.0 (7737e0b5c 2022-04-04)" ></div>

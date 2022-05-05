@@ -103,13 +103,13 @@
 };
 
 <span class="kw">use</span> <span class="ident"><span class="kw">super</span>::btree_entry::KeyOperation</span>;
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">ArcBytes</span>, <span class="ident">ErrorKind</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">transaction::TransactionId</span>, <span class="ident">ArcBytes</span>, <span class="ident">ErrorKind</span>};
 
 <span class="doccomment">/// A tree modification.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Modification</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> {
     <span class="doccomment">/// The transaction ID to store with this change.</span>
-    <span class="kw">pub</span> <span class="ident">transaction_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">transaction_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">TransactionId</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The keys to operate upon.</span>
     <span class="kw">pub</span> <span class="ident">keys</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The operation to perform on the keys.</span>

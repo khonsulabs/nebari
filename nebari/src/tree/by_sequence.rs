@@ -141,27 +141,33 @@ impl BinarySerialization for BySequenceStats {
     }
 }
 
-impl Reducer<BySequenceIndex> for BySequenceStats {
-    fn reduce<'a, Indexes, IndexesIter>(indexes: Indexes) -> Self
+#[derive(Clone, Default, Debug)]
+pub struct BySequenceReducer;
+
+impl Reducer<BySequenceIndex, BySequenceStats> for BySequenceReducer {
+    fn reduce<'a, Indexes, IndexesIter>(&self, indexes: Indexes) -> BySequenceStats
     where
         BySequenceIndex: 'a,
         Indexes:
             IntoIterator<Item = &'a BySequenceIndex, IntoIter = IndexesIter> + ExactSizeIterator,
         IndexesIter: Iterator<Item = &'a BySequenceIndex> + ExactSizeIterator + Clone,
     {
-        Self {
+        BySequenceStats {
             total_sequences: indexes.len() as u64,
         }
     }
 
-    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(values: ReducedIndexes) -> Self
+    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(
+        &self,
+        values: ReducedIndexes,
+    ) -> BySequenceStats
     where
         Self: 'a,
-        ReducedIndexes:
-            IntoIterator<Item = &'a Self, IntoIter = ReducedIndexesIter> + ExactSizeIterator,
-        ReducedIndexesIter: Iterator<Item = &'a Self> + ExactSizeIterator,
+        ReducedIndexes: IntoIterator<Item = &'a BySequenceStats, IntoIter = ReducedIndexesIter>
+            + ExactSizeIterator,
+        ReducedIndexesIter: Iterator<Item = &'a BySequenceStats> + ExactSizeIterator,
     {
-        Self {
+        BySequenceStats {
             total_sequences: values.into_iter().map(|v| v.total_sequences).sum(),
         }
     }

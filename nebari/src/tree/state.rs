@@ -6,7 +6,7 @@ use crate::chunk_cache::AnySendSync;
 
 /// The current state of a tree file. Must be initialized before passing to
 /// `TreeFile::new` if the file already exists.
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 #[must_use]
 pub struct State<Root: super::Root> {
     reader: Arc<RwLock<Arc<ActiveState<Root>>>>,
@@ -18,12 +18,12 @@ where
     Root: super::Root,
 {
     /// Returns an uninitialized state.
-    pub fn new(file_id: Option<u64>, max_order: Option<usize>) -> Self {
+    pub fn new(file_id: Option<u64>, max_order: Option<usize>, root: Root) -> Self {
         let state = ActiveState {
             file_id,
             max_order,
             current_position: 0,
-            root: Root::default(),
+            root,
         };
 
         Self {
@@ -33,14 +33,13 @@ where
     }
     /// Returns an initialized state. This should only be used if you're
     /// creating a file from scratch.
-    pub fn initialized(file_id: Option<u64>, max_order: Option<usize>) -> Self {
-        let mut header = Root::default();
-        header.initialize_default();
+    pub fn initialized(file_id: Option<u64>, max_order: Option<usize>, mut root: Root) -> Self {
+        root.initialize_default();
         let state = ActiveState {
             file_id,
             max_order,
             current_position: 0,
-            root: header,
+            root,
         };
 
         Self {
@@ -59,6 +58,15 @@ where
     pub fn read(&self) -> Arc<ActiveState<Root>> {
         let reader = self.reader.read();
         reader.clone()
+    }
+}
+
+impl<Root> Default for State<Root>
+where
+    Root: super::Root + Default,
+{
+    fn default() -> Self {
+        Self::new(None, None, Root::default())
     }
 }
 

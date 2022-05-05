@@ -23,9 +23,10 @@ use crate::{
     transaction::TransactionId,
     tree::{
         btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
+        by_id::ByIdReducer,
         copy_chunk, dynamic_order,
         versioned::ChangeResult,
-        BTreeNode, PageHeader, Reducer, Root,
+        BTreeNode, EmbeddedIndex, PageHeader, Reducer, Root,
     },
     vault::AnyVault,
     ArcBytes, ChunkCache, ErrorKind,
@@ -40,30 +41,34 @@ pub type Unversioned = UnversionedTreeRoot<()>;
 #[derive(Clone, Debug)]
 pub struct UnversionedTreeRoot<Index>
 where
-    Index: Clone + super::EmbeddedIndex + Reducer<Index> + Debug + 'static,
+    Index: Clone + super::EmbeddedIndex + Debug + 'static,
 {
     /// The transaction ID of the tree root. If this transaction ID isn't
     /// present in the transaction log, this root should not be trusted.
     pub transaction_id: Option<TransactionId>,
     /// The by-id B-Tree.
-    pub by_id_root: BTreeEntry<UnversionedByIdIndex<Index>, ByIdStats<Index>>,
+    pub by_id_root: BTreeEntry<UnversionedByIdIndex<Index>, ByIdStats<Index::Reduced>>,
+
+    reducer: <Self as Root>::Reducer,
 }
 
 impl<Index> Default for UnversionedTreeRoot<Index>
 where
-    Index: Clone + Reducer<Index> + super::EmbeddedIndex + Debug + 'static,
+    Index: Clone + super::EmbeddedIndex + Debug + 'static,
+    <Self as Root>::Reducer: Default,
 {
     fn default() -> Self {
         Self {
             transaction_id: None,
             by_id_root: BTreeEntry::default(),
+            reducer: <<Self as Root>::Reducer as Default>::default(),
         }
     }
 }
 
 impl<Index> UnversionedTreeRoot<Index>
 where
-    Index: Clone + Reducer<Index> + super::EmbeddedIndex + Debug + 'static,
+    Index: Clone + super::EmbeddedIndex + Debug + 'static,
 {
     fn modify_id_root<'a, 'w>(
         &'a mut self,
@@ -73,7 +78,11 @@ where
     ) -> Result<(), Error> {
         modification.reverse()?;
 
-        let total_keys = self.by_id_root.stats().total_keys() + modification.keys.len() as u64;
+        let total_keys = self
+            .by_id_root
+            .stats::<ByIdReducer<<Index as EmbeddedIndex>::Reducer>>(self.reducer())
+            .total_keys()
+            + modification.keys.len() as u64;
         let by_id_order = dynamic_order(total_keys, max_order);
         let minimum_children = by_id_order / 2 - 1;
         let minimum_children =
@@ -108,6 +117,7 @@ where
                         CacheEntry::ArcBytes(buffer) => Ok(Some(buffer.clone())),
                         CacheEntry::Decoded(_) => unreachable!(),
                     },
+                    reducer: self.reducer().clone(),
                     _phantom: PhantomData,
                 },
                 None,
@@ -120,7 +130,7 @@ where
                     self.by_id_root.dirty = true;
                 }
                 ChangeResult::Split => {
-                    self.by_id_root.split_root();
+                    self.by_id_root.split_root(&self.reducer().clone());
                 }
             }
         }
@@ -131,14 +141,29 @@ where
 
 impl<EmbeddedIndex> Root for UnversionedTreeRoot<EmbeddedIndex>
 where
-    EmbeddedIndex: Clone + super::EmbeddedIndex + Reducer<EmbeddedIndex> + Debug + 'static,
+    EmbeddedIndex: Clone + super::EmbeddedIndex + 'static,
+    ByIdReducer<EmbeddedIndex::Reducer>:
+        Reducer<UnversionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedIndex::Reduced>>,
 {
     const HEADER: PageHeader = PageHeader::UnversionedHeader;
     type Index = UnversionedByIdIndex<EmbeddedIndex>;
-    type ReducedIndex = ByIdStats<EmbeddedIndex>;
+    type ReducedIndex = ByIdStats<EmbeddedIndex::Reduced>;
+    type Reducer = ByIdReducer<EmbeddedIndex::Reducer>;
+
+    fn default_with(reducer: Self::Reducer) -> Self {
+        Self {
+            transaction_id: None,
+            by_id_root: BTreeEntry::default(),
+            reducer,
+        }
+    }
+
+    fn reducer(&self) -> &Self::Reducer {
+        &self.reducer
+    }
 
     fn count(&self) -> u64 {
-        self.by_id_root.stats().alive_keys
+        self.by_id_root.stats(self.reducer()).alive_keys
     }
 
     fn initialized(&self) -> bool {
@@ -153,7 +178,7 @@ where
         self.transaction_id = Some(TransactionId(0));
     }
 
-    fn deserialize(mut bytes: ArcBytes<'_>) -> Result<Self, Error> {
+    fn deserialize(mut bytes: ArcBytes<'_>, reducer: Self::Reducer) -> Result<Self, Error> {
         let transaction_id = Some(TransactionId(bytes.read_u64::<BigEndian>()?));
         let by_id_size = bytes.read_u32::<BigEndian>()? as usize;
         if by_id_size != bytes.len() {
@@ -171,6 +196,7 @@ where
         Ok(Self {
             transaction_id,
             by_id_root,
+            reducer,
         })
     }
 

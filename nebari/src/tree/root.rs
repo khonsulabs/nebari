@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     borrow::Cow,
     collections::HashMap,
     fmt::{Debug, Display},
@@ -22,24 +23,49 @@ use crate::{
 };
 
 /// A B-Tree root implementation.
-pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
+pub trait Root: Debug + Send + Sync + Clone + 'static {
     /// The unique header byte for this root.
     const HEADER: PageHeader;
 
     /// The primary index type contained within this root.
     type Index: Clone + Debug + 'static;
     /// The primary index type contained within this root.
-    type ReducedIndex: Reducer<Self::Index> + Clone + Debug + 'static;
+    type ReducedIndex: Clone + Debug + 'static;
+    /// The reducer that reduces `Index`es and re-reduces `ReducedIndex`es.
+    type Reducer: Reducer<Self::Index, Self::ReducedIndex> + 'static;
+
+    /// Returns a new instance with the provided reducer.
+    fn default_with(reducer: Self::Reducer) -> Self;
+
+    /// Returns the instance's reducer.
+    fn reducer(&self) -> &Self::Reducer;
 
     /// Returns the number of values contained in this tree, not including
     /// deleted records.
     fn count(&self) -> u64;
 
     /// Returns a reference to a named tree that contains this type of root.
-    fn tree<File: ManagedFile>(name: impl Into<Cow<'static, str>>) -> TreeRoot<Self, File> {
+    fn tree<File: ManagedFile>(name: impl Into<Cow<'static, str>>) -> TreeRoot<Self, File>
+    where
+        Self::Reducer: Default,
+    {
         TreeRoot {
             name: name.into(),
             vault: None,
+            reducer: Arc::new(<Self::Reducer as Default>::default()),
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Returns a reference to a named tree that contains this type of root.
+    fn tree_with_reducer<File: ManagedFile>(
+        name: impl Into<Cow<'static, str>>,
+        reducer: Self::Reducer,
+    ) -> TreeRoot<Self, File> {
+        TreeRoot {
+            name: name.into(),
+            vault: None,
+            reducer: Arc::new(reducer),
             _phantom: PhantomData,
         }
     }
@@ -63,7 +89,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     ) -> Result<(), Error>;
 
     /// Deserializes the root from `bytes`.
-    fn deserialize(bytes: ArcBytes<'_>) -> Result<Self, Error>;
+    fn deserialize(bytes: ArcBytes<'_>, reducer: Self::Reducer) -> Result<Self, Error>;
 
     /// Returns the current transaction id.
     fn transaction_id(&self) -> TransactionId;
@@ -151,7 +177,22 @@ pub struct TreeRoot<R: Root, File: ManagedFile> {
     /// The vault to use when opening the tree. If not set, the `Context` will
     /// provide the vault.
     pub vault: Option<Arc<dyn AnyVault>>,
+    /// The [`Reducer`] for this tree.
+    pub(crate) reducer: Arc<dyn AnyReducer>,
     _phantom: PhantomData<(R, File)>,
+}
+
+pub trait AnyReducer: Send + Sync + 'static {
+    fn as_any(&self) -> &dyn Any;
+}
+
+impl<T> AnyReducer for T
+where
+    T: Any + Send + Sync + 'static,
+{
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 impl<R: Root, File: ManagedFile> TreeRoot<R, File> {
@@ -167,6 +208,7 @@ impl<R: Root, File: ManagedFile> Clone for TreeRoot<R, File> {
         Self {
             name: self.name.clone(),
             vault: self.vault.clone(),
+            reducer: self.reducer.clone(),
             _phantom: PhantomData,
         }
     }
@@ -195,7 +237,18 @@ impl<R: Root, File: ManagedFile> AnyTreeRoot<File> for TreeRoot<R, File> {
     }
 
     fn default_state(&self) -> Box<dyn AnyTreeState> {
-        Box::new(State::<R>::default())
+        Box::new(State::<R>::new(
+            None,
+            None,
+            R::default_with(
+                self.reducer
+                    .as_ref()
+                    .as_any()
+                    .downcast_ref::<R::Reducer>()
+                    .unwrap()
+                    .clone(),
+            ),
+        ))
     }
 
     fn begin_transaction(

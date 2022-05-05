@@ -5,10 +5,7 @@ use std::{
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use super::{
-    btree_entry::{BTreeEntry, Reducer},
-    read_chunk, BinarySerialization, PagedWriter,
-};
+use super::{btree_entry::BTreeEntry, read_chunk, BinarySerialization, PagedWriter};
 use crate::{
     chunk_cache::CacheEntry,
     error::Error,
@@ -30,26 +27,6 @@ pub struct Interior<Index, ReducedIndex> {
     pub stats: ReducedIndex,
 }
 
-impl<Index, ReducedIndex> From<BTreeEntry<Index, ReducedIndex>> for Interior<Index, ReducedIndex>
-where
-    Index: Clone + Debug + ValueIndex + BinarySerialization + 'static,
-    ReducedIndex: Reducer<Index> + Clone + Debug + BinarySerialization + 'static,
-{
-    fn from(entry: BTreeEntry<Index, ReducedIndex>) -> Self {
-        let key = entry.max_key().clone();
-        let stats = entry.stats();
-
-        Self {
-            key,
-            stats,
-            position: Pointer::Loaded {
-                previous_location: None,
-                entry: Box::new(entry),
-            },
-        }
-    }
-}
-
 /// A pointer to a location on-disk. May also contain the node already loaded.
 #[derive(Clone, Debug)]
 pub enum Pointer<Index, ReducedIndex> {
@@ -66,7 +43,7 @@ pub enum Pointer<Index, ReducedIndex> {
 
 impl<
         Index: BinarySerialization + Debug + Clone + 'static,
-        ReducedIndex: Reducer<Index> + BinarySerialization + Debug + Clone + 'static,
+        ReducedIndex: BinarySerialization + Debug + Clone + 'static,
     > Pointer<Index, ReducedIndex>
 {
     /// Attempts to load the node from disk. If the node is already loaded, this
@@ -179,9 +156,26 @@ impl<
 
 impl<
         Index: Clone + ValueIndex + BinarySerialization + Debug + 'static,
-        ReducedIndex: Reducer<Index> + Clone + BinarySerialization + Debug + 'static,
+        ReducedIndex: Clone + BinarySerialization + Debug + 'static,
     > Interior<Index, ReducedIndex>
 {
+    /// Returns a new instance
+    pub fn new<Reducer: super::Reducer<Index, ReducedIndex>>(
+        entry: BTreeEntry<Index, ReducedIndex>,
+        reducer: &Reducer,
+    ) -> Self {
+        let key = entry.max_key().clone();
+
+        Self {
+            key,
+            stats: entry.stats(reducer),
+            position: Pointer::Loaded {
+                previous_location: None,
+                entry: Box::new(entry),
+            },
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn copy_data_to<Callback>(
         &mut self,
@@ -236,7 +230,7 @@ impl<
 
 impl<
         Index: Clone + BinarySerialization + Debug + 'static,
-        ReducedIndex: Reducer<Index> + Clone + BinarySerialization + Debug + 'static,
+        ReducedIndex: Clone + BinarySerialization + Debug + 'static,
     > BinarySerialization for Interior<Index, ReducedIndex>
 {
     fn serialize_to(

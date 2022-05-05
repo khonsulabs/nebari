@@ -4,9 +4,9 @@ use std::{
 };
 
 use nebari::{
-    io::{fs::StdFile, FileManager, ManagedFile, OpenableFile},
+    io::fs::StdFile,
     tree::{State, TreeFile},
-    ArcBytes, ChunkCache,
+    ArcBytes, Context,
 };
 use tempfile::TempDir;
 
@@ -37,14 +37,11 @@ impl<B: NebariBenchmark> SimpleBench for InsertBlobs<B> {
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
         let tempfile = TempDir::new()?;
-        let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
-        let file = manager.append(tempfile.path().join("tree"))?;
-        let state = State::initialized(file.id(), None);
-        let tree = TreeFile::<B::Root, StdFile>::new(
-            file,
-            state,
+        let tree = TreeFile::<B::Root, StdFile>::write(
+            tempfile.path().join("tree"),
+            State::default(),
+            &Context::default(),
             None,
-            Some(ChunkCache::new(100, 160_384)),
         )?;
 
         Ok(Self {

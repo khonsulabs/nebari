@@ -68,25 +68,29 @@ impl<Index, ReducedIndex> Default for BTreeEntry<Index, ReducedIndex> {
 /// When an `Interior` node points to other interior nodes, it calculates the
 /// stored value by calling [`Reducer::rereduce()`] with all the stored `Self`
 /// values.
-pub trait Reducer<Index> {
+pub trait Reducer<Index, ReducedIndex = Index>: Debug + Clone + Send + Sync {
     /// Reduces one or more indexes into a single reduced index.
-    fn reduce<'a, Indexes, IndexesIter>(indexes: Indexes) -> Self
+    fn reduce<'a, Indexes, IndexesIter>(&self, indexes: Indexes) -> ReducedIndex
     where
         Index: 'a,
         Indexes: IntoIterator<Item = &'a Index, IntoIter = IndexesIter> + ExactSizeIterator,
         IndexesIter: Iterator<Item = &'a Index> + ExactSizeIterator + Clone;
 
     /// Reduces one or more previously-reduced indexes into a single reduced index.
-    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(values: ReducedIndexes) -> Self
+    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(
+        &self,
+        values: ReducedIndexes,
+    ) -> ReducedIndex
     where
         Self: 'a,
-        ReducedIndexes:
-            IntoIterator<Item = &'a Self, IntoIter = ReducedIndexesIter> + ExactSizeIterator,
-        ReducedIndexesIter: Iterator<Item = &'a Self> + ExactSizeIterator + Clone;
+        ReducedIndex: 'a,
+        ReducedIndexes: IntoIterator<Item = &'a ReducedIndex, IntoIter = ReducedIndexesIter>
+            + ExactSizeIterator,
+        ReducedIndexesIter: Iterator<Item = &'a ReducedIndex> + ExactSizeIterator + Clone;
 }
 
-impl<Index> Reducer<Index> for () {
-    fn reduce<'a, Indexes, IndexesIter>(_indexes: Indexes) -> Self
+impl<Index> Reducer<Index, ()> for () {
+    fn reduce<'a, Indexes, IndexesIter>(&self, _indexes: Indexes) -> Self
     where
         Index: 'a,
         Indexes: IntoIterator<Item = &'a Index, IntoIter = IndexesIter> + ExactSizeIterator,
@@ -94,18 +98,25 @@ impl<Index> Reducer<Index> for () {
     {
     }
 
-    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(_values: ReducedIndexes) -> Self
+    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(&self, _values: ReducedIndexes) -> Self
     where
         Self: 'a,
         ReducedIndexes:
-            IntoIterator<Item = &'a Self, IntoIter = ReducedIndexesIter> + ExactSizeIterator,
-        ReducedIndexesIter: Iterator<Item = &'a Self> + ExactSizeIterator + Clone,
+            IntoIterator<Item = &'a (), IntoIter = ReducedIndexesIter> + ExactSizeIterator,
+        ReducedIndexesIter: Iterator<Item = &'a ()> + ExactSizeIterator + Clone,
     {
     }
 }
 
-pub struct ModificationContext<IndexedType, Index, Context, Indexer, Loader>
-where
+pub struct ModificationContext<
+    IndexedType,
+    Index,
+    ReducedIndex,
+    Context,
+    Indexer,
+    Loader,
+    IndexReducer,
+> where
     Indexer: Fn(
         &ArcBytes<'_>,
         Option<&IndexedType>,
@@ -113,13 +124,15 @@ where
         &mut Context,
         &mut PagedWriter<'_>,
     ) -> Result<KeyOperation<Index>, Error>,
+    IndexReducer: Reducer<Index, ReducedIndex>,
     Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
 {
     pub current_order: usize,
     pub minimum_children: usize,
     pub indexer: Indexer,
     pub loader: Loader,
-    pub _phantom: PhantomData<(IndexedType, Index, Context)>,
+    pub reducer: IndexReducer,
+    pub _phantom: PhantomData<(IndexedType, Index, ReducedIndex, Context)>,
 }
 
 #[cfg(any(debug_assertions, feature = "paranoid"))]
@@ -141,12 +154,20 @@ macro_rules! assert_children_order {
 impl<Index, ReducedIndex> BTreeEntry<Index, ReducedIndex>
 where
     Index: ValueIndex + Clone + BinarySerialization + Debug + 'static,
-    ReducedIndex: Clone + Reducer<Index> + BinarySerialization + Debug + 'static,
+    ReducedIndex: Clone + BinarySerialization + Debug + 'static,
 {
-    pub(crate) fn modify<IndexedType, Context, Indexer, Loader>(
+    pub(crate) fn modify<IndexedType, Context, Indexer, Loader, IndexReducer>(
         &mut self,
         modification: &mut Modification<'_, IndexedType>,
-        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
+        context: &ModificationContext<
+            IndexedType,
+            Index,
+            ReducedIndex,
+            Context,
+            Indexer,
+            Loader,
+            IndexReducer,
+        >,
         max_key: Option<&ArcBytes<'_>>,
         changes: &mut Context,
         writer: &mut PagedWriter<'_>,
@@ -159,6 +180,7 @@ where
             &mut Context,
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
+        IndexReducer: Reducer<Index, ReducedIndex>,
         Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         match &mut self.node {
@@ -237,10 +259,18 @@ where
     }
 
     #[allow(clippy::too_many_lines)] // TODO refactor, too many lines
-    fn modify_leaf<IndexedType, Context, Indexer, Loader>(
+    fn modify_leaf<IndexedType, Context, Indexer, Loader, IndexReducer>(
         children: &mut Vec<KeyEntry<Index>>,
         modification: &mut Modification<'_, IndexedType>,
-        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
+        context: &ModificationContext<
+            IndexedType,
+            Index,
+            ReducedIndex,
+            Context,
+            Indexer,
+            Loader,
+            IndexReducer,
+        >,
         max_key: Option<&ArcBytes<'_>>,
         changes: &mut Context,
         writer: &mut PagedWriter<'_>,
@@ -253,6 +283,7 @@ where
             &mut Context,
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
+        IndexReducer: Reducer<Index, ReducedIndex>,
         Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut last_index = 0;
@@ -387,10 +418,18 @@ where
         Ok(any_changes)
     }
 
-    fn modify_interior<IndexedType, Context, Indexer, Loader>(
+    fn modify_interior<IndexedType, Context, Indexer, Loader, IndexReducer>(
         children: &mut Vec<Interior<Index, ReducedIndex>>,
         modification: &mut Modification<'_, IndexedType>,
-        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
+        context: &ModificationContext<
+            IndexedType,
+            Index,
+            ReducedIndex,
+            Context,
+            Indexer,
+            Loader,
+            IndexReducer,
+        >,
         max_key: Option<&ArcBytes<'_>>,
         changes: &mut Context,
         writer: &mut PagedWriter<'_>,
@@ -403,6 +442,7 @@ where
             &mut Context,
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
+        IndexReducer: Reducer<Index, ReducedIndex>,
         Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut last_index = 0;
@@ -483,11 +523,19 @@ where
         })
     }
 
-    fn process_interior_change_result<IndexedType, Context, Indexer, Loader>(
+    fn process_interior_change_result<IndexedType, Context, Indexer, Loader, IndexReducer>(
         result: ChangeResult,
         child_index: usize,
         children: &mut Vec<Interior<Index, ReducedIndex>>,
-        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
+        context: &ModificationContext<
+            IndexedType,
+            Index,
+            ReducedIndex,
+            Context,
+            Indexer,
+            Loader,
+            IndexReducer,
+        >,
         writer: &mut PagedWriter<'_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
@@ -498,6 +546,7 @@ where
             &mut Context,
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
+        IndexReducer: Reducer<Index, ReducedIndex>,
         Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let can_absorb = children.len() > 1;
@@ -507,7 +556,7 @@ where
                 let child = &mut children[child_index];
                 let child_entry = child.position.get_mut().unwrap();
                 child.key = child_entry.max_key().clone();
-                child.stats = child_entry.stats();
+                child.stats = child_entry.stats(&context.reducer);
                 Ok((ChangeResult::Changed, result == ChangeResult::Absorb))
             }
             (ChangeResult::Split, _) => {
@@ -524,10 +573,18 @@ where
         }
     }
 
-    fn process_absorb<IndexedType, Context, Indexer, Loader>(
+    fn process_absorb<IndexedType, Context, Indexer, Loader, IndexReducer>(
         child_index: usize,
         children: &mut Vec<Interior<Index, ReducedIndex>>,
-        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
+        context: &ModificationContext<
+            IndexedType,
+            Index,
+            ReducedIndex,
+            Context,
+            Indexer,
+            Loader,
+            IndexReducer,
+        >,
         writer: &mut PagedWriter<'_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
@@ -538,6 +595,7 @@ where
             &mut Context,
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
+        IndexReducer: Reducer<Index, ReducedIndex>,
         Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let (insert_on_top, sponge_index) = if child_index > 0 {
@@ -589,10 +647,18 @@ where
         }
     }
 
-    fn process_interior_split<IndexedType, Context, Indexer, Loader>(
+    fn process_interior_split<IndexedType, Context, Indexer, Loader, IndexReducer>(
         child_index: usize,
         children: &mut Vec<Interior<Index, ReducedIndex>>,
-        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
+        context: &ModificationContext<
+            IndexedType,
+            Index,
+            ReducedIndex,
+            Context,
+            Indexer,
+            Loader,
+            IndexReducer,
+        >,
         writer: &mut PagedWriter<'_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
@@ -603,6 +669,7 @@ where
             &mut Context,
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
+        IndexReducer: Reducer<Index, ReducedIndex>,
         Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut should_backup = false;
@@ -650,19 +717,27 @@ where
             }
             BTreeNode::Uninitialized => unimplemented!(),
         };
-        let (max_key, stats) = { (child.max_key().clone(), child.stats()) };
+        let (max_key, stats) = { (child.max_key().clone(), child.stats(&context.reducer)) };
         children[child_index].key = max_key;
         children[child_index].stats = stats;
 
-        children.insert(child_index + 1, Interior::from(next_node));
+        children.insert(child_index + 1, Interior::new(next_node, &context.reducer));
 
         Ok((ChangeResult::Changed, should_backup))
     }
 
-    fn steal_children_from_start<IndexedType, Context, Indexer, Loader>(
+    fn steal_children_from_start<IndexedType, Context, Indexer, Loader, IndexReducer>(
         child_index: usize,
         children: &mut [Interior<Index, ReducedIndex>],
-        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
+        context: &ModificationContext<
+            IndexedType,
+            Index,
+            ReducedIndex,
+            Context,
+            Indexer,
+            Loader,
+            IndexReducer,
+        >,
         writer: &mut PagedWriter<'_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
@@ -673,6 +748,7 @@ where
             &mut Context,
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
+        IndexReducer: Reducer<Index, ReducedIndex>,
         Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut should_backup = false;
@@ -726,15 +802,19 @@ where
                 }
                 // Update the statistics for the previous child.
                 previous_child.dirty = true;
-                let (max_key, stats) =
-                    { (previous_child.max_key().clone(), previous_child.stats()) };
+                let (max_key, stats) = {
+                    (
+                        previous_child.max_key().clone(),
+                        previous_child.stats(&context.reducer),
+                    )
+                };
                 children[child_index - 1].key = max_key;
                 children[child_index - 1].stats = stats;
 
                 // Update the current child.
                 let child = children[child_index].position.get_mut().unwrap();
                 child.dirty = true;
-                let (max_key, stats) = { (child.max_key().clone(), child.stats()) };
+                let (max_key, stats) = { (child.max_key().clone(), child.stats(&context.reducer)) };
                 children[child_index].key = max_key;
                 children[child_index].stats = stats;
                 // If we couldn't balance enough, the caller will still need to
@@ -748,10 +828,18 @@ where
         Ok((ChangeResult::Unchanged, should_backup))
     }
 
-    fn steal_children_from_end<IndexedType, Context, Indexer, Loader>(
+    fn steal_children_from_end<IndexedType, Context, Indexer, Loader, IndexReducer>(
         child_index: usize,
         children: &mut [Interior<Index, ReducedIndex>],
-        context: &ModificationContext<IndexedType, Index, Context, Indexer, Loader>,
+        context: &ModificationContext<
+            IndexedType,
+            Index,
+            ReducedIndex,
+            Context,
+            Indexer,
+            Loader,
+            IndexReducer,
+        >,
         writer: &mut PagedWriter<'_>,
     ) -> Result<ChangeResult, Error>
     where
@@ -762,6 +850,7 @@ where
             &mut Context,
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
+        IndexReducer: Reducer<Index, ReducedIndex>,
         Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         // Check the previous child to see if it can accept any of this child.
@@ -813,14 +902,19 @@ where
                 }
                 // Update the statistics for the previous child.
                 next_child.dirty = true;
-                let (max_key, stats) = { (next_child.max_key().clone(), next_child.stats()) };
+                let (max_key, stats) = {
+                    (
+                        next_child.max_key().clone(),
+                        next_child.stats(&context.reducer),
+                    )
+                };
                 children[child_index + 1].key = max_key;
                 children[child_index + 1].stats = stats;
 
                 // Update the current child.
                 let child = children[child_index].position.get_mut().unwrap();
                 child.dirty = true;
-                let (max_key, stats) = { (child.max_key().clone(), child.stats()) };
+                let (max_key, stats) = { (child.max_key().clone(), child.stats(&context.reducer)) };
                 children[child_index].key = max_key;
                 children[child_index].stats = stats;
                 // If we couldn't balance enough, the caller will still need to
@@ -907,12 +1001,16 @@ where
         }
     }
 
-    pub(crate) fn split(
+    pub(crate) fn split<R>(
         &mut self,
-    ) -> (Interior<Index, ReducedIndex>, Interior<Index, ReducedIndex>) {
+        reducer: &R,
+    ) -> (Interior<Index, ReducedIndex>, Interior<Index, ReducedIndex>)
+    where
+        R: Reducer<Index, ReducedIndex>,
+    {
         let mut old_node = Self::from(BTreeNode::Uninitialized);
         std::mem::swap(self, &mut old_node);
-        match old_node.node {
+        let (lower, upper) = match old_node.node {
             BTreeNode::Leaf(mut children) => {
                 let upper = children
                     .splice((children.len() + 1) / 2.., std::iter::empty())
@@ -920,7 +1018,7 @@ where
                 let lower = Self::from(BTreeNode::Leaf(children));
                 let upper = Self::from(BTreeNode::Leaf(upper));
 
-                (Interior::from(lower), Interior::from(upper))
+                (lower, upper)
             }
             BTreeNode::Interior(mut children) => {
                 let upper = children
@@ -928,25 +1026,29 @@ where
                     .collect::<Vec<_>>();
                 let lower = Self::from(BTreeNode::Interior(children));
                 let upper = Self::from(BTreeNode::Interior(upper));
-                (Interior::from(lower), Interior::from(upper))
+
+                (lower, upper)
             }
             BTreeNode::Uninitialized => unreachable!(),
-        }
+        };
+
+        (Interior::new(lower, reducer), Interior::new(upper, reducer))
     }
 
-    pub(crate) fn split_root(&mut self) {
-        let (lower, upper) = self.split();
+    pub(crate) fn split_root<R>(&mut self, reducer: &R)
+    where
+        R: Reducer<Index, ReducedIndex>,
+    {
+        let (lower, upper) = self.split(reducer);
         self.node = BTreeNode::Interior(vec![lower, upper]);
     }
 
     /// Returns the collected statistics for this node.
     #[must_use]
-    pub fn stats(&self) -> ReducedIndex {
+    pub fn stats<R: Reducer<Index, ReducedIndex>>(&self, reducer: &R) -> ReducedIndex {
         match &self.node {
-            BTreeNode::Leaf(children) => ReducedIndex::reduce(children.iter().map(|c| &c.index)),
-            BTreeNode::Interior(children) => {
-                ReducedIndex::rereduce(children.iter().map(|c| &c.stats))
-            }
+            BTreeNode::Leaf(children) => reducer.reduce(children.iter().map(|c| &c.index)),
+            BTreeNode::Interior(children) => reducer.rereduce(children.iter().map(|c| &c.stats)),
             BTreeNode::Uninitialized => unreachable!(),
         }
     }
@@ -1261,7 +1363,7 @@ impl NodeInclusion {
 
 impl<
         Index: Clone + BinarySerialization + Debug + 'static,
-        ReducedIndex: Reducer<Index> + Clone + BinarySerialization + Debug + 'static,
+        ReducedIndex: Clone + BinarySerialization + Debug + 'static,
     > BinarySerialization for BTreeEntry<Index, ReducedIndex>
 {
     fn serialize_to(

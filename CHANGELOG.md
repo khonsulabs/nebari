@@ -43,6 +43,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Transaction IDs and Sequence IDs are now returned as new types,
   `TransactionId` and `SequenceId` instead of `u64`.
+- The `Root` trait now has a new associated type, `Reducer`. The `Reducer`
+  trait's methods now take `&self`. These changes allow dynamic reducers to be
+  used -- for example, in BonsaiDb, the View indexing system needs to call a
+  specific View's `reduce()` function. Without the ability to have `&self`
+  passed to the `Reducer`, there was no way to provide any state information to
+  the Reducer.
+
+  There are several changes related to this, including:
+
+  - `Root` no longer requires `Default`. Instead, a new function
+    `Root::default_with` is used to instantiate newly created tree states.
+  - `Root::tree()` requires that `Reducer` implements `Default`, but
+    `Root::tree_with_reducer()` can be used to create a `TreeRoot` with a
+    specific `Reducer` instance.
+  - `Root::deserialize` is provided an additional parameter: the reducer.
 
 ### Fixed
 

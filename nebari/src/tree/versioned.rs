@@ -24,7 +24,8 @@ use crate::{
     transaction::TransactionId,
     tree::{
         btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
-        by_sequence::SequenceId,
+        by_id::ByIdReducer,
+        by_sequence::{BySequenceReducer, SequenceId},
         copy_chunk, dynamic_order,
         key_entry::KeyEntry,
         modify::Operation,
@@ -53,11 +54,15 @@ where
     /// The by-sequence B-Tree.
     pub by_sequence_root: BTreeEntry<BySequenceIndex, BySequenceStats>,
     /// The by-id B-Tree.
-    pub by_id_root: BTreeEntry<VersionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedIndex>>,
+    pub by_id_root:
+        BTreeEntry<VersionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedIndex::Reduced>>,
+
+    reducer: ByIdReducer<EmbeddedIndex::Reducer>,
 }
 impl<EmbeddedIndex> Default for VersionedTreeRoot<EmbeddedIndex>
 where
-    EmbeddedIndex: super::EmbeddedIndex + Reducer<EmbeddedIndex> + Clone + Debug + 'static,
+    EmbeddedIndex: super::EmbeddedIndex + Clone + Debug + 'static,
+    EmbeddedIndex::Reducer: Default,
 {
     fn default() -> Self {
         Self {
@@ -65,6 +70,7 @@ where
             sequence: SequenceId(0),
             by_sequence_root: BTreeEntry::default(),
             by_id_root: BTreeEntry::default(),
+            reducer: ByIdReducer(<EmbeddedIndex::Reducer as Default>::default()),
         }
     }
 }
@@ -85,7 +91,9 @@ pub enum Children<Index, ReducedIndex> {
 
 impl<EmbeddedIndex> VersionedTreeRoot<EmbeddedIndex>
 where
-    EmbeddedIndex: super::EmbeddedIndex + Reducer<EmbeddedIndex> + Clone + Debug + 'static,
+    EmbeddedIndex: super::EmbeddedIndex + Clone + Debug + 'static,
+    ByIdReducer<EmbeddedIndex::Reducer>:
+        Reducer<VersionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedIndex::Reduced>>,
 {
     fn modify_sequence_root(
         &mut self,
@@ -96,8 +104,11 @@ where
         // Reverse so that pop is efficient.
         modification.reverse()?;
 
-        let total_sequence_records =
-            self.by_sequence_root.stats().total_sequences + modification.keys.len() as u64;
+        let total_sequence_records = self
+            .by_sequence_root
+            .stats(&BySequenceReducer)
+            .total_sequences
+            + modification.keys.len() as u64;
         let by_sequence_order = dynamic_order(total_sequence_records, max_order);
 
         let by_sequence_minimum_children = by_sequence_order / 2 - 1;
@@ -118,6 +129,7 @@ where
                         Ok(KeyOperation::Set(value.unwrap().clone()))
                     },
                     loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_>| Ok(None),
+                    reducer: BySequenceReducer,
                     _phantom: PhantomData,
                 },
                 None,
@@ -129,7 +141,7 @@ where
                 | ChangeResult::Unchanged
                 | ChangeResult::Changed => {}
                 ChangeResult::Split => {
-                    self.by_sequence_root.split_root();
+                    self.by_sequence_root.split_root(&BySequenceReducer);
                 }
             }
         }
@@ -146,7 +158,7 @@ where
         modification.reverse()?;
 
         let total_id_records =
-            self.by_id_root.stats().total_keys() + modification.keys.len() as u64;
+            self.by_id_root.stats(self.reducer()).total_keys() + modification.keys.len() as u64;
         let by_id_order = dynamic_order(total_id_records, max_order);
 
         let by_id_minimum_children = by_id_order / 2 - 1;
@@ -206,6 +218,7 @@ where
                             Ok(None)
                         }
                     },
+                    reducer: self.reducer().clone(),
                     _phantom: PhantomData,
                 },
                 None,
@@ -218,7 +231,7 @@ where
                     self.by_id_root.dirty = true;
                 }
                 ChangeResult::Split => {
-                    self.by_id_root.split_root();
+                    self.by_id_root.split_root(&self.reducer().clone());
                 }
             }
         }
@@ -231,11 +244,26 @@ where
 
 impl<EmbeddedIndex> Root for VersionedTreeRoot<EmbeddedIndex>
 where
-    EmbeddedIndex: super::EmbeddedIndex + Reducer<EmbeddedIndex> + Clone + Debug + 'static,
+    EmbeddedIndex: super::EmbeddedIndex + Clone + Debug + 'static,
 {
     const HEADER: PageHeader = PageHeader::VersionedHeader;
     type Index = VersionedByIdIndex<EmbeddedIndex>;
-    type ReducedIndex = ByIdStats<EmbeddedIndex>;
+    type ReducedIndex = ByIdStats<EmbeddedIndex::Reduced>;
+    type Reducer = ByIdReducer<EmbeddedIndex::Reducer>;
+
+    fn default_with(reducer: Self::Reducer) -> Self {
+        Self {
+            transaction_id: TransactionId(0),
+            sequence: SequenceId(0),
+            by_sequence_root: BTreeEntry::default(),
+            by_id_root: BTreeEntry::default(),
+            reducer,
+        }
+    }
+
+    fn reducer(&self) -> &Self::Reducer {
+        &self.reducer
+    }
 
     fn initialized(&self) -> bool {
         self.sequence.valid()
@@ -250,10 +278,10 @@ where
     }
 
     fn count(&self) -> u64 {
-        self.by_id_root.stats().alive_keys
+        self.by_id_root.stats(self.reducer()).alive_keys
     }
 
-    fn deserialize(mut bytes: ArcBytes<'_>) -> Result<Self, Error> {
+    fn deserialize(mut bytes: ArcBytes<'_>, reducer: Self::Reducer) -> Result<Self, Error> {
         let transaction_id = TransactionId(bytes.read_u64::<BigEndian>()?);
         let sequence = SequenceId(bytes.read_u64::<BigEndian>()?);
         let by_sequence_size = bytes.read_u32::<BigEndian>()? as usize;
@@ -278,6 +306,7 @@ where
             sequence,
             by_sequence_root,
             by_id_root,
+            reducer,
         })
     }
 
@@ -449,7 +478,7 @@ where
     ) -> Result<(), Error> {
         // Copy all of the data using the ID root.
         let mut sequence_indexes = Vec::with_capacity(
-            usize::try_from(self.by_id_root.stats().alive_keys).unwrap_or(usize::MAX),
+            usize::try_from(self.by_id_root.stats(self.reducer()).alive_keys).unwrap_or(usize::MAX),
         );
         let mut scratch = Vec::new();
         self.by_id_root.copy_data_to(
@@ -522,6 +551,7 @@ where
                     Ok(KeyOperation::Set(value.unwrap().clone()))
                 },
                 loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_>| unreachable!(),
+                reducer: BySequenceReducer,
                 _phantom: PhantomData,
             },
             None,

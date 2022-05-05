@@ -54,6 +54,9 @@ fn main() -> Result<(), Error> {
 pub struct Zeroes(pub u32);
 
 impl EmbeddedIndex for Zeroes {
+    type Reduced = Self;
+    type Reducer = ZeroesReducer;
+
     fn index(_key: &nebari::ArcBytes<'_>, value: Option<&nebari::ArcBytes<'static>>) -> Self {
         Self(
             value
@@ -63,24 +66,27 @@ impl EmbeddedIndex for Zeroes {
     }
 }
 
-impl Reducer<Self> for Zeroes {
-    fn reduce<'a, Indexes, IndexesIter>(indexes: Indexes) -> Self
+#[derive(Default, Clone, Debug)]
+pub struct ZeroesReducer;
+
+impl Reducer<Zeroes> for ZeroesReducer {
+    fn reduce<'a, Indexes, IndexesIter>(&self, indexes: Indexes) -> Zeroes
     where
-        Indexes: IntoIterator<Item = &'a Self, IntoIter = IndexesIter> + ExactSizeIterator,
-        IndexesIter: Iterator<Item = &'a Self> + ExactSizeIterator + Clone,
+        Indexes: IntoIterator<Item = &'a Zeroes, IntoIter = IndexesIter> + ExactSizeIterator,
+        IndexesIter: Iterator<Item = &'a Zeroes> + ExactSizeIterator + Clone,
     {
-        Self(indexes.into_iter().map(|i| i.0).sum())
+        Zeroes(indexes.into_iter().map(|i| i.0).sum())
     }
 
-    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(values: ReducedIndexes) -> Self
+    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(&self, values: ReducedIndexes) -> Zeroes
     where
         Self: 'a,
         ReducedIndexes:
-            IntoIterator<Item = &'a Self, IntoIter = ReducedIndexesIter> + ExactSizeIterator,
-        ReducedIndexesIter: Iterator<Item = &'a Self> + ExactSizeIterator + Clone,
+            IntoIterator<Item = &'a Zeroes, IntoIter = ReducedIndexesIter> + ExactSizeIterator,
+        ReducedIndexesIter: Iterator<Item = &'a Zeroes> + ExactSizeIterator + Clone,
     {
         // TODO change reduce to an iterator too
-        Self::reduce(values)
+        self.reduce(values)
     }
 }
 

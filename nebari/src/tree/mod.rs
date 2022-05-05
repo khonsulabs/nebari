@@ -268,7 +268,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                         CacheEntry::ArcBytes(buffer) => buffer,
                         CacheEntry::Decoded(_) => unreachable!(),
                     };
-                    let root = Root::deserialize(contents)
+                    let root = Root::deserialize(contents, active_state.root.reducer().clone())
                         .map_err(|err| ErrorKind::DataIntegrity(Box::new(err)))?;
                     if let Some(transaction_manager) = transaction_manager {
                         if root.transaction_id().valid()
@@ -569,13 +569,16 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         &mut self,
         range: &'keys KeyRangeBounds,
         in_transaction: bool,
-    ) -> Result<Root::ReducedIndex, Error>
+    ) -> Result<Option<Root::ReducedIndex>, Error>
     where
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
         Root::Index: Clone,
-        Root::ReducedIndex: Reducer<Root::Index>,
     {
-        let reduce_state = RefCell::new(ReduceState::default());
+        let reducer = {
+            let state = self.state.lock();
+            state.root.reducer().clone()
+        };
+        let reduce_state = RefCell::new(ReduceState::new(reducer));
         self.file.execute(TreeScanner {
             forwards: true,
             from_transaction: in_transaction,
@@ -762,37 +765,32 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
 }
 
 #[derive(Debug)]
-struct ReduceState<I, RI> {
+struct ReduceState<R, I, RI> {
     depths: Vec<DepthState<I, RI>>,
     lowest_key: ArcBytes<'static>,
+    reducer: R,
 }
 
-impl<I, RI> Default for ReduceState<I, RI>
+impl<R, I, RI> ReduceState<R, I, RI>
 where
     I: Clone,
-    RI: Reducer<I> + Clone,
+    RI: Clone,
+    R: Reducer<I, RI>,
 {
-    fn default() -> Self {
+    fn new(reducer: R) -> Self {
         Self {
             depths: vec![DepthState::default()],
             lowest_key: ArcBytes::default(),
+            reducer,
         }
     }
-}
 
-impl<I, RI> ReduceState<I, RI>
-where
-    I: Clone,
-    RI: Reducer<I> + Clone,
-{
     fn reduce_to_depth(&mut self, depth: usize) {
         while self.depths.len() > depth + 1 {
             let state_to_reduce = self.depths.pop().unwrap();
-            self.depths
-                .last_mut()
-                .unwrap()
-                .reduced
-                .push(state_to_reduce.finish());
+            if let Some(reduced) = state_to_reduce.finish(&self.reducer) {
+                self.depths.last_mut().unwrap().reduced.push(reduced);
+            }
         }
     }
 
@@ -807,9 +805,9 @@ where
         self.depths.last_mut().unwrap().indexes.push(index);
     }
 
-    fn finish(mut self) -> RI {
+    fn finish(mut self) -> Option<RI> {
         self.reduce_to_depth(0);
-        self.depths.pop().unwrap().finish()
+        self.depths.pop().unwrap().finish(&self.reducer)
     }
 }
 
@@ -831,19 +829,23 @@ impl<I, RI> Default for DepthState<I, RI> {
 impl<I, RI> DepthState<I, RI>
 where
     I: Clone,
-    RI: Reducer<I> + Clone,
+    RI: Clone,
 {
-    fn finish(mut self) -> RI {
+    fn finish<R>(mut self, reducer: &R) -> Option<RI>
+    where
+        R: Reducer<I, RI>,
+    {
         if !self.indexes.is_empty() {
-            self.reduced.push(RI::reduce(self.indexes.iter()));
+            self.reduced.push(reducer.reduce(self.indexes.iter()));
         }
-        RI::rereduce(self.reduced.iter())
+
+        (!self.reduced.is_empty()).then(|| reducer.rereduce(self.reduced.iter()))
     }
 }
 
 impl<File: ManagedFile, Index> TreeFile<VersionedTreeRoot<Index>, File>
 where
-    Index: EmbeddedIndex + Reducer<Index> + Clone + Debug + 'static,
+    Index: EmbeddedIndex + Clone + Debug + 'static,
 {
     /// Scans the tree for keys that are contained within `range`. If `forwards`
     /// is true, scanning starts at the lowest sort-order key and scans forward.
@@ -1325,7 +1327,7 @@ struct TreeSequenceScanner<
     KeyRangeBounds: RangeBounds<&'keys [u8]> + ?Sized,
     DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
     CallerError: Display + Debug,
-    Index: EmbeddedIndex + Reducer<Index> + Clone + Debug + 'static,
+    Index: EmbeddedIndex + Clone + Debug + 'static,
 {
     forwards: bool,
     from_transaction: bool,
@@ -1353,7 +1355,7 @@ where
     KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
     DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
     CallerError: Display + Debug,
-    Index: EmbeddedIndex + Reducer<Index> + Clone + Debug + 'static,
+    Index: EmbeddedIndex + Clone + Debug + 'static,
 {
     fn execute(self, file: &mut dyn File) -> Result<(), AbortError<CallerError>> {
         let Self {
@@ -1783,7 +1785,12 @@ impl U64Range {
 /// An index is a computed value that is stored directly within the B-Tree
 /// structure. Because these are encoded directly onto the nodes, they should be
 /// kept shorter for better performance.
-pub trait EmbeddedIndex: Serializable + Send + Sync + Sized + 'static {
+pub trait EmbeddedIndex: Serializable + Clone + Debug + Send + Sync + 'static {
+    /// The reduced representation of this index.
+    type Reduced: Serializable + Clone + Debug + Send + Sync + 'static;
+    /// The reducer that reduces arrays of `Self` or `Self::Reduced` into `Self::Reduced`.
+    type Reducer: Reducer<Self, Self::Reduced>;
+
     /// Index the key and value.
     fn index(key: &ArcBytes<'_>, value: Option<&ArcBytes<'static>>) -> Self;
 }
@@ -1799,6 +1806,8 @@ pub trait Serializable: Send + Sync + Sized + 'static {
 }
 
 impl EmbeddedIndex for () {
+    type Reduced = Self;
+    type Reducer = Self;
     fn index(_key: &ArcBytes<'_>, _value: Option<&ArcBytes<'static>>) -> Self {}
 }
 
@@ -1881,7 +1890,7 @@ mod tests {
         }
     }
 
-    fn insert_one_record<R: Root, F: ManagedFile>(
+    fn insert_one_record<R: Root + Default, F: ManagedFile>(
         context: &Context<F::Manager>,
         file_path: &Path,
         ids: &mut HashSet<u64>,
@@ -1896,9 +1905,13 @@ mod tests {
         };
         let id_buffer = ArcBytes::from(id.to_be_bytes().to_vec());
         {
-            let mut tree =
-                TreeFile::<R, F>::write(file_path, State::new(None, max_order), context, None)
-                    .unwrap();
+            let mut tree = TreeFile::<R, F>::write(
+                file_path,
+                State::new(None, max_order, R::default()),
+                context,
+                None,
+            )
+            .unwrap();
             tree.set(None, id_buffer.clone(), ArcBytes::from(b"hello world"))
                 .unwrap();
 
@@ -1909,15 +1922,19 @@ mod tests {
 
         // Try loading the file up and retrieving the data.
         {
-            let mut tree =
-                TreeFile::<R, F>::write(file_path, State::new(None, max_order), context, None)
-                    .unwrap();
+            let mut tree = TreeFile::<R, F>::write(
+                file_path,
+                State::new(None, max_order, R::default()),
+                context,
+                None,
+            )
+            .unwrap();
             let value = tree.get(&id_buffer, false).unwrap();
             assert_eq!(&*value.unwrap(), b"hello world");
         }
     }
 
-    fn remove_one_record<R: Root, F: ManagedFile>(
+    fn remove_one_record<R: Root + Default, F: ManagedFile>(
         context: &Context<F::Manager>,
         file_path: &Path,
         id: u64,
@@ -1926,7 +1943,7 @@ mod tests {
         let id_buffer = ArcBytes::from(id.to_be_bytes().to_vec());
         {
             let file = context.file_manager.append(file_path).unwrap();
-            let state = State::new(None, max_order);
+            let state = State::new(None, max_order, R::default());
             TreeFile::<R, F>::initialize_state(&state, file_path, file.id(), context, None)
                 .unwrap();
             let mut tree =
@@ -2007,7 +2024,7 @@ mod tests {
         }
     }
 
-    fn remove<R: Root>(label: &str) {
+    fn remove<R: Root + Default>(label: &str) {
         const ORDER: usize = 4;
 
         // We've seen a couple of failures in CI, but have never been able to
@@ -2073,7 +2090,7 @@ mod tests {
         spam_insert::<Unversioned, StdFile>("std-unversioned");
     }
 
-    fn spam_insert<R: Root, F: ManagedFile>(name: &str) {
+    fn spam_insert<R: Root + Default, F: ManagedFile>(name: &str) {
         const RECORDS: usize = 1_000;
         let mut rng = Pcg64::new_seed(1);
         let ids = (0..RECORDS).map(|_| rng.generate::<u64>());
@@ -2126,7 +2143,7 @@ mod tests {
         bulk_insert::<Unversioned, _>("any-unversioned", AnyFileManager::std());
     }
 
-    fn bulk_insert<R: Root, M: FileManager>(name: &str, file_manager: M) {
+    fn bulk_insert<R: Root + Default, M: FileManager>(name: &str, file_manager: M) {
         const RECORDS_PER_BATCH: usize = 10;
         const BATCHES: usize = 1000;
         let mut rng = Pcg64::new_seed(1);
@@ -2221,7 +2238,7 @@ mod tests {
         assert_eq!(&all_records, &all_through_scan);
     }
 
-    fn compact<R: Root, M: FileManager>(label: &str, file_manager: M) {
+    fn compact<R: Root + Default, M: FileManager>(label: &str, file_manager: M) {
         const ORDER: usize = 4;
         let mut rng = Pcg64::new_seed(1);
         let context = Context {
@@ -2414,7 +2431,7 @@ mod tests {
         assert_eq!(tree.get(b"test", false).unwrap().unwrap(), b"hello world");
     }
 
-    fn edit_keys<R: Root, M: FileManager>(label: &str, file_manager: M) {
+    fn edit_keys<R: Root + Default, M: FileManager>(label: &str, file_manager: M) {
         let context = Context {
             file_manager,
             vault: None,
@@ -2512,7 +2529,7 @@ mod tests {
 
         let mut tree = TreeFile::<Unversioned, StdFile>::write(
             &file_path,
-            State::new(None, Some(4)),
+            State::new(None, Some(4), Unversioned::default()),
             &context,
             None,
         )
@@ -2522,19 +2539,24 @@ mod tests {
             tree.set(None, bytes.clone(), bytes.clone()).unwrap();
         }
 
-        assert_eq!(tree.reduce(&(..), false).unwrap().alive_keys, 256);
+        assert_eq!(tree.reduce(&(..), false).unwrap().unwrap().alive_keys, 256);
         assert_eq!(
-            tree.reduce(&ExcludedStart(&[0]), false).unwrap().alive_keys,
+            tree.reduce(&ExcludedStart(&[0]), false)
+                .unwrap()
+                .unwrap()
+                .alive_keys,
             255
         );
         assert_eq!(
             tree.reduce(&(&[0][..]..&[u8::MAX][..]), false)
+                .unwrap()
                 .unwrap()
                 .alive_keys,
             255
         );
         assert_eq!(
             tree.reduce(&(&[1][..]..=&[100][..]), false)
+                .unwrap()
                 .unwrap()
                 .alive_keys,
             100
@@ -2545,6 +2567,7 @@ mod tests {
                 assert_eq!(
                     tree.reduce(&(&[start][..]..&[end][..]), false)
                         .unwrap()
+                        .unwrap()
                         .alive_keys,
                     u64::from(end - start)
                 );
@@ -2552,7 +2575,7 @@ mod tests {
         }
     }
 
-    fn first_last<R: Root, M: FileManager>(label: &str, file_manager: M) {
+    fn first_last<R: Root + Default, M: FileManager>(label: &str, file_manager: M) {
         let context = Context {
             file_manager,
             vault: None,
@@ -2612,7 +2635,7 @@ mod tests {
         first_last::<Unversioned, _>("any-unversioned", AnyFileManager::memory());
     }
 
-    fn bulk_compare_swaps<R: Root, M: FileManager>(label: &str, file_manager: M) {
+    fn bulk_compare_swaps<R: Root + Default, M: FileManager>(label: &str, file_manager: M) {
         const BATCH: usize = 10_000;
         let context = Context {
             file_manager,
@@ -2624,8 +2647,7 @@ mod tests {
         let file_path = temp_dir.join("tree");
 
         let mut tree =
-            TreeFile::<R, M::File>::write(&file_path, State::new(None, None), &context, None)
-                .unwrap();
+            TreeFile::<R, M::File>::write(&file_path, State::default(), &context, None).unwrap();
         let mut rng = Pcg64::new_seed(1);
 
         let mut database_state = HashMap::new();

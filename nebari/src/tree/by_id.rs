@@ -154,13 +154,17 @@ where
     }
 }
 
-impl<EmbeddedIndex, EmbeddedStats> Reducer<VersionedByIdIndex<EmbeddedIndex>>
-    for ByIdStats<EmbeddedStats>
+#[derive(Clone, Default, Debug)]
+pub struct ByIdReducer<EmbeddedReducer>(pub EmbeddedReducer);
+
+impl<EmbeddedReducer, EmbeddedIndex, EmbeddedStats>
+    Reducer<VersionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedStats>>
+    for ByIdReducer<EmbeddedReducer>
 where
-    EmbeddedIndex: super::EmbeddedIndex,
-    EmbeddedStats: Reducer<EmbeddedIndex>,
+    EmbeddedReducer: Reducer<EmbeddedIndex, EmbeddedStats>,
+    EmbeddedIndex: super::EmbeddedIndex<Reducer = EmbeddedReducer, Reduced = EmbeddedStats>,
 {
-    fn reduce<'a, Indexes, IndexesIter>(indexes: Indexes) -> Self
+    fn reduce<'a, Indexes, IndexesIter>(&self, indexes: Indexes) -> ByIdStats<EmbeddedStats>
     where
         EmbeddedIndex: 'a,
         Indexes: IntoIterator<Item = &'a VersionedByIdIndex<EmbeddedIndex>, IntoIter = IndexesIter>
@@ -168,30 +172,34 @@ where
         IndexesIter:
             Iterator<Item = &'a VersionedByIdIndex<EmbeddedIndex>> + ExactSizeIterator + Clone,
     {
-        reduce(indexes)
+        self.reduce(indexes)
     }
 
     fn rereduce<
         'a,
-        ReducedIndexes: IntoIterator<Item = &'a Self, IntoIter = ReducedIndexesIter> + ExactSizeIterator,
-        ReducedIndexesIter: Iterator<Item = &'a Self> + ExactSizeIterator + Clone,
+        ReducedIndexes: IntoIterator<Item = &'a ByIdStats<EmbeddedStats>, IntoIter = ReducedIndexesIter>
+            + ExactSizeIterator,
+        ReducedIndexesIter: Iterator<Item = &'a ByIdStats<EmbeddedStats>> + ExactSizeIterator + Clone,
     >(
+        &self,
         values: ReducedIndexes,
-    ) -> Self
+    ) -> ByIdStats<EmbeddedStats>
     where
         Self: 'a,
+        EmbeddedStats: 'a,
     {
-        rereduce(values)
+        self.rereduce(values)
     }
 }
 
-impl<EmbeddedIndex, EmbeddedStats> Reducer<UnversionedByIdIndex<EmbeddedIndex>>
-    for ByIdStats<EmbeddedStats>
+impl<EmbeddedReducer, EmbeddedIndex, EmbeddedStats>
+    Reducer<UnversionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedStats>>
+    for ByIdReducer<EmbeddedReducer>
 where
-    EmbeddedIndex: super::EmbeddedIndex,
-    EmbeddedStats: Reducer<EmbeddedIndex>,
+    EmbeddedReducer: Reducer<EmbeddedIndex, EmbeddedStats>,
+    EmbeddedIndex: super::EmbeddedIndex<Reducer = EmbeddedReducer, Reduced = EmbeddedStats>,
 {
-    fn reduce<'a, Indexes, IndexesIter>(indexes: Indexes) -> Self
+    fn reduce<'a, Indexes, IndexesIter>(&self, indexes: Indexes) -> ByIdStats<EmbeddedStats>
     where
         EmbeddedIndex: 'a,
         Indexes: IntoIterator<Item = &'a UnversionedByIdIndex<EmbeddedIndex>, IntoIter = IndexesIter>
@@ -199,57 +207,88 @@ where
         IndexesIter:
             Iterator<Item = &'a UnversionedByIdIndex<EmbeddedIndex>> + ExactSizeIterator + Clone,
     {
-        reduce(indexes)
+        self.reduce(indexes)
     }
 
-    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(values: ReducedIndexes) -> Self
+    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter>(
+        &self,
+        values: ReducedIndexes,
+    ) -> ByIdStats<EmbeddedStats>
     where
         Self: 'a,
-        ReducedIndexes:
-            IntoIterator<Item = &'a Self, IntoIter = ReducedIndexesIter> + ExactSizeIterator,
-        ReducedIndexesIter: Iterator<Item = &'a Self> + ExactSizeIterator + Clone,
+        EmbeddedStats: 'a,
+        ReducedIndexes: IntoIterator<Item = &'a ByIdStats<EmbeddedStats>, IntoIter = ReducedIndexesIter>
+            + ExactSizeIterator,
+        ReducedIndexesIter:
+            Iterator<Item = &'a ByIdStats<EmbeddedStats>> + ExactSizeIterator + Clone,
     {
-        rereduce(values)
+        self.rereduce(values)
     }
 }
 
-fn reduce<'a, EmbeddedIndex, EmbeddedStats, Id, Indexes, IndexesIter>(
-    values: Indexes,
-) -> ByIdStats<EmbeddedStats>
-where
-    Id: IdIndex<EmbeddedIndex> + 'a,
-    EmbeddedIndex: 'a,
-    Indexes: IntoIterator<Item = &'a Id, IntoIter = IndexesIter> + ExactSizeIterator,
-    IndexesIter: Iterator<Item = &'a Id> + ExactSizeIterator + Clone,
-    EmbeddedStats: Reducer<EmbeddedIndex>,
-{
-    let values = values.into_iter();
-    let (alive_keys, deleted_keys, total_indexed_bytes) = values
-        .clone()
-        .map(|index| {
-            if index.position() > 0 {
-                // Alive key
-                (1, 0, u64::from(index.value_size()))
-            } else {
-                // Deleted
-                (0, 1, 0)
-            }
-        })
-        .reduce(
-            |(total_alive, total_deleted, total_size), (alive, deleted, size)| {
-                (
-                    total_alive + alive,
-                    total_deleted + deleted,
-                    total_size + size,
-                )
-            },
-        )
-        .unwrap_or_default();
-    ByIdStats {
-        alive_keys,
-        deleted_keys,
-        total_indexed_bytes,
-        embedded: EmbeddedStats::reduce(values.map(IdIndex::embedded)),
+impl<EmbeddedReducer> ByIdReducer<EmbeddedReducer> {
+    fn reduce<'a, EmbeddedIndex, EmbeddedStats, Id, Indexes, IndexesIter>(
+        &self,
+        values: Indexes,
+    ) -> ByIdStats<EmbeddedStats>
+    where
+        Id: IdIndex<EmbeddedIndex> + 'a,
+        EmbeddedIndex:
+            super::EmbeddedIndex<Reducer = EmbeddedReducer, Reduced = EmbeddedStats> + 'a,
+        Indexes: IntoIterator<Item = &'a Id, IntoIter = IndexesIter> + ExactSizeIterator,
+        IndexesIter: Iterator<Item = &'a Id> + ExactSizeIterator + Clone,
+        EmbeddedReducer: Reducer<EmbeddedIndex, EmbeddedStats>,
+    {
+        let values = values.into_iter();
+        let (alive_keys, deleted_keys, total_indexed_bytes) = values
+            .clone()
+            .map(|index| {
+                if index.position() > 0 {
+                    // Alive key
+                    (1, 0, u64::from(index.value_size()))
+                } else {
+                    // Deleted
+                    (0, 1, 0)
+                }
+            })
+            .reduce(
+                |(total_alive, total_deleted, total_size), (alive, deleted, size)| {
+                    (
+                        total_alive + alive,
+                        total_deleted + deleted,
+                        total_size + size,
+                    )
+                },
+            )
+            .unwrap_or_default();
+        ByIdStats {
+            alive_keys,
+            deleted_keys,
+            total_indexed_bytes,
+            embedded: self.0.reduce(values.map(IdIndex::embedded)),
+        }
+    }
+
+    fn rereduce<'a, ReducedIndexes, ReducedIndexesIter, EmbeddedStats, EmbeddedIndex>(
+        &self,
+        values: ReducedIndexes,
+    ) -> ByIdStats<EmbeddedStats>
+    where
+        EmbeddedStats: 'a,
+        ReducedIndexes: IntoIterator<Item = &'a ByIdStats<EmbeddedStats>, IntoIter = ReducedIndexesIter>
+            + ExactSizeIterator,
+        ReducedIndexesIter:
+            Iterator<Item = &'a ByIdStats<EmbeddedStats>> + ExactSizeIterator + Clone,
+        EmbeddedReducer: Reducer<EmbeddedIndex, EmbeddedStats>,
+    {
+        let values = values.into_iter();
+        ByIdStats {
+            alive_keys: values.clone().map(|v| v.alive_keys).sum(),
+            deleted_keys: values.clone().map(|v| v.deleted_keys).sum(),
+            total_indexed_bytes: values.clone().map(|v| v.total_indexed_bytes).sum(),
+            // TODO change this to an iterator
+            embedded: self.0.rereduce(values.map(|v| &v.embedded)),
+        }
     }
 }
 
@@ -290,25 +329,5 @@ where
 
     fn embedded(&self) -> &EmbeddedIndex {
         &self.embedded
-    }
-}
-
-fn rereduce<
-    'a,
-    ReducedIndexes: IntoIterator<Item = &'a ByIdStats<EmbeddedStats>, IntoIter = ReducedIndexesIter>
-        + ExactSizeIterator,
-    ReducedIndexesIter: Iterator<Item = &'a ByIdStats<EmbeddedStats>> + ExactSizeIterator + Clone,
-    EmbeddedStats: Reducer<EmbeddedIndex> + 'a,
-    EmbeddedIndex,
->(
-    values: ReducedIndexes,
-) -> ByIdStats<EmbeddedStats> {
-    let values = values.into_iter();
-    ByIdStats {
-        alive_keys: values.clone().map(|v| v.alive_keys).sum(),
-        deleted_keys: values.clone().map(|v| v.deleted_keys).sum(),
-        total_indexed_bytes: values.clone().map(|v| v.total_indexed_bytes).sum(),
-        // TODO change this to an iterator
-        embedded: EmbeddedStats::rereduce(values.map(|v| &v.embedded)),
     }
 }

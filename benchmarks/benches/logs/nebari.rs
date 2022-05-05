@@ -4,7 +4,7 @@ use std::{
 };
 
 use nebari::{
-    io::{fs::StdFile, FileManager, ManagedFile, OpenableFile},
+    io::fs::StdFile,
     tree::{Modification, Operation, State, TreeFile},
     ArcBytes, ChunkCache, Context,
 };
@@ -39,14 +39,11 @@ impl<B: NebariBenchmark> SimpleBench for InsertLogs<B> {
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
         let tempfile = TempDir::new()?;
-        let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
-        let file = manager.append(tempfile.path().join("tree"))?;
-        let state = State::initialized(file.id(), None);
-        let tree = TreeFile::<B::Root, StdFile>::new(
-            file,
-            state,
+        let tree = TreeFile::<B::Root, StdFile>::write(
+            tempfile.path().join("tree"),
+            State::default(),
+            &Context::default(),
             None,
-            Some(ChunkCache::new(100, 160_384)),
         )?;
 
         Ok(Self {
@@ -106,14 +103,11 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
         _group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Self::GroupState {
         let tempfile = TempDir::new().unwrap();
-        let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
-        let file = manager.append(tempfile.path().join("tree")).unwrap();
-        let state = State::initialized(file.id(), None);
-        let mut tree = TreeFile::<B::Root, StdFile>::new(
-            file,
-            state,
+        let mut tree = TreeFile::<B::Root, StdFile>::write(
+            tempfile.path().join("tree"),
+            State::default(),
+            &Context::default(),
             None,
-            Some(ChunkCache::new(2000, 160_384)),
         )
         .unwrap();
 
@@ -198,17 +192,13 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
         _group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Self::GroupState {
         let tempfile = TempDir::new().unwrap();
-        let manager = <<StdFile as ManagedFile>::Manager as Default>::default();
-        let file = manager.append(tempfile.path().join("tree")).unwrap();
-        let state = State::initialized(file.id(), None);
-        let mut tree = TreeFile::<B::Root, StdFile>::new(
-            file,
-            state,
+        let mut tree = TreeFile::<B::Root, StdFile>::write(
+            tempfile.path().join("tree"),
+            State::default(),
+            &Context::default(),
             None,
-            Some(ChunkCache::new(2000, 160_384)),
         )
         .unwrap();
-
         config.for_each_database_chunk(1_000_000, |chunk| {
             tree.modify(Modification {
                 transaction_id: None,

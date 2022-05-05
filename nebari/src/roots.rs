@@ -23,9 +23,11 @@ use crate::{
     io::{fs::StdFileManager, FileManager, ManagedFile},
     transaction::{LogEntry, ManagedTransaction, TransactionId, TransactionManager},
     tree::{
-        self, root::AnyTreeRoot, state::AnyTreeState, EmbeddedIndex, KeySequence, Modification,
-        Operation, Reducer, ScanEvaluation, SequenceId, State, TransactableCompaction, TreeFile,
-        TreeRoot, VersionedTreeRoot,
+        self,
+        root::{AnyReducer, AnyTreeRoot},
+        state::AnyTreeState,
+        EmbeddedIndex, KeySequence, Modification, Operation, ScanEvaluation, SequenceId, State,
+        TransactableCompaction, TreeFile, TreeRoot, VersionedTreeRoot,
     },
     vault::AnyVault,
     ArcBytes, ChunkCache, ErrorKind,
@@ -107,11 +109,12 @@ impl<File: ManagedFile> Roots<File> {
         if !path.exists() {
             self.context().file_manager.append(&path)?;
         }
-        let state = self.tree_state(root.name.clone());
+        let state = self.tree_state(root.clone());
         Ok(Tree {
             roots: self.clone(),
             state,
             vault: root.vault,
+            reducer: root.reducer,
             name: root.name,
         })
     }
@@ -144,8 +147,8 @@ impl<File: ManagedFile> Roots<File> {
         Ok(names)
     }
 
-    fn tree_state<Root: tree::Root>(&self, name: impl Into<Cow<'static, str>>) -> State<Root> {
-        self.tree_states(&[Root::tree(name)])
+    fn tree_state<Root: tree::Root>(&self, root: TreeRoot<Root, File>) -> State<Root> {
+        self.tree_states(&[root])
             .into_iter()
             .next()
             .unwrap()
@@ -417,7 +420,7 @@ impl<Root: tree::Root, File: ManagedFile> AnyTransactionTree<File> for Transacti
 
 impl<File: ManagedFile, Index> TransactionTree<VersionedTreeRoot<Index>, File>
 where
-    Index: Clone + Reducer<Index> + EmbeddedIndex + Debug + 'static,
+    Index: Clone + EmbeddedIndex + Debug + 'static,
 {
     /// Returns the latest sequence id.
     pub fn current_sequence_id(&self) -> SequenceId {
@@ -572,7 +575,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     pub fn reduce<'keys, KeyRangeBounds>(
         &mut self,
         range: &'keys KeyRangeBounds,
-    ) -> Result<Root::ReducedIndex, Error>
+    ) -> Result<Option<Root::ReducedIndex>, Error>
     where
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + Clone + ?Sized,
     {
@@ -717,6 +720,7 @@ impl<M: FileManager> Config<M> {
 pub struct Tree<Root: tree::Root, File: ManagedFile> {
     roots: Roots<File>,
     state: State<Root>,
+    reducer: Arc<dyn AnyReducer>,
     vault: Option<Arc<dyn AnyVault>>,
     name: Cow<'static, str>,
 }
@@ -727,6 +731,7 @@ impl<Root: tree::Root, File: ManagedFile> Clone for Tree<Root, File> {
             roots: self.roots.clone(),
             state: self.state.clone(),
             vault: self.vault.clone(),
+            reducer: self.reducer.clone(),
             name: self.name.clone(),
         }
     }
@@ -765,7 +770,14 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     }
 
     fn begin_transaction(&self) -> Result<ExecutingTransaction<File>, Error> {
-        let mut root = Root::tree(self.name.clone());
+        let reducer = self
+            .reducer
+            .as_ref()
+            .as_any()
+            .downcast_ref::<Root::Reducer>()
+            .unwrap()
+            .clone();
+        let mut root = Root::tree_with_reducer(self.name.clone(), reducer);
         if let Some(vault) = &self.vault {
             root.vault = Some(vault.clone());
         }
@@ -970,18 +982,14 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     pub fn reduce<'keys, KeyRangeBounds>(
         &self,
         range: &'keys KeyRangeBounds,
-    ) -> Result<Root::ReducedIndex, Error>
+    ) -> Result<Option<Root::ReducedIndex>, Error>
     where
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + Clone + ?Sized,
     {
         catch_compaction_and_retry(move || {
             let mut tree = match self.open_for_read() {
                 Ok(tree) => tree,
-                Err(err) if err.kind.is_file_not_found() => {
-                    return Ok(<Root::ReducedIndex as Reducer<Root::Index>>::reduce(
-                        std::iter::empty(),
-                    ))
-                }
+                Err(err) if err.kind.is_file_not_found() => return Ok(None),
                 Err(err) => return Err(err),
             };
 
@@ -1074,7 +1082,18 @@ impl<Root: tree::Root, File: ManagedFile> AnyTreeRoot<File> for Tree<Root, File>
     }
 
     fn default_state(&self) -> Box<dyn AnyTreeState> {
-        Box::new(State::<Root>::default())
+        Box::new(State::<Root>::new(
+            None,
+            None,
+            Root::default_with(
+                self.reducer
+                    .as_ref()
+                    .as_any()
+                    .downcast_ref::<Root::Reducer>()
+                    .unwrap()
+                    .clone(),
+            ),
+        ))
     }
 
     fn begin_transaction(
@@ -1109,7 +1128,7 @@ impl<Root: tree::Root, File: ManagedFile> AnyTreeRoot<File> for Tree<Root, File>
 
 impl<File: ManagedFile, Index> Tree<VersionedTreeRoot<Index>, File>
 where
-    Index: EmbeddedIndex + Reducer<Index> + Clone + Debug + 'static,
+    Index: EmbeddedIndex + Clone + Debug + 'static,
 {
     /// Scans the tree for keys that are contained within `range`. If `forwards`
     /// is true, scanning starts at the lowest sort-order key and scans forward.
@@ -1480,7 +1499,10 @@ mod tests {
         compact_test::<Unversioned, _>(AnyFileManager::memory());
     }
 
-    fn compact_test<R: Root, M: FileManager>(file_manager: M) {
+    fn compact_test<R: Root, M: FileManager>(file_manager: M)
+    where
+        R::Reducer: Default,
+    {
         const OPERATION_COUNT: usize = 256;
         const WORKER_COUNT: usize = 4;
         let tempdir = tempdir().unwrap();

@@ -98,7 +98,7 @@ pub trait BenchConfig: Display {
 
 pub trait NebariBenchmark {
     const BACKEND: &'static str;
-    type Root: Root;
+    type Root: Root + Default;
 }
 
 pub struct VersionedBenchmark;

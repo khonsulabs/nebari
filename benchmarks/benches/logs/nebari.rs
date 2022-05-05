@@ -5,7 +5,7 @@ use std::{
 
 use nebari::{
     io::fs::StdFile,
-    tree::{Modification, Operation, State, TreeFile},
+    tree::{Modification, Operation, PersistenceMode, State, TreeFile},
     ArcBytes, ChunkCache, Context,
 };
 use tempfile::TempDir;
@@ -70,7 +70,7 @@ impl<B: NebariBenchmark> SimpleBench for InsertLogs<B> {
             let batch = self.state.next().unwrap();
             let start = Instant::now();
             self.tree.modify(Modification {
-                transaction_id: None,
+                persistence_mode: PersistenceMode::Sync,
                 keys: batch
                     .iter()
                     .map(|e| ArcBytes::from(e.id.to_be_bytes()))
@@ -113,7 +113,7 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
 
         config.for_each_database_chunk(1_000_000, |chunk| {
             tree.modify(Modification {
-                transaction_id: None,
+                persistence_mode: PersistenceMode::Sync,
                 keys: chunk
                     .iter()
                     .map(|e| ArcBytes::from(e.id.to_be_bytes()))
@@ -201,7 +201,7 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
         .unwrap();
         config.for_each_database_chunk(1_000_000, |chunk| {
             tree.modify(Modification {
-                transaction_id: None,
+                persistence_mode: PersistenceMode::Sync,
                 keys: chunk
                     .iter()
                     .map(|e| ArcBytes::from(e.id.to_be_bytes()))

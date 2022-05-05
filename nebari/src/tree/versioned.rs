@@ -29,7 +29,7 @@ use crate::{
         copy_chunk, dynamic_order,
         key_entry::KeyEntry,
         modify::Operation,
-        BTreeNode, Interior, PageHeader, Reducer, Root,
+        BTreeNode, Interior, PageHeader, PersistenceMode, Reducer, Root,
     },
     vault::AnyVault,
     ArcBytes, ChunkCache, ErrorKind,
@@ -347,7 +347,7 @@ where
         writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
-        let transaction_id = modification.transaction_id;
+        let persistence_mode = modification.persistence_mode;
 
         // Insert into both trees
         let mut changes = EntryChanges {
@@ -372,7 +372,7 @@ where
             })
             .collect();
         let sequence_modifications = Modification {
-            transaction_id,
+            persistence_mode,
             keys,
             operation: Operation::SetEach(values),
         };
@@ -380,7 +380,7 @@ where
         self.modify_sequence_root(sequence_modifications, writer, max_order)?;
 
         // Only update the transaction id if a new one was specified.
-        if let Some(transaction_id) = transaction_id {
+        if let Some(transaction_id) = persistence_mode.transaction_id() {
             self.transaction_id = transaction_id;
         }
 
@@ -529,7 +529,7 @@ where
         }
 
         let mut modification = Modification {
-            transaction_id: Some(self.transaction_id),
+            persistence_mode: PersistenceMode::Transactional(self.transaction_id),
             keys,
             operation: Operation::SetEach(indexes),
         };

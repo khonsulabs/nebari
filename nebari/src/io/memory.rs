@@ -79,6 +79,10 @@ impl super::File for MemoryFile {
         Ok(file_buffer.len() as u64)
     }
 
+    fn synchronize(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+
     fn close(self) -> Result<(), Error> {
         Ok(())
     }

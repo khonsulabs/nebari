@@ -517,7 +517,7 @@ impl FileOp<Result<(), Error>> for LogWriter {
 
         drop(log_position);
 
-        log.flush()?;
+        log.synchronize()?;
 
         self.state
             .note_transaction_ids_completed(&completed_transactions);

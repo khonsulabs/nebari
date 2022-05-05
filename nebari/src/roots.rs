@@ -26,8 +26,8 @@ use crate::{
         self,
         root::{AnyReducer, AnyTreeRoot},
         state::AnyTreeState,
-        EmbeddedIndex, KeySequence, Modification, Operation, ScanEvaluation, SequenceId, State,
-        TransactableCompaction, TreeFile, TreeRoot, VersionedTreeRoot,
+        EmbeddedIndex, KeySequence, Modification, Operation, PersistenceMode, ScanEvaluation,
+        SequenceId, State, TransactableCompaction, TreeFile, TreeRoot, VersionedTreeRoot,
     },
     vault::AnyVault,
     ArcBytes, ChunkCache, ErrorKind,
@@ -447,7 +447,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     ) -> Result<(), Error> {
         self.tree.modify(Modification {
             keys,
-            transaction_id: Some(self.transaction_id),
+            persistence_mode: PersistenceMode::Transactional(self.transaction_id),
             operation,
         })
     }
@@ -458,7 +458,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
         key: impl Into<ArcBytes<'static>>,
         value: impl Into<ArcBytes<'static>>,
     ) -> Result<Option<ArcBytes<'static>>, Error> {
-        self.tree.replace(key, value, Some(self.transaction_id))
+        self.tree.replace(key, value, self.transaction_id)
     }
 
     /// Returns the current value of `key`. This will return updated information
@@ -469,7 +469,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
 
     /// Removes `key` and returns the existing value, if present.
     pub fn remove(&mut self, key: &[u8]) -> Result<Option<ArcBytes<'static>>, Error> {
-        self.tree.remove(key, Some(self.transaction_id))
+        self.tree.remove(key, self.transaction_id)
     }
 
     /// Compares the value of `key` against `old`. If the values match, key will
@@ -482,7 +482,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
         new: Option<ArcBytes<'_>>,
     ) -> Result<(), CompareAndSwapError> {
         self.tree
-            .compare_and_swap(key, old, new, Some(self.transaction_id))
+            .compare_and_swap(key, old, new, self.transaction_id)
     }
 
     /// Retrieves the values of `keys`. If any keys are not found, they will be
@@ -565,12 +565,14 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
 
     /// Returns the reduced index over the provided range. This is an
     /// aggregation function that builds atop the `scan()` operation which calls
-    /// [`Reducer::reduce()`] and [`Reducer::rereduce()`] on all matching
+    /// [`Reducer::reduce()`](crate::tree::Reducer::reduce) and
+    /// [`Reducer::rereduce()`](crate::tree::Reducer::rereduce) on all matching
     /// indexes stored within the nodes of this tree, producing a single
     /// aggregated [`Root::ReducedIndex`](tree::Root::ReducedIndex) value.
     ///
-    /// If no keys match, the returned result is what [`Reducer::rereduce()`]
-    /// returns when an empty slice is provided.
+    /// If no keys match, the returned result is what
+    /// [`Reducer::rereduce()`](crate::tree::Reducer::rereduce) returns when an
+    /// empty slice is provided.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn reduce<'keys, KeyRangeBounds>(
         &mut self,
@@ -972,12 +974,14 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
 
     /// Returns the reduced index over the provided range. This is an
     /// aggregation function that builds atop the `scan()` operation which calls
-    /// [`Reducer::reduce()`] and [`Reducer::rereduce()`] on all matching
+    /// [`Reducer::reduce()`](crate::tree::Reducer::reduce) and
+    /// [`Reducer::rereduce()`](crate::tree::Reducer::rereduce) on all matching
     /// indexes stored within the nodes of this tree, producing a single
     /// aggregated [`Root::ReducedIndex`](tree::Root::ReducedIndex) value.
     ///
-    /// If no keys match, the returned result is what [`Reducer::rereduce()`]
-    /// returns when an empty slice is provided.
+    /// If no keys match, the returned result is what
+    /// [`Reducer::rereduce()`](crate::tree::Reducer::rereduce) returns when an
+    /// empty slice is provided.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn reduce<'keys, KeyRangeBounds>(
         &self,

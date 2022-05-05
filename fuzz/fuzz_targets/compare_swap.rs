@@ -4,7 +4,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use libfuzzer_sys::fuzz_target;
 use nebari::{
     io::{fs::StdFile, FileManager},
-    tree::{CompareSwap, KeyOperation, Modification, Operation, State, TreeFile, Unversioned},
+    tree::{
+        CompareSwap, KeyOperation, Modification, Operation, PersistenceMode, State, TreeFile,
+        Unversioned,
+    },
     ArcBytes, Context,
 };
 use tempfile::NamedTempFile;
@@ -23,7 +26,7 @@ fuzz_target!(|batches: Vec<BTreeSet<u16>>| {
     }
     for batch in batches {
         tree.modify(Modification {
-            transaction_id: None,
+            persistence_mode: PersistenceMode::Sync,
             keys: batch
                 .iter()
                 .map(|key| ArcBytes::from(key.to_be_bytes()))

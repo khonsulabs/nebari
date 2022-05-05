@@ -69,7 +69,7 @@ use crate::{
     error::Error,
     io::{File, FileManager, FileOp, ManagedFile, ManagedFileOpener, OpenableFile, OperableFile},
     roots::AbortError,
-    transaction::{ManagedTransaction, TransactionId, TransactionManager},
+    transaction::{ManagedTransaction, TransactionManager},
     tree::{btree_entry::ScanArgs, serialization::BinarySerialization},
     vault::AnyVault,
     ArcBytes, ChunkCache, CompareAndSwapError, Context, ErrorKind,
@@ -95,7 +95,7 @@ pub use self::{
     by_sequence::{BySequenceIndex, BySequenceStats, SequenceId},
     interior::{Interior, Pointer},
     key_entry::{KeyEntry, ValueIndex},
-    modify::{CompareSwap, CompareSwapFn, Modification, Operation},
+    modify::{CompareSwap, CompareSwapFn, Modification, Operation, PersistenceMode},
     root::{AnyTreeRoot, Root, TreeRoot},
     state::{ActiveState, State},
     unversioned::{Unversioned, UnversionedTreeRoot},
@@ -314,7 +314,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     /// [`replace()`](Self::replace) instead.
     pub fn set(
         &mut self,
-        transaction_id: Option<TransactionId>,
+        persistence_mode: impl Into<PersistenceMode>,
         key: impl Into<ArcBytes<'static>>,
         value: impl Into<ArcBytes<'static>>,
     ) -> Result<(), Error> {
@@ -323,7 +323,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
             modification: Some(Modification {
-                transaction_id,
+                persistence_mode: persistence_mode.into(),
                 keys: vec![key.into()],
                 operation: Operation::Set(value.into()),
             }),
@@ -353,11 +353,11 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         key: &[u8],
         old: Option<&[u8]>,
         mut new: Option<ArcBytes<'_>>,
-        transaction_id: Option<TransactionId>,
+        persistence_mode: impl Into<PersistenceMode>,
     ) -> Result<(), CompareAndSwapError> {
         let mut result = Ok(());
         self.modify(Modification {
-            transaction_id,
+            persistence_mode: persistence_mode.into(),
             keys: vec![ArcBytes::from(key)],
             operation: Operation::CompareSwap(CompareSwap::new(&mut |_key,
                                                                      value: Option<
@@ -383,11 +383,11 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     pub fn remove(
         &mut self,
         key: &[u8],
-        transaction_id: Option<TransactionId>,
+        persistence_mode: impl Into<PersistenceMode>,
     ) -> Result<Option<ArcBytes<'static>>, Error> {
         let mut existing_value = None;
         self.modify(Modification {
-            transaction_id,
+            persistence_mode: persistence_mode.into(),
             keys: vec![ArcBytes::from(key)],
             operation: Operation::CompareSwap(CompareSwap::new(&mut |_key, value| {
                 existing_value = value;
@@ -403,12 +403,12 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         &mut self,
         key: impl Into<ArcBytes<'static>>,
         value: impl Into<ArcBytes<'static>>,
-        transaction_id: Option<TransactionId>,
+        persistence_mode: impl Into<PersistenceMode>,
     ) -> Result<Option<ArcBytes<'static>>, Error> {
         let mut existing_value = None;
         let mut value = Some(value.into());
         self.modify(Modification {
-            transaction_id,
+            persistence_mode: persistence_mode.into(),
             keys: vec![key.into()],
             operation: Operation::CompareSwap(CompareSwap::new(&mut |_, stored_value| {
                 existing_value = stored_value;
@@ -957,7 +957,14 @@ where
             .root
             .copy_data_to(true, file, &mut copied_chunks, &mut writer, self.vault)?;
 
-        save_tree(&mut write_state, self.vault, None, writer, self.scratch)?;
+        save_tree(
+            &mut write_state,
+            self.vault,
+            None,
+            writer,
+            self.scratch,
+            true,
+        )?;
 
         // Close any existing handles to the file. This ensures that once we
         // save the tree, new requests to the file manager will point to the new
@@ -1020,6 +1027,7 @@ where
                 self.cache,
                 data_block,
                 self.scratch,
+                true,
             )
         } else {
             Ok(())
@@ -1054,7 +1062,8 @@ where
         )?;
 
         let modification = self.modification.take().unwrap();
-        let is_transactional = modification.transaction_id.is_some();
+        let persistence_mode = modification.persistence_mode;
+        let is_transactional = persistence_mode.transaction_id().is_some();
         let max_order = active_state.max_order;
 
         // Execute the modification
@@ -1075,6 +1084,7 @@ where
                 self.cache,
                 data_block,
                 self.scratch,
+                persistence_mode.should_synchronize(),
             )?;
             active_state.publish(self.state);
         }
@@ -1090,6 +1100,7 @@ fn save_tree<Root: root::Root>(
     cache: Option<&ChunkCache>,
     mut data_block: PagedWriter<'_>,
     scratch: &mut Vec<u8>,
+    synchronize: bool,
 ) -> Result<(), Error> {
     scratch.clear();
     active_state.root.serialize(&mut data_block, scratch)?;
@@ -1109,7 +1120,10 @@ fn save_tree<Root: root::Root>(
     let (file, after_header) = header_block.finish()?;
     active_state.current_position = after_header;
 
-    file.flush()?;
+    if synchronize {
+        file.synchronize()?;
+    }
+
     Ok(())
 }
 
@@ -1950,7 +1964,7 @@ mod tests {
                 TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
                     .unwrap();
             tree.modify(Modification {
-                transaction_id: None,
+                persistence_mode: PersistenceMode::Sync,
                 keys: vec![id_buffer.clone()],
                 operation: Operation::Remove,
             })
@@ -2163,7 +2177,7 @@ mod tests {
                 .collect::<Vec<_>>();
             ids.sort_unstable();
             let modification = Modification {
-                transaction_id: None,
+                persistence_mode: PersistenceMode::Sync,
                 keys: ids
                     .iter()
                     .map(|id| ArcBytes::from(id.to_be_bytes().to_vec()))
@@ -2688,7 +2702,7 @@ mod tests {
                 .cloned()
                 .collect::<BTreeMap<ArcBytes<'static>, bool>>();
             tree.modify(Modification {
-                transaction_id: None,
+                persistence_mode: PersistenceMode::Sync,
                 keys: key_operations.keys().cloned().collect(),
                 operation: Operation::CompareSwap(CompareSwap::new(&mut |key, existing_value| {
                     let should_remove = *key_operations.get(key).unwrap();

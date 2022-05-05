@@ -41,8 +41,11 @@ impl super::File for StdFile {
     }
 
     fn close(mut self) -> Result<(), Error> {
-        // Closing is done by just dropping it
-        self.flush().map_err(Error::from)
+        self.synchronize()
+    }
+
+    fn synchronize(&mut self) -> Result<(), crate::Error> {
+        self.file.sync_all().map_err(Error::from)
     }
 }
 
@@ -97,7 +100,7 @@ impl Write for StdFile {
 
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     fn flush(&mut self) -> std::io::Result<()> {
-        self.file.sync_all()
+        self.file.flush()
     }
 }
 

@@ -50,6 +50,13 @@ impl super::File for AnyFile {
             Self::Memory(file) => file.close(),
         }
     }
+
+    fn synchronize(&mut self) -> Result<(), crate::Error> {
+        match self {
+            Self::Std(file) => file.synchronize(),
+            Self::Memory(file) => file.synchronize(),
+        }
+    }
 }
 
 impl Write for AnyFile {

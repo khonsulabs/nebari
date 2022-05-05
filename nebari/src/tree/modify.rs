@@ -10,7 +10,7 @@ use crate::{error::Error, transaction::TransactionId, ArcBytes, ErrorKind};
 #[derive(Debug)]
 pub struct Modification<'a, T> {
     /// The transaction ID to store with this change.
-    pub transaction_id: Option<TransactionId>,
+    pub persistence_mode: PersistenceMode,
     /// The keys to operate upon.
     pub keys: Vec<ArcBytes<'a>>,
     /// The operation to perform on the keys.
@@ -28,6 +28,58 @@ impl<'a, T> Modification<'a, T> {
         } else {
             Err(Error::from(ErrorKind::KeysNotOrdered))
         }
+    }
+}
+
+/// Controls the persistence guarantees of write operations.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum PersistenceMode {
+    /// Transactional writes are always fully synchronized, which means that
+    /// data written is persisted to the best of the abilities provided by the
+    /// operating system hosting Nebari. Additionally, the written data is
+    /// tagged as belonging to this `Transactionid`.
+    Transactional(TransactionId),
+    /// Data written is persisted to the best of the abilities provided by the
+    /// operating system hosting Nebari.
+    Sync,
+    /// Data written is not buffered by Nebari, but may still be in
+    /// operating-system level caches. In the event of a power loss or sudden
+    /// application failure, the data written may not be available when the tree
+    /// is reopened. Nebari will automatically recover to the last write that
+    /// was fully synchronized to disk, but writing using this persistence mode
+    /// moves the control of synchronization from Nebari to the operating
+    /// system.
+    Flush,
+}
+
+impl PersistenceMode {
+    /// Returns the transaction ID for writes performed with this mode, if applicable.
+    #[must_use]
+    pub const fn transaction_id(&self) -> Option<TransactionId> {
+        if let Self::Transactional(id) = self {
+            Some(*id)
+        } else {
+            None
+        }
+    }
+
+    /// Returns true if writes should be fully synchronized before control is
+    /// returned to the caller.
+    #[must_use]
+    pub const fn should_synchronize(&self) -> bool {
+        matches!(self, Self::Transactional(_) | Self::Sync)
+    }
+}
+
+impl From<TransactionId> for PersistenceMode {
+    fn from(id: TransactionId) -> Self {
+        Self::Transactional(id)
+    }
+}
+
+impl From<Option<TransactionId>> for PersistenceMode {
+    fn from(maybe_transactional: Option<TransactionId>) -> Self {
+        maybe_transactional.map_or(Self::Sync, Self::Transactional)
     }
 }
 

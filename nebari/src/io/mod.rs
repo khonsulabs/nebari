@@ -44,6 +44,12 @@ pub trait File: Debug + Send + Sync + Seek + Read + Write + 'static {
     /// Returns the length of the file.
     fn length(&self) -> Result<u64, Error>;
 
+    /// Synchronizes data and metadata to the final destination. This calls
+    /// [`std::fs::File::sync_all()`] on files, which ensures all filesystem
+    /// metadata (such as newly allocated blocks) and data is synchronized to
+    /// the destination device.
+    fn synchronize(&mut self) -> Result<(), Error>;
+
     /// Safely closes the file after flushing any pending operations to disk.
     fn close(self) -> Result<(), Error>;
 }

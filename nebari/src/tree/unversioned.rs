@@ -232,7 +232,7 @@ where
         writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
-        let transaction_id = modification.transaction_id;
+        let transaction_id = modification.persistence_mode.transaction_id();
 
         self.modify_id_root(modification, writer, max_order)?;
 

@@ -58,6 +58,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `Root::tree_with_reducer()` can be used to create a `TreeRoot` with a
     specific `Reducer` instance.
   - `Root::deserialize` is provided an additional parameter: the reducer.
+- The `reduce()` function now returns an `Option::<ReducedIndex>::None` when no
+  keys match. Previously, `rereduce()` was called with an empty array to produce
+  a default value. However, this new change allows detecting the difference
+  between no matches and a match.
+- `StdFile::flush()` is now implemented using
+`std::File::flush()`. To synchronize all data and metadata, use
+`File::synchronize()` instead.
 
 ### Fixed
 
@@ -66,6 +73,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an `InternalCommunication` error.
 - When using `Roots::delete_tree()`, subsequent read operations will now return
   an appropriate None/empty result instead of returning  a file not found error.
+
+### Changed
+
+- `TreeFile` functions that previously took an `Option<TransactionId>` now take
+  an `Into<PersistenceMode>` generic parameter. `PersistenceMode` allows
+  controlling whether a write is transactional (fully synchronized + tagged),
+  fully synchronized (ACID), or flushed (susceptible to data loss if the kernel
+  doesn't flush it before a crash/power loss).
+
+  `Option::<TransactionId>::None` converts to `PersistenceMode::Sync`. This
+  means that existing code will continue to compile and operate as it was
+  originally written without using the new `PersistenceMode` enum. However, if
+  you wish to remove the overhead of synchronizing, passing
+  `PersistenceMode::Flush` will only ensure all application-level caches are
+  flushed before confirming the write is successful.
 
 ## v0.5.2
 

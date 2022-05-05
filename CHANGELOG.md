@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Breaking Changes
+
+- Transaction IDs and Sequence IDs are now returned as new types,
+  `TransactionId` and `SequenceId` instead of `u64`.
+
 ### Fixed
 
 - When using `Roots::delete_tree()` on a tree that had previously been opened,

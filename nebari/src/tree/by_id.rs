@@ -1,13 +1,17 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};
-use crate::{error::Error, tree::key_entry::ValueIndex, ArcBytes};
+use crate::{
+    error::Error,
+    tree::{by_sequence::SequenceId, key_entry::ValueIndex},
+    ArcBytes,
+};
 
 /// The index stored within [`VersionedTreeRoot::by_id_root`](crate::tree::VersionedTreeRoot::by_id_root).
 #[derive(Clone, Debug)]
 pub struct VersionedByIdIndex<EmbeddedIndex: super::EmbeddedIndex> {
     /// The unique sequence id generated when writing the value to the file.
-    pub sequence_id: u64,
+    pub sequence_id: SequenceId,
     /// The size of the value stored on disk.
     pub value_length: u32,
     /// The position of the value on disk.
@@ -25,7 +29,7 @@ where
         writer: &mut Vec<u8>,
         _paged_writer: &mut PagedWriter<'_>,
     ) -> Result<usize, Error> {
-        writer.write_u64::<BigEndian>(self.sequence_id)?;
+        writer.write_u64::<BigEndian>(self.sequence_id.0)?;
         writer.write_u32::<BigEndian>(self.value_length)?;
         writer.write_u64::<BigEndian>(self.position)?;
         Ok(20 + self.embedded.serialize_to(writer)?)
@@ -35,7 +39,7 @@ where
         reader: &mut ArcBytes<'_>,
         _current_order: Option<usize>,
     ) -> Result<Self, Error> {
-        let sequence_id = reader.read_u64::<BigEndian>()?;
+        let sequence_id = SequenceId(reader.read_u64::<BigEndian>()?);
         let value_length = reader.read_u32::<BigEndian>()?;
         let position = reader.read_u64::<BigEndian>()?;
         Ok(Self {

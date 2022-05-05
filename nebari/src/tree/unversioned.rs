@@ -20,6 +20,7 @@ use crate::{
     error::{Error, InternalError},
     io::File,
     roots::AbortError,
+    transaction::TransactionId,
     tree::{
         btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
         copy_chunk, dynamic_order,
@@ -43,7 +44,7 @@ where
 {
     /// The transaction ID of the tree root. If this transaction ID isn't
     /// present in the transaction log, this root should not be trusted.
-    pub transaction_id: Option<u64>,
+    pub transaction_id: Option<TransactionId>,
     /// The by-id B-Tree.
     pub by_id_root: BTreeEntry<UnversionedByIdIndex<Index>, ByIdStats<Index>>,
 }
@@ -149,11 +150,11 @@ where
     }
 
     fn initialize_default(&mut self) {
-        self.transaction_id = Some(0);
+        self.transaction_id = Some(TransactionId(0));
     }
 
     fn deserialize(mut bytes: ArcBytes<'_>) -> Result<Self, Error> {
-        let transaction_id = Some(bytes.read_u64::<BigEndian>()?);
+        let transaction_id = Some(TransactionId(bytes.read_u64::<BigEndian>()?));
         let by_id_size = bytes.read_u32::<BigEndian>()? as usize;
         if by_id_size != bytes.len() {
             return Err(Error::data_integrity(format!(
@@ -180,7 +181,8 @@ where
     ) -> Result<(), Error> {
         output.write_u64::<BigEndian>(
             self.transaction_id
-                .expect("serializing an uninitialized root"),
+                .expect("serializing an uninitialized root")
+                .0,
         )?;
         // Reserve space for by_id size.
         output.write_u32::<BigEndian>(0)?;
@@ -194,7 +196,7 @@ where
         Ok(())
     }
 
-    fn transaction_id(&self) -> u64 {
+    fn transaction_id(&self) -> TransactionId {
         self.transaction_id.unwrap_or_default()
     }
 

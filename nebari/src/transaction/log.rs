@@ -14,6 +14,7 @@ use super::{State, TransactionHandle};
 use crate::{
     error::Error,
     io::{File, FileManager, FileOp, ManagedFile, OpenableFile, OperableFile},
+    transaction::TransactionId,
     vault::AnyVault,
     ArcBytes, Context, ErrorKind,
 };
@@ -73,7 +74,7 @@ impl<File: ManagedFile> TransactionLog<File> {
             Err(other) => return Err(other),
         };
         if log_length == 0 {
-            state.initialize(0, 0);
+            state.initialize(TransactionId(0), 0);
             return Ok(());
         }
 
@@ -118,7 +119,7 @@ impl<File: ManagedFile> TransactionLog<File> {
     }
 
     /// Returns the executed transaction with the id provided. Returns None if not found.
-    pub fn get(&mut self, id: u64) -> Result<Option<LogEntry<'static>>, Error> {
+    pub fn get(&mut self, id: TransactionId) -> Result<Option<LogEntry<'static>>, Error> {
         match self.log.execute(EntryFetcher {
             id,
             state: &self.state,
@@ -133,7 +134,7 @@ impl<File: ManagedFile> TransactionLog<File> {
     /// log is guaranteed to be fully written to disk.
     pub fn scan<Callback: FnMut(LogEntry<'static>) -> bool>(
         &mut self,
-        ids: impl RangeBounds<u64>,
+        ids: impl RangeBounds<TransactionId>,
         callback: Callback,
     ) -> Result<(), Error> {
         self.log.execute(EntryScanner {
@@ -150,7 +151,7 @@ impl<File: ManagedFile> TransactionLog<File> {
     }
 
     /// Returns the current transaction id.
-    pub fn current_transaction_id(&self) -> u64 {
+    pub fn current_transaction_id(&self) -> TransactionId {
         self.state.next_transaction_id()
     }
 
@@ -298,7 +299,7 @@ fn scan_for_transaction(
 #[allow(clippy::redundant_pub_crate)]
 pub(crate) struct EntryFetcher<'a> {
     pub state: &'a State,
-    pub id: u64,
+    pub id: TransactionId,
     pub vault: Option<&'a dyn AnyVault>,
 }
 
@@ -313,10 +314,10 @@ fn fetch_entry(
     log: &mut dyn File,
     scratch_buffer: &mut Vec<u8>,
     state: &State,
-    id: u64,
+    id: TransactionId,
     vault: Option<&dyn AnyVault>,
 ) -> Result<ScanResult, Error> {
-    if id == 0 {
+    if !id.valid() {
         return Ok(ScanResult::NotFound {
             nearest_position: 0,
         });
@@ -394,7 +395,11 @@ fn fetch_entry(
     }
 }
 
-pub struct EntryScanner<'a, Range: RangeBounds<u64>, Callback: FnMut(LogEntry<'static>) -> bool> {
+pub struct EntryScanner<
+    'a,
+    Range: RangeBounds<TransactionId>,
+    Callback: FnMut(LogEntry<'static>) -> bool,
+> {
     pub state: &'a State,
     pub ids: Range,
     pub vault: Option<&'a dyn AnyVault>,
@@ -403,7 +408,7 @@ pub struct EntryScanner<'a, Range: RangeBounds<u64>, Callback: FnMut(LogEntry<'s
 
 impl<'a, Range, Callback> FileOp<Result<(), Error>> for EntryScanner<'a, Range, Callback>
 where
-    Range: RangeBounds<u64>,
+    Range: RangeBounds<TransactionId>,
     Callback: FnMut(LogEntry<'static>) -> bool,
 {
     fn execute(mut self, log: &mut dyn File) -> Result<(), Error> {
@@ -525,7 +530,7 @@ impl FileOp<Result<(), Error>> for LogWriter {
 #[derive(Eq, PartialEq, Debug)]
 pub struct LogEntry<'a> {
     /// The unique id of this entry.
-    pub id: u64,
+    pub id: TransactionId,
     pub(crate) data: Option<ArcBytes<'a>>,
 }
 
@@ -562,7 +567,7 @@ impl<'a> LogEntry<'a> {
     pub(crate) fn serialize(&self) -> Result<Vec<u8>, Error> {
         let mut buffer = Vec::with_capacity(8 + self.data.as_ref().map_or(0, |data| data.len()));
         // Transaction ID
-        buffer.write_u64::<BigEndian>(self.id)?;
+        buffer.write_u64::<BigEndian>(self.id.0)?;
         if let Some(data) = &self.data {
             // The rest of the entry is the data. Since the header of the log entry
             // contains the length, we don't need to waste space encoding it again.
@@ -573,7 +578,7 @@ impl<'a> LogEntry<'a> {
     }
 
     pub(crate) fn deserialize(mut buffer: &'a [u8]) -> Result<Self, Error> {
-        let id = buffer.read_u64::<BigEndian>()?;
+        let id = TransactionId(buffer.read_u64::<BigEndian>()?);
         let data = if buffer.is_empty() {
             None
         } else {
@@ -586,7 +591,7 @@ impl<'a> LogEntry<'a> {
 #[test]
 fn serialization_tests() {
     let transaction = LogEntry {
-        id: 1,
+        id: TransactionId(1),
         data: Some(ArcBytes::from(b"hello")),
     };
     let serialized = transaction.serialize().unwrap();
@@ -594,7 +599,7 @@ fn serialization_tests() {
     assert_eq!(transaction, deserialized);
 
     let transaction = LogEntry {
-        id: u64::MAX,
+        id: TransactionId(u64::MAX),
         data: None,
     };
     let serialized = transaction.serialize().unwrap();
@@ -602,7 +607,10 @@ fn serialization_tests() {
     assert_eq!(transaction, deserialized);
 
     // Test the data length limits
-    let mut transaction = LogEntry { id: 0, data: None };
+    let mut transaction = LogEntry {
+        id: TransactionId(0),
+        data: None,
+    };
     let mut big_data = Vec::new();
     big_data.resize(2_usize.pow(24), 0);
     let mut big_data = ArcBytes::from(big_data);
@@ -628,11 +636,11 @@ fn serialization_tests() {
     clippy::cast_sign_loss
 )]
 fn guess_page(
-    looking_for: u64,
+    looking_for: TransactionId,
     lower_location: Option<u64>,
-    lower_id: Option<u64>,
+    lower_id: Option<TransactionId>,
     upper_location: u64,
-    upper_id: u64,
+    upper_id: TransactionId,
 ) -> Option<u64> {
     debug_assert_ne!(looking_for, upper_id);
     let total_pages = upper_location / PAGE_SIZE as u64;
@@ -640,8 +648,9 @@ fn guess_page(
     if let (Some(lower_location), Some(lower_id)) = (lower_location, lower_id) {
         // Estimate inbetween lower and upper
         let current_page = lower_location / PAGE_SIZE as u64;
-        let delta_from_current = looking_for - lower_id;
-        let local_avg_per_page = (upper_id - lower_id) as f64 / (total_pages - current_page) as f64;
+        let delta_from_current = looking_for.0 - lower_id.0;
+        let local_avg_per_page =
+            (upper_id.0 - lower_id.0) as f64 / (total_pages - current_page) as f64;
         let delta_estimated_pages = (delta_from_current as f64 * local_avg_per_page).floor() as u64;
         let guess = lower_location + delta_estimated_pages.max(1) * PAGE_SIZE as u64;
         // If our estimate is that the location is beyond or equal to the upper,
@@ -660,8 +669,8 @@ fn guess_page(
         }
     } else if upper_id > looking_for {
         // Go backwards from upper
-        let avg_per_page = upper_id as f64 / total_pages as f64;
-        let id_delta = upper_id - looking_for;
+        let avg_per_page = upper_id.0 as f64 / total_pages as f64;
+        let id_delta = upper_id.0 - looking_for.0;
         let delta_estimated_pages = (id_delta as f64 * avg_per_page).ceil() as u64;
         let delta_bytes = delta_estimated_pages.saturating_mul(PAGE_SIZE as u64);
         Some(upper_location.saturating_sub(delta_bytes))
@@ -747,7 +756,7 @@ mod tests {
             TransactionLog::<Manager::File>::initialize_state(&state, &context).unwrap();
             let mut transactions =
                 TransactionLog::<Manager::File>::open(&log_path, state, context.clone()).unwrap();
-            assert_eq!(transactions.current_transaction_id(), id);
+            assert_eq!(transactions.current_transaction_id(), TransactionId(id));
             let mut tx = transactions.new_transaction([&b"hello"[..]]);
 
             tx.transaction.data = Some(ArcBytes::from(id.to_be_bytes()));
@@ -806,12 +815,12 @@ mod tests {
             ErrorKind::TransactionPushedOutOfOrder
         ));
 
-        assert!(transactions.get(0).unwrap().is_none());
+        assert!(transactions.get(TransactionId(0)).unwrap().is_none());
         for id in 1..=1_000 {
-            let transaction = transactions.get(id).unwrap();
+            let transaction = transactions.get(TransactionId(id)).unwrap();
             match transaction {
                 Some(transaction) => {
-                    assert_eq!(transaction.id, id);
+                    assert_eq!(transaction.id, TransactionId(id));
                     assert_eq!(
                         &data[..transaction.data().unwrap().len()],
                         transaction.data().unwrap().as_slice()
@@ -822,7 +831,7 @@ mod tests {
                 }
             }
         }
-        assert!(transactions.get(1001).unwrap().is_none());
+        assert!(transactions.get(TransactionId(1001)).unwrap().is_none());
 
         // Test scanning
         let mut first_ten = Vec::new();
@@ -835,7 +844,7 @@ mod tests {
         assert_eq!(first_ten.len(), 10);
         let mut after_first = None;
         transactions
-            .scan(first_ten[0].id + 1.., |entry| {
+            .scan(TransactionId(first_ten[0].id.0 + 1).., |entry| {
                 after_first = Some(entry);
                 false
             })
@@ -861,7 +870,7 @@ mod tests {
 
         let mut valid_ids = HashSet::new();
         for id in 1..=10_000 {
-            assert_eq!(transactions.current_transaction_id(), id);
+            assert_eq!(transactions.current_transaction_id(), TransactionId(id));
             let tx = transactions.new_transaction([&b"hello"[..]]);
             if rng.generate::<u8>() < 8 {
                 // skip a few ids.
@@ -873,11 +882,11 @@ mod tests {
         }
 
         for id in 1..=10_000 {
-            let transaction = transactions.get(id).unwrap();
+            let transaction = transactions.get(TransactionId(id)).unwrap();
             match transaction {
-                Some(transaction) => assert_eq!(transaction.id, id),
+                Some(transaction) => assert_eq!(transaction.id, TransactionId(id)),
                 None => {
-                    assert!(!valid_ids.contains(&id));
+                    assert!(!valid_ids.contains(&TransactionId(id)));
                 }
             }
         }
@@ -947,8 +956,11 @@ mod tests {
             handle.join().unwrap();
         }
 
-        assert_eq!(manager.current_transaction_id(), Some(10_000));
-        assert_eq!(manager.next_transaction_id(), 10_001);
+        assert_eq!(
+            manager.current_transaction_id(),
+            Some(TransactionId(10_000))
+        );
+        assert_eq!(manager.next_transaction_id(), TransactionId(10_001));
 
         assert!(manager
             .transaction_was_successful(manager.current_transaction_id().unwrap())
@@ -960,12 +972,12 @@ mod tests {
 
         let mut ten = None;
         manager
-            .scan(10.., |entry| {
+            .scan(TransactionId(10).., |entry| {
                 ten = Some(entry);
                 false
             })
             .unwrap();
-        assert_eq!(ten.unwrap().id, 10);
+        assert_eq!(ten.unwrap().id, TransactionId(10));
     }
 
     #[test]

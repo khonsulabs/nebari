@@ -12,6 +12,7 @@ use lru::LruCache;
 use parking_lot::{Mutex, MutexGuard};
 
 use super::{LogEntry, TransactionHandle, TreeLock, TreeLocks};
+use crate::transaction::TransactionId;
 
 const UNINITIALIZED_ID: u64 = 0;
 
@@ -27,7 +28,7 @@ struct ActiveState {
     current_transaction_id: AtomicU64,
     tree_locks: Mutex<HashMap<Cow<'static, [u8]>, TreeLock>>,
     log_position: Mutex<LogPosition>,
-    known_completed_transactions: Mutex<LruCache<u64, Option<u64>>>,
+    known_completed_transactions: Mutex<LruCache<TransactionId, Option<u64>>>,
 }
 
 /// The active log position information.
@@ -36,14 +37,14 @@ pub struct LogPosition {
     /// The offset of the writer within the file.
     pub file_offset: u64,
     /// The last successfully written transaction id.
-    pub last_written_transaction: u64,
+    pub last_written_transaction: TransactionId,
 }
 
 impl Default for LogPosition {
     fn default() -> Self {
         Self {
             file_offset: 0,
-            last_written_transaction: UNINITIALIZED_ID,
+            last_written_transaction: TransactionId(UNINITIALIZED_ID),
         }
     }
 }
@@ -62,13 +63,13 @@ impl State {
         }
     }
 
-    pub(crate) fn initialize(&self, last_written_transaction: u64, log_position: u64) {
+    pub(crate) fn initialize(&self, last_written_transaction: TransactionId, log_position: u64) {
         let mut state_position = self.state.log_position.lock();
         self.state
             .current_transaction_id
             .compare_exchange(
                 UNINITIALIZED_ID,
-                last_written_transaction + 1,
+                last_written_transaction.0 + 1,
                 Ordering::SeqCst,
                 Ordering::SeqCst,
             )
@@ -80,17 +81,17 @@ impl State {
     /// Returns the last successfully written transaction id, or None if no
     /// transactions have been recorded yet.
     #[must_use]
-    pub fn current_transaction_id(&self) -> Option<u64> {
+    pub fn current_transaction_id(&self) -> Option<TransactionId> {
         match self.state.current_transaction_id.load(Ordering::SeqCst) {
             UNINITIALIZED_ID | 1 => None,
-            other => Some(other - 1),
+            other => Some(TransactionId(other - 1)),
         }
     }
 
     /// Returns the next transaction id that will be used.
     #[must_use]
-    pub fn next_transaction_id(&self) -> u64 {
-        self.state.current_transaction_id.load(Ordering::SeqCst)
+    pub fn next_transaction_id(&self) -> TransactionId {
+        TransactionId(self.state.current_transaction_id.load(Ordering::SeqCst))
     }
 
     /// Returns the path to the file.
@@ -150,21 +151,29 @@ impl State {
         TransactionHandle {
             locked_trees,
             transaction: LogEntry {
-                id: self
-                    .state
-                    .current_transaction_id
-                    .fetch_add(1, Ordering::SeqCst),
+                id: TransactionId(
+                    self.state
+                        .current_transaction_id
+                        .fetch_add(1, Ordering::SeqCst),
+                ),
                 data: None,
             },
         }
     }
 
-    pub(crate) fn note_transaction_id_status(&self, transaction_id: u64, position: Option<u64>) {
+    pub(crate) fn note_transaction_id_status(
+        &self,
+        transaction_id: TransactionId,
+        position: Option<u64>,
+    ) {
         let mut cache = self.state.known_completed_transactions.lock();
         cache.put(transaction_id, position);
     }
 
-    pub(crate) fn note_transaction_ids_completed(&self, transaction_ids: &[(u64, Option<u64>)]) {
+    pub(crate) fn note_transaction_ids_completed(
+        &self,
+        transaction_ids: &[(TransactionId, Option<u64>)],
+    ) {
         let mut cache = self.state.known_completed_transactions.lock();
         for (id, position) in transaction_ids {
             cache.put(*id, *position);
@@ -176,7 +185,10 @@ impl State {
     /// contents: either a valid position, or None if the transaction ID
     /// couldn't be found when it was last searched for.
     #[allow(clippy::option_option)]
-    pub(crate) fn transaction_id_position(&self, transaction_id: u64) -> Option<Option<u64>> {
+    pub(crate) fn transaction_id_position(
+        &self,
+        transaction_id: TransactionId,
+    ) -> Option<Option<u64>> {
         let mut cache = self.state.known_completed_transactions.lock();
         cache.get(&transaction_id).copied()
     }

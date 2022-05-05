@@ -21,11 +21,11 @@ use crate::{
     context::Context,
     error::Error,
     io::{fs::StdFileManager, FileManager, ManagedFile},
-    transaction::{LogEntry, ManagedTransaction, TransactionManager},
+    transaction::{LogEntry, ManagedTransaction, TransactionId, TransactionManager},
     tree::{
         self, root::AnyTreeRoot, state::AnyTreeState, EmbeddedIndex, KeySequence, Modification,
-        Operation, Reducer, ScanEvaluation, State, TransactableCompaction, TreeFile, TreeRoot,
-        VersionedTreeRoot,
+        Operation, Reducer, ScanEvaluation, SequenceId, State, TransactableCompaction, TreeFile,
+        TreeRoot, VersionedTreeRoot,
     },
     vault::AnyVault,
     ArcBytes, ChunkCache, ErrorKind,
@@ -379,7 +379,7 @@ impl<File: ManagedFile> Drop for ExecutingTransaction<File> {
 
 /// A tree that is modifiable during a transaction.
 pub struct TransactionTree<Root: tree::Root, File: ManagedFile> {
-    pub(crate) transaction_id: u64,
+    pub(crate) transaction_id: TransactionId,
     pub(crate) tree: TreeFile<Root, File>,
 }
 
@@ -420,7 +420,7 @@ where
     Index: Clone + Reducer<Index> + EmbeddedIndex + Debug + 'static,
 {
     /// Returns the latest sequence id.
-    pub fn current_sequence_id(&self) -> u64 {
+    pub fn current_sequence_id(&self) -> SequenceId {
         let state = self.tree.state.lock();
         state.root.sequence
     }
@@ -1079,7 +1079,7 @@ impl<Root: tree::Root, File: ManagedFile> AnyTreeRoot<File> for Tree<Root, File>
 
     fn begin_transaction(
         &self,
-        transaction_id: u64,
+        transaction_id: TransactionId,
         file_path: &Path,
         state: &dyn AnyTreeState,
         context: &Context<File::Manager>,
@@ -1130,7 +1130,7 @@ where
         data_callback: &mut DataCallback,
     ) -> Result<(), AbortError<CallerError>>
     where
-        Range: Clone + RangeBounds<u64> + Debug + 'static,
+        Range: Clone + RangeBounds<SequenceId> + Debug + 'static,
         KeyEvaluator: FnMut(KeySequence) -> ScanEvaluation,
         DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,

@@ -21,8 +21,10 @@ use crate::{
     error::{Error, InternalError},
     io::File,
     roots::AbortError,
+    transaction::TransactionId,
     tree::{
         btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
+        by_sequence::SequenceId,
         copy_chunk, dynamic_order,
         key_entry::KeyEntry,
         modify::Operation,
@@ -31,8 +33,6 @@ use crate::{
     vault::AnyVault,
     ArcBytes, ChunkCache, ErrorKind,
 };
-
-const UNINITIALIZED_SEQUENCE: u64 = 0;
 
 /// An versioned tree with no additional indexed data.
 pub type Versioned = VersionedTreeRoot<()>;
@@ -47,9 +47,9 @@ where
 {
     /// The transaction ID of the tree root. If this transaction ID isn't
     /// present in the transaction log, this root should not be trusted.
-    pub transaction_id: u64,
+    pub transaction_id: TransactionId,
     /// The last sequence ID inside of this root.
-    pub sequence: u64,
+    pub sequence: SequenceId,
     /// The by-sequence B-Tree.
     pub by_sequence_root: BTreeEntry<BySequenceIndex, BySequenceStats>,
     /// The by-id B-Tree.
@@ -61,8 +61,8 @@ where
 {
     fn default() -> Self {
         Self {
-            transaction_id: 0,
-            sequence: UNINITIALIZED_SEQUENCE,
+            transaction_id: TransactionId(0),
+            sequence: SequenceId(0),
             by_sequence_root: BTreeEntry::default(),
             by_id_root: BTreeEntry::default(),
         }
@@ -176,7 +176,7 @@ where
                         let embedded = EmbeddedIndex::index(key, value);
                         changes.current_sequence = changes
                             .current_sequence
-                            .checked_add(1)
+                            .next_sequence()
                             .expect("sequence rollover prevented");
                         let key = key.to_owned();
                         changes.changes.push(EntryChange {
@@ -238,7 +238,7 @@ where
     type ReducedIndex = ByIdStats<EmbeddedIndex>;
 
     fn initialized(&self) -> bool {
-        self.sequence != UNINITIALIZED_SEQUENCE
+        self.sequence.valid()
     }
 
     fn dirty(&self) -> bool {
@@ -246,7 +246,7 @@ where
     }
 
     fn initialize_default(&mut self) {
-        self.sequence = 1;
+        self.sequence = SequenceId(1);
     }
 
     fn count(&self) -> u64 {
@@ -254,8 +254,8 @@ where
     }
 
     fn deserialize(mut bytes: ArcBytes<'_>) -> Result<Self, Error> {
-        let transaction_id = bytes.read_u64::<BigEndian>()?;
-        let sequence = bytes.read_u64::<BigEndian>()?;
+        let transaction_id = TransactionId(bytes.read_u64::<BigEndian>()?);
+        let sequence = SequenceId(bytes.read_u64::<BigEndian>()?);
         let by_sequence_size = bytes.read_u32::<BigEndian>()? as usize;
         let by_id_size = bytes.read_u32::<BigEndian>()? as usize;
         if by_sequence_size + by_id_size != bytes.len() {
@@ -287,8 +287,8 @@ where
         output: &mut Vec<u8>,
     ) -> Result<(), Error> {
         output.reserve(PAGE_SIZE);
-        output.write_u64::<BigEndian>(self.transaction_id)?;
-        output.write_u64::<BigEndian>(self.sequence)?;
+        output.write_u64::<BigEndian>(self.transaction_id.0)?;
+        output.write_u64::<BigEndian>(self.sequence.0)?;
         // Reserve space for by_sequence and by_id sizes (2xu16).
         output.write_u64::<BigEndian>(0)?;
 
@@ -308,7 +308,7 @@ where
         Ok(())
     }
 
-    fn transaction_id(&self) -> u64 {
+    fn transaction_id(&self) -> TransactionId {
         self.transaction_id
     }
 
@@ -339,7 +339,7 @@ where
                     value_length: change.value_size,
                     position: change.value_position,
                 });
-                ArcBytes::from(change.key_sequence.sequence.to_be_bytes())
+                ArcBytes::from(change.key_sequence.sequence.0.to_be_bytes())
             })
             .collect();
         let sequence_modifications = Modification {
@@ -535,7 +535,7 @@ where
 
 #[derive(Default)]
 pub struct EntryChanges {
-    pub current_sequence: u64,
+    pub current_sequence: SequenceId,
     pub changes: Vec<EntryChange>,
 }
 pub struct EntryChange {
@@ -550,7 +550,7 @@ pub struct KeySequence {
     /// The key that this entry was written for.
     pub key: ArcBytes<'static>,
     /// The unique sequence id.
-    pub sequence: u64,
+    pub sequence: SequenceId,
     /// The previous sequence id for this key, if any.
-    pub last_sequence: Option<u64>,
+    pub last_sequence: Option<SequenceId>,
 }

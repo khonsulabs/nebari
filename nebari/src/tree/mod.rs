@@ -69,7 +69,7 @@ use crate::{
     error::Error,
     io::{File, FileManager, FileOp, ManagedFile, ManagedFileOpener, OpenableFile, OperableFile},
     roots::AbortError,
-    transaction::{ManagedTransaction, TransactionManager},
+    transaction::{ManagedTransaction, TransactionId, TransactionManager},
     tree::{btree_entry::ScanArgs, serialization::BinarySerialization},
     vault::AnyVault,
     ArcBytes, ChunkCache, CompareAndSwapError, Context, ErrorKind,
@@ -92,7 +92,7 @@ pub(crate) const DEFAULT_MAX_ORDER: usize = 1000;
 pub use self::{
     btree_entry::{BTreeEntry, BTreeNode, KeyOperation, Reducer},
     by_id::{ByIdStats, UnversionedByIdIndex, VersionedByIdIndex},
-    by_sequence::{BySequenceIndex, BySequenceStats},
+    by_sequence::{BySequenceIndex, BySequenceStats, SequenceId},
     interior::{Interior, Pointer},
     key_entry::{KeyEntry, ValueIndex},
     modify::{CompareSwap, CompareSwapFn, Modification, Operation},
@@ -271,7 +271,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                     let root = Root::deserialize(contents)
                         .map_err(|err| ErrorKind::DataIntegrity(Box::new(err)))?;
                     if let Some(transaction_manager) = transaction_manager {
-                        if root.transaction_id() > 0
+                        if root.transaction_id().valid()
                             && !transaction_manager
                                 .transaction_was_successful(root.transaction_id())?
                         {
@@ -314,7 +314,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     /// [`replace()`](Self::replace) instead.
     pub fn set(
         &mut self,
-        transaction_id: Option<u64>,
+        transaction_id: Option<TransactionId>,
         key: impl Into<ArcBytes<'static>>,
         value: impl Into<ArcBytes<'static>>,
     ) -> Result<(), Error> {
@@ -353,7 +353,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         key: &[u8],
         old: Option<&[u8]>,
         mut new: Option<ArcBytes<'_>>,
-        transaction_id: Option<u64>,
+        transaction_id: Option<TransactionId>,
     ) -> Result<(), CompareAndSwapError> {
         let mut result = Ok(());
         self.modify(Modification {
@@ -383,7 +383,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     pub fn remove(
         &mut self,
         key: &[u8],
-        transaction_id: Option<u64>,
+        transaction_id: Option<TransactionId>,
     ) -> Result<Option<ArcBytes<'static>>, Error> {
         let mut existing_value = None;
         self.modify(Modification {
@@ -403,7 +403,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         &mut self,
         key: impl Into<ArcBytes<'static>>,
         value: impl Into<ArcBytes<'static>>,
-        transaction_id: Option<u64>,
+        transaction_id: Option<TransactionId>,
     ) -> Result<Option<ArcBytes<'static>>, Error> {
         let mut existing_value = None;
         let mut value = Some(value.into());
@@ -865,7 +865,7 @@ where
         data_callback: &mut DataCallback,
     ) -> Result<(), AbortError<CallerError>>
     where
-        Range: RangeBounds<u64> + Debug + 'static,
+        Range: RangeBounds<SequenceId> + Debug + 'static,
         KeyEvaluator: FnMut(KeySequence) -> ScanEvaluation,
         DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
@@ -878,7 +878,7 @@ where
             cache: self.cache.as_ref(),
             range: &U64Range::new(range).borrow_as_bytes(),
             key_evaluator: &mut move |key: &ArcBytes<'_>, index: &BySequenceIndex| {
-                let id = BigEndian::read_u64(key);
+                let id = SequenceId(BigEndian::read_u64(key));
                 key_evaluator(KeySequence {
                     key: index.key.clone(),
                     sequence: id,
@@ -1369,7 +1369,7 @@ where
         } = self;
         let mapped_data_callback =
             |key: ArcBytes<'static>, index: &BySequenceIndex, data: ArcBytes<'static>| {
-                let sequence = BigEndian::read_u64(&key);
+                let sequence = SequenceId(BigEndian::read_u64(&key));
                 (data_callback)(
                     KeySequence {
                         key: index.key.clone(),
@@ -1752,18 +1752,26 @@ impl<'a, 'b: 'a> RangeBounds<&'a [u8]> for BorrowedRange<'b> {
 
 impl U64Range {
     /// Creates a new instance from the range passed in.
-    pub fn new<B: RangeBounds<u64>>(bounds: B) -> Self {
+    pub fn new<B: RangeBounds<T>, T: Clone + Into<u64>>(bounds: B) -> Self {
         Self {
-            start_bound: bounds.start_bound().cloned(),
-            start_bound_bytes: match bounds.start_bound() {
-                Bound::Included(id) => Bound::Included(id.to_be_bytes()),
-                Bound::Excluded(id) => Bound::Excluded(id.to_be_bytes()),
+            start_bound: match bounds.start_bound() {
+                Bound::Included(id) => Bound::Included(id.clone().into()),
+                Bound::Excluded(id) => Bound::Excluded(id.clone().into()),
                 Bound::Unbounded => Bound::Unbounded,
             },
-            end_bound: bounds.end_bound().cloned(),
+            start_bound_bytes: match bounds.start_bound() {
+                Bound::Included(id) => Bound::Included(id.clone().into().to_be_bytes()),
+                Bound::Excluded(id) => Bound::Excluded(id.clone().into().to_be_bytes()),
+                Bound::Unbounded => Bound::Unbounded,
+            },
+            end_bound: match bounds.end_bound() {
+                Bound::Included(id) => Bound::Included(id.clone().into()),
+                Bound::Excluded(id) => Bound::Excluded(id.clone().into()),
+                Bound::Unbounded => Bound::Unbounded,
+            },
             end_bound_bytes: match bounds.end_bound() {
-                Bound::Included(id) => Bound::Included(id.to_be_bytes()),
-                Bound::Excluded(id) => Bound::Excluded(id.to_be_bytes()),
+                Bound::Included(id) => Bound::Included(id.clone().into().to_be_bytes()),
+                Bound::Excluded(id) => Bound::Excluded(id.clone().into().to_be_bytes()),
                 Bound::Unbounded => Bound::Unbounded,
             },
         }

@@ -12,7 +12,7 @@ use crate::{
     error::Error,
     io::{File, ManagedFile},
     roots::AnyTransactionTree,
-    transaction::TransactionManager,
+    transaction::{TransactionId, TransactionManager},
     tree::{
         btree_entry::ScanArgs, state::AnyTreeState, Modification, PageHeader, PagedWriter, Reducer,
         ScanEvaluation, State, TreeFile,
@@ -66,7 +66,7 @@ pub trait Root: Default + Debug + Send + Sync + Clone + 'static {
     fn deserialize(bytes: ArcBytes<'_>) -> Result<Self, Error>;
 
     /// Returns the current transaction id.
-    fn transaction_id(&self) -> u64;
+    fn transaction_id(&self) -> TransactionId;
 
     /// Modifies the tree.
     fn modify<'a, 'w>(
@@ -181,7 +181,7 @@ pub trait AnyTreeRoot<File: ManagedFile> {
     /// Begins a transaction on this tree.
     fn begin_transaction(
         &self,
-        transaction_id: u64,
+        transaction_id: TransactionId,
         file_path: &Path,
         state: &dyn AnyTreeState,
         context: &Context<File::Manager>,
@@ -200,7 +200,7 @@ impl<R: Root, File: ManagedFile> AnyTreeRoot<File> for TreeRoot<R, File> {
 
     fn begin_transaction(
         &self,
-        transaction_id: u64,
+        transaction_id: TransactionId,
         file_path: &Path,
         state: &dyn AnyTreeState,
         context: &Context<File::Manager>,

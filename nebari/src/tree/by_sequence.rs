@@ -1,7 +1,46 @@
+use std::fmt::Display;
+
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};
-use crate::{error::Error, tree::key_entry::ValueIndex, ArcBytes, ErrorKind};
+use crate::{
+    error::Error,
+    tree::{btree_entry::Reducer, key_entry::ValueIndex, BinarySerialization, PagedWriter},
+    ArcBytes, ErrorKind,
+};
+
+/// A unique ID of a single modification to a key in a versioned tree file.
+#[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct SequenceId(pub u64);
+
+impl From<u64> for SequenceId {
+    fn from(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl From<SequenceId> for u64 {
+    fn from(id: SequenceId) -> Self {
+        id.0
+    }
+}
+
+impl SequenceId {
+    #[must_use]
+    pub(crate) const fn valid(self) -> bool {
+        self.0 > 0
+    }
+
+    /// Returns the nexxt sequence id after `self`.
+    pub fn next_sequence(&self) -> Option<Self> {
+        self.0.checked_add(1).map(Self)
+    }
+}
+
+impl Display for SequenceId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 /// The index stored within [`VersionedTreeRoot::by_sequence_root`](crate::tree::VersionedTreeRoot::by_sequence_root).
 #[derive(Clone, Debug)]
@@ -9,7 +48,7 @@ pub struct BySequenceIndex {
     /// The key associated with this sequence id.
     pub key: ArcBytes<'static>,
     /// The previous sequence of this key.
-    pub last_sequence: Option<u64>,
+    pub last_sequence: Option<SequenceId>,
     /// The size of the value stored on disk.
     pub value_length: u32,
     /// The position of the value on disk.
@@ -27,7 +66,7 @@ impl BinarySerialization for BySequenceIndex {
         bytes_written += 4;
         writer.write_u64::<BigEndian>(self.position)?;
         bytes_written += 8;
-        writer.write_u64::<BigEndian>(self.last_sequence.unwrap_or(0))?;
+        writer.write_u64::<BigEndian>(self.last_sequence.unwrap_or(SequenceId(0)).0)?;
         bytes_written += 8;
 
         let key_length = u16::try_from(self.key.len()).map_err(|_| ErrorKind::KeyTooLarge)?;
@@ -44,7 +83,7 @@ impl BinarySerialization for BySequenceIndex {
     ) -> Result<Self, Error> {
         let value_length = reader.read_u32::<BigEndian>()?;
         let position = reader.read_u64::<BigEndian>()?;
-        let last_sequence = reader.read_u64::<BigEndian>()?;
+        let last_sequence = SequenceId(reader.read_u64::<BigEndian>()?);
         let key_length = reader.read_u16::<BigEndian>()? as usize;
         if key_length > reader.len() {
             return Err(Error::data_integrity(format!(
@@ -57,7 +96,7 @@ impl BinarySerialization for BySequenceIndex {
 
         Ok(Self {
             key,
-            last_sequence: if last_sequence > 0 {
+            last_sequence: if last_sequence.valid() {
                 Some(last_sequence)
             } else {
                 None

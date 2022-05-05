@@ -4,13 +4,13 @@ use std::{
 };
 
 use super::btree_entry::KeyOperation;
-use crate::{error::Error, ArcBytes, ErrorKind};
+use crate::{error::Error, transaction::TransactionId, ArcBytes, ErrorKind};
 
 /// A tree modification.
 #[derive(Debug)]
 pub struct Modification<'a, T> {
     /// The transaction ID to store with this change.
-    pub transaction_id: Option<u64>,
+    pub transaction_id: Option<TransactionId>,
     /// The keys to operate upon.
     pub keys: Vec<ArcBytes<'a>>,
     /// The operation to perform on the keys.

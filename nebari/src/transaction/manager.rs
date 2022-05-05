@@ -13,7 +13,7 @@ use super::{log::EntryFetcher, LogEntry, State, TransactionLog};
 use crate::{
     error::{Error, InternalError},
     io::{FileManager, OperableFile},
-    transaction::log::ScanResult,
+    transaction::{log::ScanResult, TransactionId},
     Context, ErrorKind,
 };
 
@@ -90,7 +90,7 @@ where
     /// starting with the lowest ID matching the range.
     pub fn scan<Callback: FnMut(LogEntry<'static>) -> bool>(
         &self,
-        range: impl RangeBounds<u64>,
+        range: impl RangeBounds<TransactionId>,
         callback: Callback,
     ) -> Result<(), Error> {
         let mut log = TransactionLog::<Manager::File>::read(
@@ -102,14 +102,17 @@ where
     }
 
     /// Returns true if the transaction id was recorded in the transaction log. This method caches
-    pub fn transaction_was_successful(&self, transaction_id: u64) -> Result<bool, Error> {
+    pub fn transaction_was_successful(&self, transaction_id: TransactionId) -> Result<bool, Error> {
         self.transaction_position(transaction_id)
             .map(|position| position.is_some())
     }
 
     /// Returns the location on disk of the transaction, if found.
-    pub fn transaction_position(&self, transaction_id: u64) -> Result<Option<u64>, Error> {
-        if transaction_id == 0 {
+    pub fn transaction_position(
+        &self,
+        transaction_id: TransactionId,
+    ) -> Result<Option<u64>, Error> {
+        if !transaction_id.valid() {
             Ok(None)
         } else if let Some(position) = self.state.transaction_id_position(transaction_id) {
             Ok(position)
@@ -134,7 +137,7 @@ where
         }
     }
 
-    pub(crate) fn drop_transaction_id(&self, transaction_id: u64) {
+    pub(crate) fn drop_transaction_id(&self, transaction_id: TransactionId) {
         drop(
             self.transaction_sender
                 .send(ThreadCommand::Drop(transaction_id)),
@@ -165,7 +168,7 @@ enum ThreadCommand {
         transaction: TransactionHandle,
         completion_sender: flume::Sender<TreeLocks>,
     },
-    Drop(u64),
+    Drop(TransactionId),
 }
 
 struct ManagerThread<Manager: FileManager> {
@@ -173,7 +176,7 @@ struct ManagerThread<Manager: FileManager> {
     commands: flume::Receiver<ThreadCommand>,
     log: TransactionLog<Manager::File>,
     pending_transaction_ids: IdSequence,
-    last_processed_id: u64,
+    last_processed_id: TransactionId,
     transaction_batch: Vec<LogEntry<'static>>,
     completion_senders: Vec<(flume::Sender<Vec<TreeLockHandle>>, Vec<TreeLockHandle>)>,
 }
@@ -267,7 +270,7 @@ impl<Manager: FileManager> ManagerThread<Manager> {
         }
     }
 
-    fn mark_transaction_handled(&mut self, id: u64) {
+    fn mark_transaction_handled(&mut self, id: TransactionId) {
         self.pending_transaction_ids.note(id);
         if self.pending_transaction_ids.complete() && !self.transaction_batch.is_empty() {
             self.commit_transaction_batch();
@@ -308,7 +311,7 @@ impl<Manager: FileManager> ManagerThread<Manager> {
         }
     }
 
-    fn note_potentially_sequntial_id(&mut self, id: u64) {
+    fn note_potentially_sequntial_id(&mut self, id: TransactionId) {
         self.pending_transaction_ids.note(id);
         if self.pending_transaction_ids.complete() {
             // Safe to start a new batch
@@ -523,17 +526,17 @@ struct IdSequence {
 }
 
 impl IdSequence {
-    pub const fn new(start: u64) -> Self {
+    pub const fn new(start: TransactionId) -> Self {
         Self {
-            start,
+            start: start.0,
             length: 0,
             statuses: Vec::new(),
         }
     }
 
-    pub fn note(&mut self, id: u64) {
-        self.length = ((id + 1).checked_sub(self.start).unwrap()).max(self.length);
-        let offset = usize::try_from(id.checked_sub(self.start).unwrap()).unwrap();
+    pub fn note(&mut self, id: TransactionId) {
+        self.length = ((id.0 + 1).checked_sub(self.start).unwrap()).max(self.length);
+        let offset = usize::try_from(id.0.checked_sub(self.start).unwrap()).unwrap();
         let index = offset / (usize::BITS as usize);
         if self.statuses.len() < index + 1 {
             self.statuses.resize(index + 1, 0);
@@ -568,25 +571,25 @@ impl IdSequence {
 
 #[test]
 fn id_sequence_tests() {
-    let mut seq = IdSequence::new(1);
-    seq.note(3);
+    let mut seq = IdSequence::new(TransactionId(1));
+    seq.note(TransactionId(3));
     assert!(!seq.complete());
-    seq.note(1);
+    seq.note(TransactionId(1));
     assert!(!seq.complete());
-    seq.note(2);
+    seq.note(TransactionId(2));
     assert!(seq.complete());
-    seq.note(4);
+    seq.note(TransactionId(4));
     assert!(seq.complete());
 
-    let mut seq = IdSequence::new(0);
+    let mut seq = IdSequence::new(TransactionId(0));
     for id in (0..=65).rev() {
-        seq.note(id);
+        seq.note(TransactionId(id));
         assert_eq!(id == 0, seq.complete());
     }
 
-    let mut seq = IdSequence::new(1);
+    let mut seq = IdSequence::new(TransactionId(1));
     for id in (1..=1024).rev() {
-        seq.note(id);
+        seq.note(TransactionId(id));
         assert_eq!(id == 1, seq.complete());
     }
 }

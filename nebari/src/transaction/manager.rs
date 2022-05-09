@@ -207,7 +207,7 @@ impl<Manager: FileManager> ManagerThread<Manager> {
                 return;
             }
         };
-        let transaction_id = log.current_transaction_id();
+        let transaction_id = log.state().next_transaction_id();
         drop(state_sender.send(Ok(state)));
 
         Self {

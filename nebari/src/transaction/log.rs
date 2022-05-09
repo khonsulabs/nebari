@@ -150,11 +150,6 @@ impl<File: ManagedFile> TransactionLog<File> {
         self.log.close()
     }
 
-    /// Returns the current transaction id.
-    pub fn current_transaction_id(&self) -> TransactionId {
-        self.state.next_transaction_id()
-    }
-
     /// Begins a new transaction, exclusively locking `trees`.
     pub fn new_transaction<
         'a,
@@ -168,8 +163,8 @@ impl<File: ManagedFile> TransactionLog<File> {
     }
 
     /// Returns the current state of the log.
-    pub fn state(&self) -> State {
-        self.state.clone()
+    pub fn state(&self) -> &State {
+        &self.state
     }
 }
 
@@ -728,6 +723,7 @@ mod tests {
         log_file_tests("any_memory_log_file", AnyFileManager::memory(), None, None);
     }
 
+    #[allow(clippy::too_many_lines)]
     fn log_file_tests<Manager: FileManager>(
         file_name: &str,
         file_manager: Manager,
@@ -756,7 +752,10 @@ mod tests {
             TransactionLog::<Manager::File>::initialize_state(&state, &context).unwrap();
             let mut transactions =
                 TransactionLog::<Manager::File>::open(&log_path, state, context.clone()).unwrap();
-            assert_eq!(transactions.current_transaction_id(), TransactionId(id));
+            assert_eq!(
+                transactions.state().next_transaction_id(),
+                TransactionId(id)
+            );
             let mut tx = transactions.new_transaction([&b"hello"[..]]);
 
             tx.transaction.data = Some(ArcBytes::from(id.to_be_bytes()));
@@ -870,7 +869,10 @@ mod tests {
 
         let mut valid_ids = HashSet::new();
         for id in 1..=10_000 {
-            assert_eq!(transactions.current_transaction_id(), TransactionId(id));
+            assert_eq!(
+                transactions.state().next_transaction_id(),
+                TransactionId(id)
+            );
             let tx = transactions.new_transaction([&b"hello"[..]]);
             if rng.generate::<u8>() < 8 {
                 // skip a few ids.

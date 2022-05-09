@@ -33,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `StdFile::flush()` is now implemented using
 `std::File::flush()`. To synchronize all data and metadata, use
 `File::synchronize()` instead.
+- `TransactionLog::current_transaction_id` has been removed, and
+  `TransactionLog::state` now returns a reference to the current state. This
+  function previously was returning `State::next_transaction_id()`, which made
+  the name a little weird. To preserve existing behavior, use
+  `log.state().next_transaction_id()`.
 
 ### Fixed
 

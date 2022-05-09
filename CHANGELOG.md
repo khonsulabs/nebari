@@ -38,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   function previously was returning `State::next_transaction_id()`, which made
   the name a little weird. To preserve existing behavior, use
   `log.state().next_transaction_id()`.
+- `EmbeddedIndex::index` has been moved to a new trait, `Indexer<T>`.
+  `EmbeddedIndex::Reducer` has been renamed to `EmbeddedIndex::Indexer`, and now
+  requires both `Reducer` and `Indexer` to be implemented.
+
+  This change also adds `&self` to the `index()` function's signature, allowing
+  the embedded indexer to have a configuration/state.
 
 ### Fixed
 

@@ -22,11 +22,11 @@ use crate::{
     roots::AbortError,
     transaction::TransactionId,
     tree::{
-        btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
-        by_id::ByIdReducer,
+        btree_entry::{Indexer, KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
+        by_id::ByIdIndexer,
         copy_chunk, dynamic_order,
         versioned::ChangeResult,
-        BTreeNode, EmbeddedIndex, PageHeader, Reducer, Root,
+        BTreeNode, PageHeader, Root,
     },
     vault::AnyVault,
     ArcBytes, ChunkCache, ErrorKind,
@@ -78,15 +78,14 @@ where
     ) -> Result<(), Error> {
         modification.reverse()?;
 
-        let total_keys = self
-            .by_id_root
-            .stats::<ByIdReducer<<Index as EmbeddedIndex>::Reducer>>(self.reducer())
-            .total_keys()
-            + modification.keys.len() as u64;
+        let total_keys =
+            self.by_id_root.stats(self.reducer()).total_keys() + modification.keys.len() as u64;
         let by_id_order = dynamic_order(total_keys, max_order);
         let minimum_children = by_id_order / 2 - 1;
         let minimum_children =
             minimum_children.min(usize::try_from(total_keys).unwrap_or(usize::MAX));
+
+        let reducer = self.reducer.clone();
 
         while !modification.keys.is_empty() {
             match self.by_id_root.modify(
@@ -107,7 +106,7 @@ where
                             Ok(KeyOperation::Set(UnversionedByIdIndex {
                                 value_length,
                                 position,
-                                embedded: Index::index(key, Some(value)),
+                                embedded: reducer.0.index(key, Some(value)),
                             }))
                         } else {
                             Ok(KeyOperation::Remove)
@@ -142,13 +141,11 @@ where
 impl<EmbeddedIndex> Root for UnversionedTreeRoot<EmbeddedIndex>
 where
     EmbeddedIndex: Clone + super::EmbeddedIndex + 'static,
-    ByIdReducer<EmbeddedIndex::Reducer>:
-        Reducer<UnversionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedIndex::Reduced>>,
 {
     const HEADER: PageHeader = PageHeader::UnversionedHeader;
     type Index = UnversionedByIdIndex<EmbeddedIndex>;
     type ReducedIndex = ByIdStats<EmbeddedIndex::Reduced>;
-    type Reducer = ByIdReducer<EmbeddedIndex::Reducer>;
+    type Reducer = ByIdIndexer<EmbeddedIndex::Indexer>;
 
     fn default_with(reducer: Self::Reducer) -> Self {
         Self {

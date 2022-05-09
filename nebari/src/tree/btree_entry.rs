@@ -89,6 +89,12 @@ pub trait Reducer<Index, ReducedIndex = Index>: Debug + Clone + Send + Sync {
         ReducedIndexesIter: Iterator<Item = &'a ReducedIndex> + ExactSizeIterator + Clone;
 }
 
+/// Creates an `Index` from a key and value.
+pub trait Indexer<Index>: Debug + Send + Sync {
+    /// Index the key and value.
+    fn index(&self, key: &ArcBytes<'_>, value: Option<&ArcBytes<'static>>) -> Index;
+}
+
 impl<Index> Reducer<Index, ()> for () {
     fn reduce<'a, Indexes, IndexesIter>(&self, _indexes: Indexes) -> Self
     where

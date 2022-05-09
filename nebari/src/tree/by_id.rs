@@ -155,14 +155,14 @@ where
 }
 
 #[derive(Clone, Default, Debug)]
-pub struct ByIdReducer<EmbeddedReducer>(pub EmbeddedReducer);
+pub struct ByIdIndexer<EmbeddedIndexer>(pub EmbeddedIndexer);
 
-impl<EmbeddedReducer, EmbeddedIndex, EmbeddedStats>
+impl<EmbeddedIndexer, EmbeddedIndex, EmbeddedStats>
     Reducer<VersionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedStats>>
-    for ByIdReducer<EmbeddedReducer>
+    for ByIdIndexer<EmbeddedIndexer>
 where
-    EmbeddedReducer: Reducer<EmbeddedIndex, EmbeddedStats>,
-    EmbeddedIndex: super::EmbeddedIndex<Reducer = EmbeddedReducer, Reduced = EmbeddedStats>,
+    EmbeddedIndexer: Reducer<EmbeddedIndex, EmbeddedStats>,
+    EmbeddedIndex: super::EmbeddedIndex<Indexer = EmbeddedIndexer, Reduced = EmbeddedStats>,
 {
     fn reduce<'a, Indexes, IndexesIter>(&self, indexes: Indexes) -> ByIdStats<EmbeddedStats>
     where
@@ -192,12 +192,12 @@ where
     }
 }
 
-impl<EmbeddedReducer, EmbeddedIndex, EmbeddedStats>
+impl<EmbeddedIndexer, EmbeddedIndex, EmbeddedStats>
     Reducer<UnversionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedStats>>
-    for ByIdReducer<EmbeddedReducer>
+    for ByIdIndexer<EmbeddedIndexer>
 where
-    EmbeddedReducer: Reducer<EmbeddedIndex, EmbeddedStats>,
-    EmbeddedIndex: super::EmbeddedIndex<Reducer = EmbeddedReducer, Reduced = EmbeddedStats>,
+    EmbeddedIndexer: Reducer<EmbeddedIndex, EmbeddedStats>,
+    EmbeddedIndex: super::EmbeddedIndex<Indexer = EmbeddedIndexer, Reduced = EmbeddedStats>,
 {
     fn reduce<'a, Indexes, IndexesIter>(&self, indexes: Indexes) -> ByIdStats<EmbeddedStats>
     where
@@ -226,7 +226,7 @@ where
     }
 }
 
-impl<EmbeddedReducer> ByIdReducer<EmbeddedReducer> {
+impl<EmbeddedIndexer> ByIdIndexer<EmbeddedIndexer> {
     fn reduce<'a, EmbeddedIndex, EmbeddedStats, Id, Indexes, IndexesIter>(
         &self,
         values: Indexes,
@@ -234,10 +234,10 @@ impl<EmbeddedReducer> ByIdReducer<EmbeddedReducer> {
     where
         Id: IdIndex<EmbeddedIndex> + 'a,
         EmbeddedIndex:
-            super::EmbeddedIndex<Reducer = EmbeddedReducer, Reduced = EmbeddedStats> + 'a,
+            super::EmbeddedIndex<Indexer = EmbeddedIndexer, Reduced = EmbeddedStats> + 'a,
         Indexes: IntoIterator<Item = &'a Id, IntoIter = IndexesIter> + ExactSizeIterator,
         IndexesIter: Iterator<Item = &'a Id> + ExactSizeIterator + Clone,
-        EmbeddedReducer: Reducer<EmbeddedIndex, EmbeddedStats>,
+        EmbeddedIndexer: Reducer<EmbeddedIndex, EmbeddedStats>,
     {
         let values = values.into_iter();
         let (alive_keys, deleted_keys, total_indexed_bytes) = values
@@ -279,7 +279,7 @@ impl<EmbeddedReducer> ByIdReducer<EmbeddedReducer> {
             + ExactSizeIterator,
         ReducedIndexesIter:
             Iterator<Item = &'a ByIdStats<EmbeddedStats>> + ExactSizeIterator + Clone,
-        EmbeddedReducer: Reducer<EmbeddedIndex, EmbeddedStats>,
+        EmbeddedIndexer: Reducer<EmbeddedIndex, EmbeddedStats>,
     {
         let values = values.into_iter();
         ByIdStats {

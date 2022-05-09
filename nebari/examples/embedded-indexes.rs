@@ -3,7 +3,9 @@ use std::convert::Infallible;
 use byteorder::BigEndian;
 use nanorand::{Pcg64, Rng};
 use nebari::{
-    tree::{EmbeddedIndex, Reducer, Root, ScanEvaluation, Serializable, VersionedTreeRoot},
+    tree::{
+        EmbeddedIndex, Indexer, Reducer, Root, ScanEvaluation, Serializable, VersionedTreeRoot,
+    },
     Error,
 };
 
@@ -55,10 +57,19 @@ pub struct Zeroes(pub u32);
 
 impl EmbeddedIndex for Zeroes {
     type Reduced = Self;
-    type Reducer = ZeroesReducer;
+    type Indexer = ZeroesIndexer;
+}
 
-    fn index(_key: &nebari::ArcBytes<'_>, value: Option<&nebari::ArcBytes<'static>>) -> Self {
-        Self(
+#[derive(Default, Clone, Debug)]
+pub struct ZeroesIndexer;
+
+impl Indexer<Zeroes> for ZeroesIndexer {
+    fn index(
+        &self,
+        _key: &nebari::ArcBytes<'_>,
+        value: Option<&nebari::ArcBytes<'static>>,
+    ) -> Zeroes {
+        Zeroes(
             value
                 .map(|bytes| bytes.iter().filter(|&b| b as char == '0').count())
                 .unwrap_or_default() as u32,
@@ -66,10 +77,7 @@ impl EmbeddedIndex for Zeroes {
     }
 }
 
-#[derive(Default, Clone, Debug)]
-pub struct ZeroesReducer;
-
-impl Reducer<Zeroes> for ZeroesReducer {
+impl Reducer<Zeroes> for ZeroesIndexer {
     fn reduce<'a, Indexes, IndexesIter>(&self, indexes: Indexes) -> Zeroes
     where
         Indexes: IntoIterator<Item = &'a Zeroes, IntoIter = IndexesIter> + ExactSizeIterator,

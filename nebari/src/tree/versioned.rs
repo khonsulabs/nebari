@@ -23,8 +23,8 @@ use crate::{
     roots::AbortError,
     transaction::TransactionId,
     tree::{
-        btree_entry::{KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
-        by_id::ByIdReducer,
+        btree_entry::{Indexer, KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
+        by_id::ByIdIndexer,
         by_sequence::{BySequenceReducer, SequenceId},
         copy_chunk, dynamic_order,
         key_entry::KeyEntry,
@@ -57,12 +57,12 @@ where
     pub by_id_root:
         BTreeEntry<VersionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedIndex::Reduced>>,
 
-    reducer: ByIdReducer<EmbeddedIndex::Reducer>,
+    reducer: ByIdIndexer<EmbeddedIndex::Indexer>,
 }
 impl<EmbeddedIndex> Default for VersionedTreeRoot<EmbeddedIndex>
 where
     EmbeddedIndex: super::EmbeddedIndex + Clone + Debug + 'static,
-    EmbeddedIndex::Reducer: Default,
+    EmbeddedIndex::Indexer: Default,
 {
     fn default() -> Self {
         Self {
@@ -70,7 +70,7 @@ where
             sequence: SequenceId(0),
             by_sequence_root: BTreeEntry::default(),
             by_id_root: BTreeEntry::default(),
-            reducer: ByIdReducer(<EmbeddedIndex::Reducer as Default>::default()),
+            reducer: ByIdIndexer(<EmbeddedIndex::Indexer as Default>::default()),
         }
     }
 }
@@ -92,7 +92,7 @@ pub enum Children<Index, ReducedIndex> {
 impl<EmbeddedIndex> VersionedTreeRoot<EmbeddedIndex>
 where
     EmbeddedIndex: super::EmbeddedIndex + Clone + Debug + 'static,
-    ByIdReducer<EmbeddedIndex::Reducer>:
+    ByIdIndexer<EmbeddedIndex::Indexer>:
         Reducer<VersionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedIndex::Reduced>>,
 {
     fn modify_sequence_root(
@@ -165,6 +165,8 @@ where
         let by_id_minimum_children =
             by_id_minimum_children.min(usize::try_from(total_id_records).unwrap_or(usize::MAX));
 
+        let reducer = self.reducer.clone();
+
         while !modification.keys.is_empty() {
             match self.by_id_root.modify(
                 &mut modification,
@@ -185,7 +187,7 @@ where
                         } else {
                             (0, 0)
                         };
-                        let embedded = EmbeddedIndex::index(key, value);
+                        let embedded = reducer.0.index(key, value);
                         changes.current_sequence = changes
                             .current_sequence
                             .next_sequence()
@@ -249,7 +251,7 @@ where
     const HEADER: PageHeader = PageHeader::VersionedHeader;
     type Index = VersionedByIdIndex<EmbeddedIndex>;
     type ReducedIndex = ByIdStats<EmbeddedIndex::Reduced>;
-    type Reducer = ByIdReducer<EmbeddedIndex::Reducer>;
+    type Reducer = ByIdIndexer<EmbeddedIndex::Indexer>;
 
     fn default_with(reducer: Self::Reducer) -> Self {
         Self {

@@ -90,7 +90,7 @@ mod versioned;
 pub(crate) const DEFAULT_MAX_ORDER: usize = 1000;
 
 pub use self::{
-    btree_entry::{BTreeEntry, BTreeNode, KeyOperation, Reducer},
+    btree_entry::{BTreeEntry, BTreeNode, Indexer, KeyOperation, Reducer},
     by_id::{ByIdStats, UnversionedByIdIndex, VersionedByIdIndex},
     by_sequence::{BySequenceIndex, BySequenceStats, SequenceId},
     interior::{Interior, Pointer},
@@ -1803,10 +1803,7 @@ pub trait EmbeddedIndex: Serializable + Clone + Debug + Send + Sync + 'static {
     /// The reduced representation of this index.
     type Reduced: Serializable + Clone + Debug + Send + Sync + 'static;
     /// The reducer that reduces arrays of `Self` or `Self::Reduced` into `Self::Reduced`.
-    type Reducer: Reducer<Self, Self::Reduced>;
-
-    /// Index the key and value.
-    fn index(key: &ArcBytes<'_>, value: Option<&ArcBytes<'static>>) -> Self;
+    type Indexer: Indexer<Self> + Reducer<Self, Self::Reduced>;
 }
 
 /// A type that can be serialized and deserialized.
@@ -1821,8 +1818,11 @@ pub trait Serializable: Send + Sync + Sized + 'static {
 
 impl EmbeddedIndex for () {
     type Reduced = Self;
-    type Reducer = Self;
-    fn index(_key: &ArcBytes<'_>, _value: Option<&ArcBytes<'static>>) -> Self {}
+    type Indexer = Self;
+}
+
+impl Indexer<()> for () {
+    fn index(&self, _key: &ArcBytes<'_>, _value: Option<&ArcBytes<'static>>) -> Self {}
 }
 
 impl Serializable for () {

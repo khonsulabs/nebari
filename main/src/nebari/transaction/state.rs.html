@@ -204,6 +204,7 @@
 <span id="199">199</span>
 <span id="200">200</span>
 <span id="201">201</span>
+<span id="202">202</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">borrow::Cow</span>,
     <span class="ident">collections::HashMap</span>,
@@ -288,9 +289,10 @@
     <span class="doccomment">/// transactions have been recorded yet.</span>
     <span class="attribute">#[<span class="ident">must_use</span>]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">current_transaction_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">TransactionId</span><span class="op">&gt;</span> {
-        <span class="kw">match</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">current_transaction_id</span>.<span class="ident">load</span>(<span class="ident">Ordering::SeqCst</span>) {
-            <span class="ident">UNINITIALIZED_ID</span> <span class="op">|</span> <span class="number">1</span> =&gt; <span class="prelude-val">None</span>,
-            <span class="ident">other</span> =&gt; <span class="prelude-val">Some</span>(<span class="ident">TransactionId</span>(<span class="ident">other</span> <span class="op">-</span> <span class="number">1</span>)),
+        <span class="kw">let</span> <span class="ident">position</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">log_position</span>.<span class="ident">lock</span>();
+        <span class="kw">match</span> <span class="ident">position</span>.<span class="ident">last_written_transaction</span> {
+            <span class="ident">TransactionId</span>(<span class="ident">UNINITIALIZED_ID</span>) =&gt; <span class="prelude-val">None</span>,
+            <span class="ident">other</span> =&gt; <span class="prelude-val">Some</span>(<span class="ident">other</span>),
         }
     }
 

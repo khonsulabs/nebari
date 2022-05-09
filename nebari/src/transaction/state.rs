@@ -82,9 +82,10 @@ impl State {
     /// transactions have been recorded yet.
     #[must_use]
     pub fn current_transaction_id(&self) -> Option<TransactionId> {
-        match self.state.current_transaction_id.load(Ordering::SeqCst) {
-            UNINITIALIZED_ID | 1 => None,
-            other => Some(TransactionId(other - 1)),
+        let position = self.state.log_position.lock();
+        match position.last_written_transaction {
+            TransactionId(UNINITIALIZED_ID) => None,
+            other => Some(other),
         }
     }
 

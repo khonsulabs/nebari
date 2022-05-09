@@ -807,7 +807,7 @@
                 <span class="kw">return</span>;
             }
         };
-        <span class="kw">let</span> <span class="ident">transaction_id</span> <span class="op">=</span> <span class="ident">log</span>.<span class="ident">current_transaction_id</span>();
+        <span class="kw">let</span> <span class="ident">transaction_id</span> <span class="op">=</span> <span class="ident">log</span>.<span class="ident">state</span>().<span class="ident">next_transaction_id</span>();
         <span class="ident">drop</span>(<span class="ident">state_sender</span>.<span class="ident">send</span>(<span class="prelude-val">Ok</span>(<span class="ident">state</span>)));
 
         <span class="self">Self</span> {

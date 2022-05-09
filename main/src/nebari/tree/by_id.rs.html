@@ -493,14 +493,14 @@
 }
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Default</span>, <span class="ident">Debug</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ByIdReducer</span><span class="op">&lt;</span><span class="ident">EmbeddedReducer</span><span class="op">&gt;</span>(<span class="kw">pub</span> <span class="ident">EmbeddedReducer</span>);
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ByIdIndexer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndexer</span><span class="op">&gt;</span>(<span class="kw">pub</span> <span class="ident">EmbeddedIndexer</span>);
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">EmbeddedReducer</span>, <span class="ident">EmbeddedIndex</span>, <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">EmbeddedIndexer</span>, <span class="ident">EmbeddedIndex</span>, <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>
     <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">VersionedByIdIndex</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span><span class="op">&gt;</span>, <span class="ident">ByIdStats</span><span class="op">&lt;</span><span class="ident">EmbeddedStats</span><span class="op">&gt;</span><span class="op">&gt;</span>
-    <span class="kw">for</span> <span class="ident">ByIdReducer</span><span class="op">&lt;</span><span class="ident">EmbeddedReducer</span><span class="op">&gt;</span>
+    <span class="kw">for</span> <span class="ident">ByIdIndexer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndexer</span><span class="op">&gt;</span>
 <span class="kw">where</span>
-    <span class="ident">EmbeddedReducer</span>: <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span>, <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>,
-    <span class="ident">EmbeddedIndex</span>: <span class="ident"><span class="kw">super</span>::EmbeddedIndex</span><span class="op">&lt;</span><span class="ident">Reducer</span> <span class="op">=</span> <span class="ident">EmbeddedReducer</span>, <span class="ident">Reduced</span> <span class="op">=</span> <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>,
+    <span class="ident">EmbeddedIndexer</span>: <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span>, <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>,
+    <span class="ident">EmbeddedIndex</span>: <span class="ident"><span class="kw">super</span>::EmbeddedIndex</span><span class="op">&lt;</span><span class="ident">Indexer</span> <span class="op">=</span> <span class="ident">EmbeddedIndexer</span>, <span class="ident">Reduced</span> <span class="op">=</span> <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>,
 {
     <span class="kw">fn</span> <span class="ident">reduce</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Indexes</span>, <span class="ident">IndexesIter</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">indexes</span>: <span class="ident">Indexes</span>) -&gt; <span class="ident">ByIdStats</span><span class="op">&lt;</span><span class="ident">EmbeddedStats</span><span class="op">&gt;</span>
     <span class="kw">where</span>
@@ -530,12 +530,12 @@
     }
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">EmbeddedReducer</span>, <span class="ident">EmbeddedIndex</span>, <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">EmbeddedIndexer</span>, <span class="ident">EmbeddedIndex</span>, <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>
     <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">UnversionedByIdIndex</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span><span class="op">&gt;</span>, <span class="ident">ByIdStats</span><span class="op">&lt;</span><span class="ident">EmbeddedStats</span><span class="op">&gt;</span><span class="op">&gt;</span>
-    <span class="kw">for</span> <span class="ident">ByIdReducer</span><span class="op">&lt;</span><span class="ident">EmbeddedReducer</span><span class="op">&gt;</span>
+    <span class="kw">for</span> <span class="ident">ByIdIndexer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndexer</span><span class="op">&gt;</span>
 <span class="kw">where</span>
-    <span class="ident">EmbeddedReducer</span>: <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span>, <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>,
-    <span class="ident">EmbeddedIndex</span>: <span class="ident"><span class="kw">super</span>::EmbeddedIndex</span><span class="op">&lt;</span><span class="ident">Reducer</span> <span class="op">=</span> <span class="ident">EmbeddedReducer</span>, <span class="ident">Reduced</span> <span class="op">=</span> <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>,
+    <span class="ident">EmbeddedIndexer</span>: <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span>, <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>,
+    <span class="ident">EmbeddedIndex</span>: <span class="ident"><span class="kw">super</span>::EmbeddedIndex</span><span class="op">&lt;</span><span class="ident">Indexer</span> <span class="op">=</span> <span class="ident">EmbeddedIndexer</span>, <span class="ident">Reduced</span> <span class="op">=</span> <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>,
 {
     <span class="kw">fn</span> <span class="ident">reduce</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Indexes</span>, <span class="ident">IndexesIter</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">indexes</span>: <span class="ident">Indexes</span>) -&gt; <span class="ident">ByIdStats</span><span class="op">&lt;</span><span class="ident">EmbeddedStats</span><span class="op">&gt;</span>
     <span class="kw">where</span>
@@ -564,7 +564,7 @@
     }
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">EmbeddedReducer</span><span class="op">&gt;</span> <span class="ident">ByIdReducer</span><span class="op">&lt;</span><span class="ident">EmbeddedReducer</span><span class="op">&gt;</span> {
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">EmbeddedIndexer</span><span class="op">&gt;</span> <span class="ident">ByIdIndexer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndexer</span><span class="op">&gt;</span> {
     <span class="kw">fn</span> <span class="ident">reduce</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">EmbeddedIndex</span>, <span class="ident">EmbeddedStats</span>, <span class="ident">Id</span>, <span class="ident">Indexes</span>, <span class="ident">IndexesIter</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">values</span>: <span class="ident">Indexes</span>,
@@ -572,10 +572,10 @@
     <span class="kw">where</span>
         <span class="ident">Id</span>: <span class="ident">IdIndex</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;a</span>,
         <span class="ident">EmbeddedIndex</span>:
-            <span class="ident"><span class="kw">super</span>::EmbeddedIndex</span><span class="op">&lt;</span><span class="ident">Reducer</span> <span class="op">=</span> <span class="ident">EmbeddedReducer</span>, <span class="ident">Reduced</span> <span class="op">=</span> <span class="ident">EmbeddedStats</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;a</span>,
+            <span class="ident"><span class="kw">super</span>::EmbeddedIndex</span><span class="op">&lt;</span><span class="ident">Indexer</span> <span class="op">=</span> <span class="ident">EmbeddedIndexer</span>, <span class="ident">Reduced</span> <span class="op">=</span> <span class="ident">EmbeddedStats</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;a</span>,
         <span class="ident">Indexes</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Id</span>, <span class="ident">IntoIter</span> <span class="op">=</span> <span class="ident">IndexesIter</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">ExactSizeIterator</span>,
         <span class="ident">IndexesIter</span>: <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Id</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">ExactSizeIterator</span> <span class="op">+</span> <span class="ident">Clone</span>,
-        <span class="ident">EmbeddedReducer</span>: <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span>, <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>,
+        <span class="ident">EmbeddedIndexer</span>: <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span>, <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>,
     {
         <span class="kw">let</span> <span class="ident">values</span> <span class="op">=</span> <span class="ident">values</span>.<span class="ident">into_iter</span>();
         <span class="kw">let</span> (<span class="ident">alive_keys</span>, <span class="ident">deleted_keys</span>, <span class="ident">total_indexed_bytes</span>) <span class="op">=</span> <span class="ident">values</span>
@@ -617,7 +617,7 @@
             <span class="op">+</span> <span class="ident">ExactSizeIterator</span>,
         <span class="ident">ReducedIndexesIter</span>:
             <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">ByIdStats</span><span class="op">&lt;</span><span class="ident">EmbeddedStats</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">ExactSizeIterator</span> <span class="op">+</span> <span class="ident">Clone</span>,
-        <span class="ident">EmbeddedReducer</span>: <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span>, <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>,
+        <span class="ident">EmbeddedIndexer</span>: <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span>, <span class="ident">EmbeddedStats</span><span class="op">&gt;</span>,
     {
         <span class="kw">let</span> <span class="ident">values</span> <span class="op">=</span> <span class="ident">values</span>.<span class="ident">into_iter</span>();
         <span class="ident">ByIdStats</span> {

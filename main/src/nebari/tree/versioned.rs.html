@@ -589,6 +589,8 @@
 <span id="584">584</span>
 <span id="585">585</span>
 <span id="586">586</span>
+<span id="587">587</span>
+<span id="588">588</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections::HashMap</span>,
     <span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Display</span>},
@@ -614,8 +616,8 @@
     <span class="ident">roots::AbortError</span>,
     <span class="ident">transaction::TransactionId</span>,
     <span class="ident">tree</span>::{
-        <span class="ident">btree_entry</span>::{<span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">NodeInclusion</span>, <span class="ident">ScanArgs</span>},
-        <span class="ident">by_id::ByIdReducer</span>,
+        <span class="ident">btree_entry</span>::{<span class="ident">Indexer</span>, <span class="ident">KeyOperation</span>, <span class="ident">ModificationContext</span>, <span class="ident">NodeInclusion</span>, <span class="ident">ScanArgs</span>},
+        <span class="ident">by_id::ByIdIndexer</span>,
         <span class="ident">by_sequence</span>::{<span class="ident">BySequenceReducer</span>, <span class="ident">SequenceId</span>},
         <span class="ident">copy_chunk</span>, <span class="ident">dynamic_order</span>,
         <span class="ident">key_entry::KeyEntry</span>,
@@ -648,12 +650,12 @@
     <span class="kw">pub</span> <span class="ident">by_id_root</span>:
         <span class="ident">BTreeEntry</span><span class="op">&lt;</span><span class="ident">VersionedByIdIndex</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span><span class="op">&gt;</span>, <span class="ident">ByIdStats</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex::Reduced</span><span class="op">&gt;</span><span class="op">&gt;</span>,
 
-    <span class="ident">reducer</span>: <span class="ident">ByIdReducer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex::Reducer</span><span class="op">&gt;</span>,
+    <span class="ident">reducer</span>: <span class="ident">ByIdIndexer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex::Indexer</span><span class="op">&gt;</span>,
 }
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span><span class="op">&gt;</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">VersionedTreeRoot</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span><span class="op">&gt;</span>
 <span class="kw">where</span>
     <span class="ident">EmbeddedIndex</span>: <span class="ident"><span class="kw">super</span>::EmbeddedIndex</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
-    <span class="ident">EmbeddedIndex::Reducer</span>: <span class="ident">Default</span>,
+    <span class="ident">EmbeddedIndex::Indexer</span>: <span class="ident">Default</span>,
 {
     <span class="kw">fn</span> <span class="ident">default</span>() -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
@@ -661,7 +663,7 @@
             <span class="ident">sequence</span>: <span class="ident">SequenceId</span>(<span class="number">0</span>),
             <span class="ident">by_sequence_root</span>: <span class="ident">BTreeEntry::default</span>(),
             <span class="ident">by_id_root</span>: <span class="ident">BTreeEntry::default</span>(),
-            <span class="ident">reducer</span>: <span class="ident">ByIdReducer</span>(<span class="op">&lt;</span><span class="ident">EmbeddedIndex::Reducer</span> <span class="kw">as</span> <span class="ident">Default</span><span class="op">&gt;</span><span class="ident">::default</span>()),
+            <span class="ident">reducer</span>: <span class="ident">ByIdIndexer</span>(<span class="op">&lt;</span><span class="ident">EmbeddedIndex::Indexer</span> <span class="kw">as</span> <span class="ident">Default</span><span class="op">&gt;</span><span class="ident">::default</span>()),
         }
     }
 }
@@ -683,7 +685,7 @@
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span><span class="op">&gt;</span> <span class="ident">VersionedTreeRoot</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span><span class="op">&gt;</span>
 <span class="kw">where</span>
     <span class="ident">EmbeddedIndex</span>: <span class="ident"><span class="kw">super</span>::EmbeddedIndex</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
-    <span class="ident">ByIdReducer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex::Reducer</span><span class="op">&gt;</span>:
+    <span class="ident">ByIdIndexer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex::Indexer</span><span class="op">&gt;</span>:
         <span class="ident">Reducer</span><span class="op">&lt;</span><span class="ident">VersionedByIdIndex</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span><span class="op">&gt;</span>, <span class="ident">ByIdStats</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex::Reduced</span><span class="op">&gt;</span><span class="op">&gt;</span>,
 {
     <span class="kw">fn</span> <span class="ident">modify_sequence_root</span>(
@@ -756,6 +758,8 @@
         <span class="kw">let</span> <span class="ident">by_id_minimum_children</span> <span class="op">=</span>
             <span class="ident">by_id_minimum_children</span>.<span class="ident">min</span>(<span class="ident">usize::try_from</span>(<span class="ident">total_id_records</span>).<span class="ident">unwrap_or</span>(<span class="ident">usize::MAX</span>));
 
+        <span class="kw">let</span> <span class="ident">reducer</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">reducer</span>.<span class="ident">clone</span>();
+
         <span class="kw">while</span> <span class="op">!</span><span class="ident">modification</span>.<span class="ident">keys</span>.<span class="ident">is_empty</span>() {
             <span class="kw">match</span> <span class="self">self</span>.<span class="ident">by_id_root</span>.<span class="ident">modify</span>(
                 <span class="kw-2">&amp;mut</span> <span class="ident">modification</span>,
@@ -776,7 +780,7 @@
                         } <span class="kw">else</span> {
                             (<span class="number">0</span>, <span class="number">0</span>)
                         };
-                        <span class="kw">let</span> <span class="ident">embedded</span> <span class="op">=</span> <span class="ident">EmbeddedIndex::index</span>(<span class="ident">key</span>, <span class="ident">value</span>);
+                        <span class="kw">let</span> <span class="ident">embedded</span> <span class="op">=</span> <span class="ident">reducer</span>.<span class="number">0</span>.<span class="ident">index</span>(<span class="ident">key</span>, <span class="ident">value</span>);
                         <span class="ident">changes</span>.<span class="ident">current_sequence</span> <span class="op">=</span> <span class="ident">changes</span>
                             .<span class="ident">current_sequence</span>
                             .<span class="ident">next_sequence</span>()
@@ -840,7 +844,7 @@
     <span class="kw">const</span> <span class="ident">HEADER</span>: <span class="ident">PageHeader</span> <span class="op">=</span> <span class="ident">PageHeader::VersionedHeader</span>;
     <span class="kw">type</span> <span class="ident">Index</span> <span class="op">=</span> <span class="ident">VersionedByIdIndex</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex</span><span class="op">&gt;</span>;
     <span class="kw">type</span> <span class="ident">ReducedIndex</span> <span class="op">=</span> <span class="ident">ByIdStats</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex::Reduced</span><span class="op">&gt;</span>;
-    <span class="kw">type</span> <span class="ident">Reducer</span> <span class="op">=</span> <span class="ident">ByIdReducer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex::Reducer</span><span class="op">&gt;</span>;
+    <span class="kw">type</span> <span class="ident">Reducer</span> <span class="op">=</span> <span class="ident">ByIdIndexer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndex::Indexer</span><span class="op">&gt;</span>;
 
     <span class="kw">fn</span> <span class="ident">default_with</span>(<span class="ident">reducer</span>: <span class="ident"><span class="self">Self</span>::Reducer</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {

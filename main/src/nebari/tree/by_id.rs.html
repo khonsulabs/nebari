@@ -336,6 +336,8 @@
 <span id="331">331</span>
 <span id="332">332</span>
 <span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">byteorder</span>::{<span class="ident">BigEndian</span>, <span class="ident">ReadBytesExt</span>, <span class="ident">WriteBytesExt</span>};
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">btree_entry::Reducer</span>, <span class="ident">BinarySerialization</span>, <span class="ident">PagedWriter</span>};
@@ -492,6 +494,8 @@
     }
 }
 
+<span class="doccomment">/// Indexes and Reduces [`VersionedByIdIndex`] and [`UnversionedByIdIndex`].</span>
+<span class="doccomment">/// Contains an [`EmbeddedIndex`][super::EmbeddedIndex].</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Default</span>, <span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ByIdIndexer</span><span class="op">&lt;</span><span class="ident">EmbeddedIndexer</span><span class="op">&gt;</span>(<span class="kw">pub</span> <span class="ident">EmbeddedIndexer</span>);
 

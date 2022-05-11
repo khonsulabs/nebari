@@ -154,6 +154,8 @@ where
     }
 }
 
+/// Indexes and Reduces [`VersionedByIdIndex`] and [`UnversionedByIdIndex`].
+/// Contains an [`EmbeddedIndex`][super::EmbeddedIndex].
 #[derive(Clone, Default, Debug)]
 pub struct ByIdIndexer<EmbeddedIndexer>(pub EmbeddedIndexer);
 

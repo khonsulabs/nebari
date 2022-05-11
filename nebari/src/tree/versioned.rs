@@ -29,7 +29,7 @@ use crate::{
         copy_chunk, dynamic_order,
         key_entry::KeyEntry,
         modify::Operation,
-        BTreeNode, Interior, PageHeader, PersistenceMode, Reducer, Root,
+        BTreeNode, Interior, ModificationResult, PageHeader, PersistenceMode, Reducer, Root,
     },
     vault::AnyVault,
     ArcBytes, ChunkCache, ErrorKind,
@@ -97,7 +97,7 @@ where
 {
     fn modify_sequence_root(
         &mut self,
-        mut modification: Modification<'_, BySequenceIndex>,
+        mut modification: Modification<'_, BySequenceIndex, BySequenceIndex>,
         writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
@@ -118,16 +118,17 @@ where
         while !modification.keys.is_empty() {
             match self.by_sequence_root.modify(
                 &mut modification,
-                &ModificationContext {
+                &mut ModificationContext {
                     current_order: by_sequence_order,
                     minimum_children: by_sequence_minimum_children,
-                    indexer: |_key: &ArcBytes<'_>,
+                    indexer:
+                        &mut |_key: &ArcBytes<'_>,
                               value: Option<&BySequenceIndex>,
                               _existing_index: Option<&BySequenceIndex>,
                               _changes: &mut EntryChanges,
                               _writer: &mut PagedWriter<'_>| {
-                        Ok(KeyOperation::Set(value.unwrap().clone()))
-                    },
+                            Ok(KeyOperation::Set(value.unwrap().clone()))
+                        },
                     loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_>| Ok(None),
                     reducer: BySequenceReducer,
                     _phantom: PhantomData,
@@ -150,11 +151,11 @@ where
 
     fn modify_id_root(
         &mut self,
-        mut modification: Modification<'_, ArcBytes<'static>>,
+        mut modification: Modification<'_, ArcBytes<'static>, VersionedByIdIndex<EmbeddedIndex>>,
         changes: &mut EntryChanges,
         writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<ModificationResult<VersionedByIdIndex<EmbeddedIndex>>>, Error> {
         modification.reverse()?;
 
         let total_id_records =
@@ -165,19 +166,20 @@ where
         let by_id_minimum_children =
             by_id_minimum_children.min(usize::try_from(total_id_records).unwrap_or(usize::MAX));
 
-        let reducer = self.reducer.clone();
+        let mut results = Vec::new();
 
         while !modification.keys.is_empty() {
+            let reducer = self.reducer.clone();
             match self.by_id_root.modify(
                 &mut modification,
-                &ModificationContext {
+                &mut ModificationContext {
                     current_order: by_id_order,
                     minimum_children: by_id_minimum_children,
-                    indexer: |key: &ArcBytes<'_>,
-                              value: Option<&ArcBytes<'static>>,
-                              existing_index: Option<&VersionedByIdIndex<EmbeddedIndex>>,
-                              changes: &mut EntryChanges,
-                              writer: &mut PagedWriter<'_>| {
+                    indexer: &mut |key: &ArcBytes<'_>,
+                                   value: Option<&ArcBytes<'static>>,
+                                   existing_index: Option<&VersionedByIdIndex<EmbeddedIndex>>,
+                                   changes: &mut EntryChanges,
+                                   writer: &mut PagedWriter<'_>| {
                         let (position, value_size) = if let Some(value) = value {
                             let new_position = writer.write_chunk(value)?;
                             // write_chunk errors if it can't fit within a u32
@@ -202,12 +204,17 @@ where
                             value_position: position,
                             value_size,
                         });
-                        Ok(KeyOperation::Set(VersionedByIdIndex {
+                        let new_index = VersionedByIdIndex {
                             sequence_id: changes.current_sequence,
                             position,
                             value_length: value_size,
                             embedded,
-                        }))
+                        };
+                        results.push(ModificationResult {
+                            key,
+                            index: Some(new_index.clone()),
+                        });
+                        Ok(KeyOperation::Set(new_index))
                     },
                     loader: |index, writer| {
                         if index.position > 0 {
@@ -240,7 +247,7 @@ where
 
         self.sequence = changes.current_sequence;
 
-        Ok(())
+        Ok(results)
     }
 }
 
@@ -345,10 +352,10 @@ where
 
     fn modify(
         &mut self,
-        modification: Modification<'_, ArcBytes<'static>>,
+        modification: Modification<'_, ArcBytes<'static>, Self::Index>,
         writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<ModificationResult<Self::Index>>, Error> {
         let persistence_mode = modification.persistence_mode;
 
         // Insert into both trees
@@ -356,7 +363,7 @@ where
             current_sequence: self.sequence,
             changes: Vec::with_capacity(modification.keys.len()),
         };
-        self.modify_id_root(modification, &mut changes, writer, max_order)?;
+        let results = self.modify_id_root(modification, &mut changes, writer, max_order)?;
 
         // Convert the changes into a modification request for the id root.
         let mut values = Vec::with_capacity(changes.changes.len());
@@ -386,7 +393,7 @@ where
             self.transaction_id = transaction_id;
         }
 
-        Ok(())
+        Ok(results)
     }
 
     fn get_multiple<'keys, KeyEvaluator, KeyReader, Keys>(
@@ -399,18 +406,18 @@ where
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
     where
-        KeyEvaluator: FnMut(&ArcBytes<'static>) -> ScanEvaluation,
-        KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Self::Index) -> ScanEvaluation,
+        KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>, Self::Index) -> Result<(), Error>,
         Keys: Iterator<Item = &'keys [u8]>,
     {
         let mut positions_to_read = Vec::new();
         self.by_id_root.get(
             &mut KeyRange::new(keys),
-            &mut |key, _index| key_evaluator(key),
+            &mut |key, index| key_evaluator(key, index),
             &mut |key, index| {
                 // Deleted keys are stored with a 0 position.
                 if index.position > 0 {
-                    positions_to_read.push((key, index.position));
+                    positions_to_read.push((key, index.clone()));
                 }
                 Ok(())
             },
@@ -420,16 +427,18 @@ where
         )?;
 
         // Sort by position on disk
-        positions_to_read.sort_by(|a, b| a.1.cmp(&b.1));
+        positions_to_read.sort_by(|a, b| a.1.position.cmp(&b.1.position));
 
-        for (key, position) in positions_to_read {
-            if position > 0 {
-                match read_chunk(position, false, file, vault, cache)? {
+        for (key, index) in positions_to_read {
+            if index.position > 0 {
+                match read_chunk(index.position, false, file, vault, cache)? {
                     CacheEntry::ArcBytes(contents) => {
-                        key_reader(key, contents)?;
+                        key_reader(key, contents, index)?;
                     }
                     CacheEntry::Decoded(_) => unreachable!(),
                 };
+            } else {
+                key_reader(key, ArcBytes::default(), index)?;
             }
         }
         Ok(())
@@ -542,14 +551,14 @@ where
         // This modification copies the `sequence_indexes` into the sequence root.
         self.by_sequence_root.modify(
             &mut modification,
-            &ModificationContext {
+            &mut ModificationContext {
                 current_order: by_sequence_order,
                 minimum_children,
-                indexer: |_key: &ArcBytes<'_>,
-                          value: Option<&BySequenceIndex>,
-                          _existing_index: Option<&BySequenceIndex>,
-                          _changes: &mut EntryChanges,
-                          _writer: &mut PagedWriter<'_>| {
+                indexer: &mut |_key: &ArcBytes<'_>,
+                               value: Option<&BySequenceIndex>,
+                               _existing_index: Option<&BySequenceIndex>,
+                               _changes: &mut EntryChanges,
+                               _writer: &mut PagedWriter<'_>| {
                     Ok(KeyOperation::Set(value.unwrap().clone()))
                 },
                 loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_>| unreachable!(),

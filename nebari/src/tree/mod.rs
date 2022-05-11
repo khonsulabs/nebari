@@ -91,7 +91,7 @@ pub(crate) const DEFAULT_MAX_ORDER: usize = 1000;
 
 pub use self::{
     btree_entry::{BTreeEntry, BTreeNode, Indexer, KeyOperation, Reducer},
-    by_id::{ByIdStats, UnversionedByIdIndex, VersionedByIdIndex},
+    by_id::{ByIdIndexer, ByIdStats, UnversionedByIdIndex, VersionedByIdIndex},
     by_sequence::{BySequenceIndex, BySequenceStats, SequenceId},
     interior::{Interior, Pointer},
     key_entry::{KeyEntry, ValueIndex},
@@ -312,30 +312,40 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     /// Sets a key/value pair. Replaces any previous value if set. If you wish
     /// to retrieve the previously stored value, use
     /// [`replace()`](Self::replace) instead.
+    ///
+    /// Returns the new/updated index for this key.
     pub fn set(
         &mut self,
         persistence_mode: impl Into<PersistenceMode>,
         key: impl Into<ArcBytes<'static>>,
         value: impl Into<ArcBytes<'static>>,
-    ) -> Result<(), Error> {
-        self.file.execute(TreeModifier {
-            state: &self.state,
-            vault: self.vault.as_deref(),
-            cache: self.cache.as_ref(),
-            modification: Some(Modification {
-                persistence_mode: persistence_mode.into(),
-                keys: vec![key.into()],
-                operation: Operation::Set(value.into()),
-            }),
-            scratch: &mut self.scratch,
-        })
+    ) -> Result<Root::Index, Error> {
+        Ok(self
+            .file
+            .execute(TreeModifier {
+                state: &self.state,
+                vault: self.vault.as_deref(),
+                cache: self.cache.as_ref(),
+                modification: Some(Modification {
+                    persistence_mode: persistence_mode.into(),
+                    keys: vec![key.into()],
+                    operation: Operation::Set(value.into()),
+                }),
+                scratch: &mut self.scratch,
+            })?
+            .into_iter()
+            .next()
+            .expect("always produces a single result")
+            .index
+            .expect("modification always produces a new index"))
     }
 
-    /// Executes a modification.
+    /// Executes a modification. Returns a list of modified keys and their
+    /// updated indexes, if the keys are still present.
     pub fn modify(
         &mut self,
-        modification: Modification<'_, ArcBytes<'static>>,
-    ) -> Result<(), Error> {
+        modification: Modification<'_, ArcBytes<'static>, Root::Index>,
+    ) -> Result<Vec<ModificationResult<Root::Index>>, Error> {
         self.file.execute(TreeModifier {
             state: &self.state,
             vault: self.vault.as_deref(),
@@ -360,6 +370,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             persistence_mode: persistence_mode.into(),
             keys: vec![ArcBytes::from(key)],
             operation: Operation::CompareSwap(CompareSwap::new(&mut |_key,
+                                                                     _index,
                                                                      value: Option<
                 ArcBytes<'_>,
             >| {
@@ -379,51 +390,66 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         result
     }
 
-    /// Removes `key` and returns the existing value, if present.
+    /// Removes `key` and returns the existing value and index, if present.
     pub fn remove(
         &mut self,
         key: &[u8],
         persistence_mode: impl Into<PersistenceMode>,
-    ) -> Result<Option<ArcBytes<'static>>, Error> {
+    ) -> Result<Option<(ArcBytes<'static>, Root::Index)>, Error> {
         let mut existing_value = None;
         self.modify(Modification {
             persistence_mode: persistence_mode.into(),
             keys: vec![ArcBytes::from(key)],
-            operation: Operation::CompareSwap(CompareSwap::new(&mut |_key, value| {
-                existing_value = value;
-                KeyOperation::Remove
-            })),
+            operation: Operation::CompareSwap(CompareSwap::new(
+                &mut |_key, index: Option<&Root::Index>, value| {
+                    existing_value = if let (Some(index), Some(value)) = (index, value) {
+                        Some((value, index.clone()))
+                    } else {
+                        None
+                    };
+                    KeyOperation::Remove
+                },
+            )),
         })?;
         Ok(existing_value)
     }
 
-    /// Sets `key` to `value`. If a value already exists, it will be returned.
+    /// Sets `key` to `value`. Returns a tuple containing two elements:
+    ///
+    /// - The previously stored value, if a value was already present.
+    /// - The new/updated index for this key.
     #[allow(clippy::missing_panics_doc)]
     pub fn replace(
         &mut self,
         key: impl Into<ArcBytes<'static>>,
         value: impl Into<ArcBytes<'static>>,
         persistence_mode: impl Into<PersistenceMode>,
-    ) -> Result<Option<ArcBytes<'static>>, Error> {
+    ) -> Result<(Option<ArcBytes<'static>>, Root::Index), Error> {
         let mut existing_value = None;
         let mut value = Some(value.into());
-        self.modify(Modification {
-            persistence_mode: persistence_mode.into(),
-            keys: vec![key.into()],
-            operation: Operation::CompareSwap(CompareSwap::new(&mut |_, stored_value| {
-                existing_value = stored_value;
-                KeyOperation::Set(value.take().unwrap())
-            })),
-        })?;
+        let result = self
+            .modify(Modification {
+                persistence_mode: persistence_mode.into(),
+                keys: vec![key.into()],
+                operation: Operation::CompareSwap(CompareSwap::new(
+                    &mut |_, _index, stored_value| {
+                        existing_value = stored_value;
+                        KeyOperation::Set(value.take().unwrap())
+                    },
+                )),
+            })?
+            .into_iter()
+            .next()
+            .unwrap();
 
-        Ok(existing_value)
+        Ok((existing_value, result.index.unwrap()))
     }
 
     /// Gets the value stored for `key`.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
-    pub fn get<'k>(
+    pub fn get(
         &mut self,
-        key: &'k [u8],
+        key: &[u8],
         in_transaction: bool,
     ) -> Result<Option<ArcBytes<'static>>, Error> {
         let mut buffer = None;
@@ -433,13 +459,65 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
             keys: KeyRange::new(std::iter::once(key)),
-            key_reader: |_key, value| {
+            key_reader: |_key, value, _index| {
                 buffer = Some(value);
                 Ok(())
             },
-            key_evaluator: |_| ScanEvaluation::ReadData,
+            key_evaluator: |_, _| ScanEvaluation::ReadData,
         })?;
         Ok(buffer)
+    }
+
+    /// Gets the index stored for `key`.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    pub fn get_index(
+        &mut self,
+        key: &[u8],
+        in_transaction: bool,
+    ) -> Result<Option<Root::Index>, Error> {
+        let mut found_index = None;
+        self.file.execute(TreeGetter {
+            from_transaction: in_transaction,
+            state: &self.state,
+            vault: self.vault.as_deref(),
+            cache: self.cache.as_ref(),
+            keys: KeyRange::new(std::iter::once(key)),
+            key_reader: |_, _, _| unreachable!(),
+            key_evaluator: |_key, index| {
+                found_index = Some(index.clone());
+                ScanEvaluation::Skip
+            },
+        })?;
+        Ok(found_index)
+    }
+
+    /// Gets the value and index stored for `key`.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    pub fn get_with_index(
+        &mut self,
+        key: &[u8],
+        in_transaction: bool,
+    ) -> Result<Option<(ArcBytes<'static>, Root::Index)>, Error> {
+        let mut buffer = None;
+        let mut found_index = None;
+        self.file.execute(TreeGetter {
+            from_transaction: in_transaction,
+            state: &self.state,
+            vault: self.vault.as_deref(),
+            cache: self.cache.as_ref(),
+            keys: KeyRange::new(std::iter::once(key)),
+            key_reader: |_key, value, index| {
+                buffer = Some(value);
+                found_index = Some(index);
+                Ok(())
+            },
+            key_evaluator: |_, _| ScanEvaluation::ReadData,
+        })?;
+        if let (Some(buffer), Some(index)) = (buffer, found_index) {
+            Ok(Some((buffer, index)))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Gets the values stored in `keys`. Does not error if a key is missing.
@@ -463,16 +541,76 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
             keys: KeyRange::new(keys),
-            key_reader: |key, value| {
+            key_reader: |key, value, _| {
                 buffers.push((key, value));
                 Ok(())
             },
-            key_evaluator: |_| ScanEvaluation::ReadData,
+            key_evaluator: |_, _| ScanEvaluation::ReadData,
         })?;
         Ok(buffers)
     }
 
-    /// Retrieves all keys and values with keys that are contained by `range`.
+    /// Gets the indexes stored in `keys`. Does not error if a key is missing.
+    /// Returns key/value pairs in an unspecified order. Keys are required to be
+    /// pre-sorted.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, keys)))]
+    pub fn get_multiple_indexes<'keys, KeysIntoIter, KeysIter>(
+        &mut self,
+        keys: KeysIntoIter,
+        in_transaction: bool,
+    ) -> Result<Vec<(ArcBytes<'static>, Root::Index)>, Error>
+    where
+        KeysIntoIter: IntoIterator<Item = &'keys [u8], IntoIter = KeysIter>,
+        KeysIter: Iterator<Item = &'keys [u8]> + ExactSizeIterator,
+    {
+        let keys = keys.into_iter();
+        let mut buffers = Vec::with_capacity(keys.len());
+        self.file.execute(TreeGetter {
+            from_transaction: in_transaction,
+            state: &self.state,
+            vault: self.vault.as_deref(),
+            cache: self.cache.as_ref(),
+            keys: KeyRange::new(keys),
+            key_reader: |key, _value, index| {
+                buffers.push((key, index));
+                Ok(())
+            },
+            key_evaluator: |_, _| ScanEvaluation::ReadData,
+        })?;
+        Ok(buffers)
+    }
+
+    /// Gets the values and indexes stored in `keys`. Does not error if a key is
+    /// missing. Returns key/value pairs in an unspecified order. Keys are
+    /// required to be pre-sorted.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, keys)))]
+    pub fn get_multiple_with_indexes<'keys, KeysIntoIter, KeysIter>(
+        &mut self,
+        keys: KeysIntoIter,
+        in_transaction: bool,
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>, Root::Index)>, Error>
+    where
+        KeysIntoIter: IntoIterator<Item = &'keys [u8], IntoIter = KeysIter>,
+        KeysIter: Iterator<Item = &'keys [u8]> + ExactSizeIterator,
+    {
+        let keys = keys.into_iter();
+        let mut buffers = Vec::with_capacity(keys.len());
+        self.file.execute(TreeGetter {
+            from_transaction: in_transaction,
+            state: &self.state,
+            vault: self.vault.as_deref(),
+            cache: self.cache.as_ref(),
+            keys: KeyRange::new(keys),
+            key_reader: |key, value, index| {
+                buffers.push((key, value, index));
+                Ok(())
+            },
+            key_evaluator: |_, _| ScanEvaluation::ReadData,
+        })?;
+        Ok(buffers)
+    }
+
+    /// Retrieves all keys and values for keys that are contained by `range`.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn get_range<'keys, KeyRangeBounds>(
         &mut self,
@@ -491,6 +629,57 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             &mut |_, _| ScanEvaluation::ReadData,
             &mut |key, _index, value| {
                 results.push((key, value));
+                Ok(())
+            },
+        )?;
+        Ok(results)
+    }
+
+    /// Retrieves all keys and indexes for keys that are contained by `range`.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    pub fn get_range_indexes<'keys, KeyRangeBounds>(
+        &mut self,
+        range: &'keys KeyRangeBounds,
+        in_transaction: bool,
+    ) -> Result<Vec<(ArcBytes<'static>, Root::Index)>, Error>
+    where
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+    {
+        let mut results = Vec::new();
+        self.scan(
+            range,
+            true,
+            in_transaction,
+            &mut |_, _, _| ScanEvaluation::ReadData,
+            &mut |key, index| {
+                results.push((key.clone(), index.clone()));
+                ScanEvaluation::Skip
+            },
+            &mut |_key, _index, _value| unreachable!(),
+        )?;
+        Ok(results)
+    }
+
+    /// Retrieves all keys and values and indexes for keys that are contained by
+    /// `range`.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    pub fn get_range_with_indexes<'keys, KeyRangeBounds>(
+        &mut self,
+        range: &'keys KeyRangeBounds,
+        in_transaction: bool,
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>, Root::Index)>, Error>
+    where
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+    {
+        let mut results = Vec::new();
+        self.scan(
+            range,
+            true,
+            in_transaction,
+            &mut |_, _, _| ScanEvaluation::ReadData,
+            &mut |_, _| ScanEvaluation::ReadData,
+            &mut |key, index, value| {
+                results.push((key, value, index.clone()));
                 Ok(())
             },
         )?;
@@ -1039,15 +1228,19 @@ struct TreeModifier<'a, 'm, Root: root::Root> {
     state: &'a State<Root>,
     vault: Option<&'a dyn AnyVault>,
     cache: Option<&'a ChunkCache>,
-    modification: Option<Modification<'m, ArcBytes<'static>>>,
+    modification: Option<Modification<'m, ArcBytes<'static>, Root::Index>>,
     scratch: &'a mut Vec<u8>,
 }
 
-impl<'a, 'm, Root> FileOp<Result<(), Error>> for TreeModifier<'a, 'm, Root>
+impl<'a, 'm, Root> FileOp<Result<Vec<ModificationResult<Root::Index>>, Error>>
+    for TreeModifier<'a, 'm, Root>
 where
     Root: root::Root,
 {
-    fn execute(mut self, file: &mut dyn File) -> Result<(), Error> {
+    fn execute(
+        mut self,
+        file: &mut dyn File,
+    ) -> Result<Vec<ModificationResult<Root::Index>>, Error> {
         let mut active_state = self.state.lock();
         if active_state.file_id != file.id() {
             return Err(Error::from(ErrorKind::TreeCompacted));
@@ -1067,7 +1260,7 @@ where
         let max_order = active_state.max_order;
 
         // Execute the modification
-        active_state
+        let results = active_state
             .root
             .modify(modification, &mut data_block, max_order)?;
 
@@ -1089,7 +1282,7 @@ where
             active_state.publish(self.state);
         }
 
-        Ok(())
+        Ok(results)
     }
 }
 
@@ -1171,8 +1364,8 @@ struct TreeGetter<
     'a,
     'keys,
     Root: root::Root,
-    KeyEvaluator: FnMut(&ArcBytes<'static>) -> ScanEvaluation,
-    KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> ScanEvaluation,
+    KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>, Root::Index) -> Result<(), Error>,
     Keys: Iterator<Item = &'keys [u8]>,
 > {
     from_transaction: bool,
@@ -1187,8 +1380,8 @@ struct TreeGetter<
 impl<'a, 'keys, KeyEvaluator, KeyReader, Root, Keys> FileOp<Result<(), Error>>
     for TreeGetter<'a, 'keys, Root, KeyEvaluator, KeyReader, Keys>
 where
-    KeyEvaluator: FnMut(&ArcBytes<'static>) -> ScanEvaluation,
-    KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> ScanEvaluation,
+    KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>, Root::Index) -> Result<(), Error>,
     Keys: Iterator<Item = &'keys [u8]>,
     Root: root::Root,
 {
@@ -1835,6 +2028,14 @@ impl Serializable for () {
     }
 }
 
+/// A single key's modification result.
+pub struct ModificationResult<Index> {
+    /// The key that was changed.
+    pub key: ArcBytes<'static>,
+    /// The updated index, if the key is still present.
+    pub index: Option<Index>,
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -2477,7 +2678,7 @@ mod tests {
         )
         .unwrap();
 
-        let stored = tree.replace(b"test", b"third", None).unwrap().unwrap();
+        let stored = tree.replace(b"test", b"third", None).unwrap().0.unwrap();
         assert_eq!(stored, b"second");
 
         tree.compare_and_swap(b"test", Some(b"third"), None, None)
@@ -2704,19 +2905,21 @@ mod tests {
             tree.modify(Modification {
                 persistence_mode: PersistenceMode::Sync,
                 keys: key_operations.keys().cloned().collect(),
-                operation: Operation::CompareSwap(CompareSwap::new(&mut |key, existing_value| {
-                    let should_remove = *key_operations.get(key).unwrap();
-                    if should_remove {
-                        assert!(
-                            existing_value.is_some(),
-                            "key {key:?} had no existing value"
-                        );
-                        KeyOperation::Remove
-                    } else {
-                        assert!(existing_value.is_none(), "key {key:?} already had a value");
-                        KeyOperation::Set(key.to_owned())
-                    }
-                })),
+                operation: Operation::CompareSwap(CompareSwap::new(
+                    &mut |key, _index, existing_value| {
+                        let should_remove = *key_operations.get(key).unwrap();
+                        if should_remove {
+                            assert!(
+                                existing_value.is_some(),
+                                "key {key:?} had no existing value"
+                            );
+                            KeyOperation::Remove
+                        } else {
+                            assert!(existing_value.is_none(), "key {key:?} already had a value");
+                            KeyOperation::Set(key.to_owned())
+                        }
+                    },
+                )),
             })
             .unwrap();
         }

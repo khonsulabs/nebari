@@ -123,7 +123,7 @@ pub struct ModificationContext<
     Loader,
     IndexReducer,
 > where
-    Indexer: Fn(
+    Indexer: FnMut(
         &ArcBytes<'_>,
         Option<&IndexedType>,
         Option<&Index>,
@@ -131,7 +131,7 @@ pub struct ModificationContext<
         &mut PagedWriter<'_>,
     ) -> Result<KeyOperation<Index>, Error>,
     IndexReducer: Reducer<Index, ReducedIndex>,
-    Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+    Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
 {
     pub current_order: usize,
     pub minimum_children: usize,
@@ -164,8 +164,8 @@ where
 {
     pub(crate) fn modify<IndexedType, Context, Indexer, Loader, IndexReducer>(
         &mut self,
-        modification: &mut Modification<'_, IndexedType>,
-        context: &ModificationContext<
+        modification: &mut Modification<'_, IndexedType, Index>,
+        context: &mut ModificationContext<
             IndexedType,
             Index,
             ReducedIndex,
@@ -179,7 +179,7 @@ where
         writer: &mut PagedWriter<'_>,
     ) -> Result<ChangeResult, Error>
     where
-        Indexer: Fn(
+        Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
@@ -187,7 +187,7 @@ where
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         match &mut self.node {
             BTreeNode::Leaf(children) => {
@@ -267,8 +267,8 @@ where
     #[allow(clippy::too_many_lines)] // TODO refactor, too many lines
     fn modify_leaf<IndexedType, Context, Indexer, Loader, IndexReducer>(
         children: &mut Vec<KeyEntry<Index>>,
-        modification: &mut Modification<'_, IndexedType>,
-        context: &ModificationContext<
+        modification: &mut Modification<'_, IndexedType, Index>,
+        context: &mut ModificationContext<
             IndexedType,
             Index,
             ReducedIndex,
@@ -282,7 +282,7 @@ where
         writer: &mut PagedWriter<'_>,
     ) -> Result<bool, Error>
     where
-        Indexer: Fn(
+        Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
@@ -290,7 +290,7 @@ where
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut last_index = 0;
         let mut any_changes = false;
@@ -333,7 +333,7 @@ where
                         Operation::CompareSwap(callback) => {
                             let current_index = &children[last_index].index;
                             let existing_value = (context.loader)(current_index, writer)?;
-                            match callback(&key, existing_value) {
+                            match callback(&key, Some(current_index), existing_value) {
                                 KeyOperation::Skip => KeyOperation::Skip,
                                 KeyOperation::Set(new_value) => (context.indexer)(
                                     &key,
@@ -388,7 +388,7 @@ where
                             // The key doesn't exist, so a remove is a no-op.
                             KeyOperation::Remove
                         }
-                        Operation::CompareSwap(callback) => match callback(&key, None) {
+                        Operation::CompareSwap(callback) => match callback(&key, None, None) {
                             KeyOperation::Skip => KeyOperation::Skip,
                             KeyOperation::Set(new_value) => {
                                 (context.indexer)(&key, Some(&new_value), None, changes, writer)?
@@ -426,8 +426,8 @@ where
 
     fn modify_interior<IndexedType, Context, Indexer, Loader, IndexReducer>(
         children: &mut Vec<Interior<Index, ReducedIndex>>,
-        modification: &mut Modification<'_, IndexedType>,
-        context: &ModificationContext<
+        modification: &mut Modification<'_, IndexedType, Index>,
+        context: &mut ModificationContext<
             IndexedType,
             Index,
             ReducedIndex,
@@ -441,7 +441,7 @@ where
         writer: &mut PagedWriter<'_>,
     ) -> Result<ChangeResult, Error>
     where
-        Indexer: Fn(
+        Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
@@ -449,7 +449,7 @@ where
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut last_index = 0;
         let mut any_changes = false;
@@ -545,7 +545,7 @@ where
         writer: &mut PagedWriter<'_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
-        Indexer: Fn(
+        Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
@@ -553,7 +553,7 @@ where
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let can_absorb = children.len() > 1;
         match (result, can_absorb) {
@@ -594,7 +594,7 @@ where
         writer: &mut PagedWriter<'_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
-        Indexer: Fn(
+        Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
@@ -602,7 +602,7 @@ where
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let (insert_on_top, sponge_index) = if child_index > 0 {
             (true, child_index - 1)
@@ -668,7 +668,7 @@ where
         writer: &mut PagedWriter<'_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
-        Indexer: Fn(
+        Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
@@ -676,7 +676,7 @@ where
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut should_backup = false;
         // Before adding a new node, we want to first try to use neighboring
@@ -747,7 +747,7 @@ where
         writer: &mut PagedWriter<'_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
-        Indexer: Fn(
+        Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
@@ -755,7 +755,7 @@ where
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut should_backup = false;
         // Check the previous child to see if it can accept any of this child.
@@ -849,7 +849,7 @@ where
         writer: &mut PagedWriter<'_>,
     ) -> Result<ChangeResult, Error>
     where
-        Indexer: Fn(
+        Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
@@ -857,7 +857,7 @@ where
             &mut PagedWriter<'_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: Fn(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
     {
         // Check the previous child to see if it can accept any of this child.
         children[child_index + 1].position.load(

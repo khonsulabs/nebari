@@ -26,7 +26,7 @@ use crate::{
         by_id::ByIdIndexer,
         copy_chunk, dynamic_order,
         versioned::ChangeResult,
-        BTreeNode, PageHeader, Root,
+        BTreeNode, ModificationResult, PageHeader, Root,
     },
     vault::AnyVault,
     ArcBytes, ChunkCache, ErrorKind,
@@ -72,10 +72,10 @@ where
 {
     fn modify_id_root<'a, 'w>(
         &'a mut self,
-        mut modification: Modification<'_, ArcBytes<'static>>,
+        mut modification: Modification<'_, ArcBytes<'static>, UnversionedByIdIndex<Index>>,
         writer: &'a mut PagedWriter<'w>,
         max_order: Option<usize>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<ModificationResult<UnversionedByIdIndex<Index>>>, Error> {
         modification.reverse()?;
 
         let total_keys =
@@ -87,10 +87,12 @@ where
 
         let reducer = self.reducer.clone();
 
+        let mut results = Vec::with_capacity(modification.keys.len());
+
         while !modification.keys.is_empty() {
             match self.by_id_root.modify(
                 &mut modification,
-                &ModificationContext {
+                &mut ModificationContext {
                     current_order: by_id_order,
                     minimum_children,
                     indexer: |key: &ArcBytes<'_>,
@@ -103,12 +105,21 @@ where
                             // write_chunk errors if it can't fit within a u32
                             #[allow(clippy::cast_possible_truncation)]
                             let value_length = value.len() as u32;
-                            Ok(KeyOperation::Set(UnversionedByIdIndex {
+                            let new_index = UnversionedByIdIndex {
                                 value_length,
                                 position,
                                 embedded: reducer.0.index(key, Some(value)),
-                            }))
+                            };
+                            results.push(ModificationResult {
+                                key: key.to_owned(),
+                                index: Some(new_index.clone()),
+                            });
+                            Ok(KeyOperation::Set(new_index))
                         } else {
+                            results.push(ModificationResult {
+                                key: key.to_owned(),
+                                index: None,
+                            });
                             Ok(KeyOperation::Remove)
                         }
                     },
@@ -134,7 +145,7 @@ where
             }
         }
 
-        Ok(())
+        Ok(results)
     }
 }
 
@@ -225,20 +236,20 @@ where
 
     fn modify(
         &mut self,
-        modification: Modification<'_, ArcBytes<'static>>,
+        modification: Modification<'_, ArcBytes<'static>, Self::Index>,
         writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<ModificationResult<Self::Index>>, Error> {
         let transaction_id = modification.persistence_mode.transaction_id();
 
-        self.modify_id_root(modification, writer, max_order)?;
+        let results = self.modify_id_root(modification, writer, max_order)?;
 
         // Only update the transaction id if a new one was specified.
         if let Some(transaction_id) = transaction_id {
             self.transaction_id = Some(transaction_id);
         }
 
-        Ok(())
+        Ok(results)
     }
 
     fn get_multiple<'keys, KeyEvaluator, KeyReader, Keys>(
@@ -251,18 +262,18 @@ where
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
     where
-        KeyEvaluator: FnMut(&ArcBytes<'static>) -> ScanEvaluation,
-        KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Self::Index) -> ScanEvaluation,
+        KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>, Self::Index) -> Result<(), Error>,
         Keys: Iterator<Item = &'keys [u8]>,
     {
         let mut positions_to_read = Vec::new();
         self.by_id_root.get(
             &mut KeyRange::new(keys),
-            &mut |key, _index| key_evaluator(key),
+            &mut |key, index| key_evaluator(key, index),
             &mut |key, index| {
                 // Deleted keys are stored with a 0 position.
                 if index.position > 0 {
-                    positions_to_read.push((key, index.position));
+                    positions_to_read.push((key, index.clone()));
                 }
                 Ok(())
             },
@@ -272,16 +283,18 @@ where
         )?;
 
         // Sort by position on disk
-        positions_to_read.sort_by(|a, b| a.1.cmp(&b.1));
+        positions_to_read.sort_by(|a, b| a.1.position.cmp(&b.1.position));
 
-        for (key, position) in positions_to_read {
-            if position > 0 {
-                match read_chunk(position, false, file, vault, cache)? {
+        for (key, index) in positions_to_read {
+            if index.position > 0 {
+                match read_chunk(index.position, false, file, vault, cache)? {
                     CacheEntry::ArcBytes(contents) => {
-                        key_reader(key, contents)?;
+                        key_reader(key, contents, index)?;
                     }
                     CacheEntry::Decoded(_) => unreachable!(),
                 };
+            } else {
+                key_reader(key, ArcBytes::default(), index)?;
             }
         }
         Ok(())

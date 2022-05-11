@@ -31,13 +31,15 @@ fuzz_target!(|batches: Vec<BTreeSet<u16>>| {
                 .iter()
                 .map(|key| ArcBytes::from(key.to_be_bytes()))
                 .collect(),
-            operation: Operation::CompareSwap(CompareSwap::new(&mut |key, current_value| {
-                if current_value.is_some() {
-                    KeyOperation::Remove
-                } else {
-                    KeyOperation::Set(key.to_owned())
-                }
-            })),
+            operation: Operation::CompareSwap(CompareSwap::new(
+                &mut |key, _index, current_value| {
+                    if current_value.is_some() {
+                        KeyOperation::Remove
+                    } else {
+                        KeyOperation::Set(key.to_owned())
+                    }
+                },
+            )),
         })
         .unwrap();
         for key in batch {

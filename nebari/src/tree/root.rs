@@ -15,8 +15,8 @@ use crate::{
     roots::AnyTransactionTree,
     transaction::{TransactionId, TransactionManager},
     tree::{
-        btree_entry::ScanArgs, state::AnyTreeState, Modification, PageHeader, PagedWriter, Reducer,
-        ScanEvaluation, State, TreeFile,
+        btree_entry::ScanArgs, state::AnyTreeState, Modification, ModificationResult, PageHeader,
+        PagedWriter, Reducer, ScanEvaluation, State, TreeFile,
     },
     vault::AnyVault,
     AbortError, ArcBytes, ChunkCache, Context, TransactionTree, Vault,
@@ -94,13 +94,14 @@ pub trait Root: Debug + Send + Sync + Clone + 'static {
     /// Returns the current transaction id.
     fn transaction_id(&self) -> TransactionId;
 
-    /// Modifies the tree.
+    /// Modifies the tree. Returns a list of modified keys and their updated
+    /// indexes, if the keys are still present.
     fn modify<'a, 'w>(
         &'a mut self,
-        modification: Modification<'_, ArcBytes<'static>>,
+        modification: Modification<'_, ArcBytes<'static>, Self::Index>,
         writer: &'a mut PagedWriter<'w>,
         max_order: Option<usize>,
-    ) -> Result<(), Error>;
+    ) -> Result<Vec<ModificationResult<Self::Index>>, Error>;
 
     /// Iterates over the tree looking for `keys`. `keys` must be sorted.
     /// `key_evaluator` is invoked for each key as it is found, allowing for
@@ -117,8 +118,8 @@ pub trait Root: Debug + Send + Sync + Clone + 'static {
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
     where
-        KeyEvaluator: FnMut(&ArcBytes<'static>) -> ScanEvaluation,
-        KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>) -> Result<(), Error>,
+        KeyEvaluator: FnMut(&ArcBytes<'static>, &Self::Index) -> ScanEvaluation,
+        KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>, Self::Index) -> Result<(), Error>,
         Keys: Iterator<Item = &'keys [u8]>;
 
     /// Scans the tree over `range`. `args.key_evaluator` is invoked for each key as

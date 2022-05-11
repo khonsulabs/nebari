@@ -26,8 +26,9 @@ use crate::{
         self,
         root::{AnyReducer, AnyTreeRoot},
         state::AnyTreeState,
-        EmbeddedIndex, KeySequence, Modification, Operation, PersistenceMode, ScanEvaluation,
-        SequenceId, State, TransactableCompaction, TreeFile, TreeRoot, VersionedTreeRoot,
+        EmbeddedIndex, KeySequence, Modification, ModificationResult, Operation, PersistenceMode,
+        ScanEvaluation, SequenceId, State, TransactableCompaction, TreeFile, TreeRoot,
+        VersionedTreeRoot,
     },
     vault::AnyVault,
     ArcBytes, ChunkCache, ErrorKind,
@@ -430,21 +431,25 @@ where
 }
 
 impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
-    /// Sets `key` to `value`.
+    /// Sets `key` to `value`. Returns the newly created index for this key.
     pub fn set(
         &mut self,
         key: impl Into<ArcBytes<'static>>,
         value: impl Into<ArcBytes<'static>>,
-    ) -> Result<(), Error> {
-        self.modify(vec![key.into()], Operation::Set(value.into()))
+    ) -> Result<Root::Index, Error> {
+        self.tree.set(
+            PersistenceMode::Transactional(self.transaction_id),
+            key,
+            value,
+        )
     }
 
-    /// Executes a modification.
+    /// Executes a modification. Returns a list of all changed keys.
     pub fn modify<'a>(
         &mut self,
         keys: Vec<ArcBytes<'a>>,
-        operation: Operation<'a, ArcBytes<'static>>,
-    ) -> Result<(), Error> {
+        operation: Operation<'a, ArcBytes<'static>, Root::Index>,
+    ) -> Result<Vec<ModificationResult<Root::Index>>, Error> {
         self.tree.modify(Modification {
             keys,
             persistence_mode: PersistenceMode::Transactional(self.transaction_id),
@@ -452,12 +457,15 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
         })
     }
 
-    /// Sets `key` to `value`. If a value already exists, it will be returned.
+    /// Sets `key` to `value`. Returns a tuple containing two elements:
+    ///
+    /// - The previously stored value, if a value was already present.
+    /// - The new/updated index for this key.
     pub fn replace(
         &mut self,
         key: impl Into<ArcBytes<'static>>,
         value: impl Into<ArcBytes<'static>>,
-    ) -> Result<Option<ArcBytes<'static>>, Error> {
+    ) -> Result<(Option<ArcBytes<'static>>, Root::Index), Error> {
         self.tree.replace(key, value, self.transaction_id)
     }
 
@@ -467,8 +475,26 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
         self.tree.get(key, true)
     }
 
-    /// Removes `key` and returns the existing value, if present.
-    pub fn remove(&mut self, key: &[u8]) -> Result<Option<ArcBytes<'static>>, Error> {
+    /// Returns the current index of `key`. This will return updated information
+    /// if it has been previously updated within this transaction.
+    pub fn get_index(&mut self, key: &[u8]) -> Result<Option<Root::Index>, Error> {
+        self.tree.get_index(key, true)
+    }
+
+    /// Returns the current value and index of `key`. This will return updated
+    /// information if it has been previously updated within this transaction.
+    pub fn get_with_index(
+        &mut self,
+        key: &[u8],
+    ) -> Result<Option<(ArcBytes<'static>, Root::Index)>, Error> {
+        self.tree.get_with_index(key, true)
+    }
+
+    /// Removes `key` and returns the existing value amd index, if present.
+    pub fn remove(
+        &mut self,
+        key: &[u8],
+    ) -> Result<Option<(ArcBytes<'static>, Root::Index)>, Error> {
         self.tree.remove(key, self.transaction_id)
     }
 
@@ -498,6 +524,33 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
         self.tree.get_multiple(keys, true)
     }
 
+    /// Retrieves the indexes of `keys`. If any keys are not found, they will be
+    /// omitted from the results. Keys are required to be pre-sorted.
+    pub fn get_multiple_indexes<'keys, KeysIntoIter, KeysIter>(
+        &mut self,
+        keys: KeysIntoIter,
+    ) -> Result<Vec<(ArcBytes<'static>, Root::Index)>, Error>
+    where
+        KeysIntoIter: IntoIterator<Item = &'keys [u8], IntoIter = KeysIter>,
+        KeysIter: Iterator<Item = &'keys [u8]> + ExactSizeIterator,
+    {
+        self.tree.get_multiple_indexes(keys, true)
+    }
+
+    /// Retrieves the values and indexes of `keys`. If any keys are not found,
+    /// they will be omitted from the results. Keys are required to be
+    /// pre-sorted.
+    pub fn get_multiple_with_indexes<'keys, KeysIntoIter, KeysIter>(
+        &mut self,
+        keys: KeysIntoIter,
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>, Root::Index)>, Error>
+    where
+        KeysIntoIter: IntoIterator<Item = &'keys [u8], IntoIter = KeysIter>,
+        KeysIter: Iterator<Item = &'keys [u8]> + ExactSizeIterator,
+    {
+        self.tree.get_multiple_with_indexes(keys, true)
+    }
+
     /// Retrieves all of the values of keys within `range`.
     pub fn get_range<'keys, KeyRangeBounds>(
         &mut self,
@@ -507,6 +560,28 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
     {
         self.tree.get_range(range, true)
+    }
+
+    /// Retrieves all of the indexes of keys within `range`.
+    pub fn get_range_indexes<'keys, KeyRangeBounds>(
+        &mut self,
+        range: &'keys KeyRangeBounds,
+    ) -> Result<Vec<(ArcBytes<'static>, Root::Index)>, Error>
+    where
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+    {
+        self.tree.get_range_indexes(range, true)
+    }
+
+    /// Retrieves all of the values and indexes of keys within `range`.
+    pub fn get_range_with_indexes<'keys, KeyRangeBounds>(
+        &mut self,
+        range: &'keys KeyRangeBounds,
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>, Root::Index)>, Error>
+    where
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+    {
+        self.tree.get_range_with_indexes(range, true)
     }
 
     /// Scans the tree across all nodes that might contain nodes within `range`.
@@ -814,38 +889,73 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         })
     }
 
-    /// Sets `key` to `value`. If a value already exists, it will be returned.
+    /// Retrieves the current index of `key`, if present. Does not reflect any
+    /// changes in pending transactions.
+    pub fn get_index(&self, key: &[u8]) -> Result<Option<Root::Index>, Error> {
+        catch_compaction_and_retry(|| {
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => return Ok(None),
+                Err(err) => return Err(err),
+            };
+
+            tree.get_index(key, false)
+        })
+    }
+
+    /// Retrieves the current value and index of `key`, if present. Does not reflect any
+    /// changes in pending transactions.
+    pub fn get_with_index(
+        &self,
+        key: &[u8],
+    ) -> Result<Option<(ArcBytes<'static>, Root::Index)>, Error> {
+        catch_compaction_and_retry(|| {
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => return Ok(None),
+                Err(err) => return Err(err),
+            };
+
+            tree.get_with_index(key, false)
+        })
+    }
+
+    /// Sets `key` to `value`. Returns a tuple containing two elements:
+    ///
+    /// - The previously stored value, if a value was already present.
+    /// - The new/updated index for this key.
     #[allow(clippy::missing_panics_doc)]
     pub fn replace(
         &mut self,
         key: impl Into<ArcBytes<'static>>,
         value: impl Into<ArcBytes<'static>>,
-    ) -> Result<Option<ArcBytes<'static>>, Error> {
+    ) -> Result<(Option<ArcBytes<'static>>, Root::Index), Error> {
         let transaction = self.begin_transaction()?;
         let existing_value = transaction.tree::<Root>(0).unwrap().replace(key, value)?;
         transaction.commit()?;
         Ok(existing_value)
     }
 
-    /// Executes a modification.
+    /// Executes a modification. Returns a list of all changed keys.
     #[allow(clippy::missing_panics_doc)]
     pub fn modify<'a>(
         &mut self,
         keys: Vec<ArcBytes<'a>>,
-        operation: Operation<'a, ArcBytes<'static>>,
-    ) -> Result<(), Error> {
+        operation: Operation<'a, ArcBytes<'static>, Root::Index>,
+    ) -> Result<Vec<ModificationResult<Root::Index>>, Error> {
         let transaction = self.begin_transaction()?;
-        transaction
+        let results = transaction
             .tree::<Root>(0)
             .unwrap()
             .modify(keys, operation)?;
         transaction.commit()?;
-        Ok(())
+        Ok(results)
     }
 
-    /// Removes `key` and returns the existing value, if present. This is executed within its own transaction.
+    /// Removes `key` and returns the existing value and index, if present. This
+    /// is executed within its own transaction.
     #[allow(clippy::missing_panics_doc)]
-    pub fn remove(&self, key: &[u8]) -> Result<Option<ArcBytes<'static>>, Error> {
+    pub fn remove(&self, key: &[u8]) -> Result<Option<(ArcBytes<'static>, Root::Index)>, Error> {
         let transaction = self.begin_transaction()?;
         let existing_value = transaction.tree::<Root>(0).unwrap().remove(key)?;
         transaction.commit()?;
@@ -892,6 +1002,51 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         })
     }
 
+    /// Retrieves the indexes of `keys`. If any keys are not found, they will be
+    /// omitted from the results. Keys are required to be pre-sorted.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn get_multiple_indexes<'keys, KeysIntoIter, KeysIter>(
+        &self,
+        keys: KeysIntoIter,
+    ) -> Result<Vec<(ArcBytes<'static>, Root::Index)>, Error>
+    where
+        KeysIntoIter: IntoIterator<Item = &'keys [u8], IntoIter = KeysIter> + Clone,
+        KeysIter: Iterator<Item = &'keys [u8]> + ExactSizeIterator,
+    {
+        catch_compaction_and_retry(|| {
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => return Ok(Vec::new()),
+                Err(err) => return Err(err),
+            };
+
+            tree.get_multiple_indexes(keys.clone(), false)
+        })
+    }
+
+    /// Retrieves the values and indexes of `keys`. If any keys are not found,
+    /// they will be omitted from the results. Keys are required to be
+    /// pre-sorted.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn get_multiple_with_indexes<'keys, KeysIntoIter, KeysIter>(
+        &self,
+        keys: KeysIntoIter,
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>, Root::Index)>, Error>
+    where
+        KeysIntoIter: IntoIterator<Item = &'keys [u8], IntoIter = KeysIter> + Clone,
+        KeysIter: Iterator<Item = &'keys [u8]> + ExactSizeIterator,
+    {
+        catch_compaction_and_retry(|| {
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => return Ok(Vec::new()),
+                Err(err) => return Err(err),
+            };
+
+            tree.get_multiple_with_indexes(keys.clone(), false)
+        })
+    }
+
     /// Retrieves all of the values of keys within `range`.
     pub fn get_range<'keys, KeyRangeBounds>(
         &self,
@@ -908,6 +1063,44 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
             };
 
             tree.get_range(range, false)
+        })
+    }
+
+    /// Retrieves all of the indexes of keys within `range`.
+    pub fn get_range_indexes<'keys, KeyRangeBounds>(
+        &self,
+        range: &'keys KeyRangeBounds,
+    ) -> Result<Vec<(ArcBytes<'static>, Root::Index)>, Error>
+    where
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+    {
+        catch_compaction_and_retry(|| {
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => return Ok(Vec::new()),
+                Err(err) => return Err(err),
+            };
+
+            tree.get_range_indexes(range, false)
+        })
+    }
+
+    /// Retrieves all of the values and indexes of keys within `range`.
+    pub fn get_range_with_indexes<'keys, KeyRangeBounds>(
+        &self,
+        range: &'keys KeyRangeBounds,
+    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>, Root::Index)>, Error>
+    where
+        KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
+    {
+        catch_compaction_and_retry(|| {
+            let mut tree = match self.open_for_read() {
+                Ok(tree) => tree,
+                Err(err) if err.kind.is_file_not_found() => return Ok(Vec::new()),
+                Err(err) => return Err(err),
+            };
+
+            tree.get_range_with_indexes(range, false)
         })
     }
 
@@ -1527,7 +1720,7 @@ mod tests {
                     let absolute_id = (worker * OPERATION_COUNT + relative_id) as u64;
                     tree.set(absolute_id.to_be_bytes(), absolute_id.to_be_bytes())
                         .unwrap();
-                    let value = tree
+                    let (value, _) = tree
                         .remove(&absolute_id.to_be_bytes())
                         .unwrap()
                         .ok_or_else(|| panic!("value not found: {:?}", absolute_id))

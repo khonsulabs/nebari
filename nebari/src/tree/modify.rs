@@ -8,16 +8,16 @@ use crate::{error::Error, transaction::TransactionId, ArcBytes, ErrorKind};
 
 /// A tree modification.
 #[derive(Debug)]
-pub struct Modification<'a, T> {
+pub struct Modification<'a, T, Index> {
     /// The transaction ID to store with this change.
     pub persistence_mode: PersistenceMode,
     /// The keys to operate upon.
     pub keys: Vec<ArcBytes<'a>>,
     /// The operation to perform on the keys.
-    pub operation: Operation<'a, T>,
+    pub operation: Operation<'a, T, Index>,
 }
 
-impl<'a, T> Modification<'a, T> {
+impl<'a, T, Index> Modification<'a, T, Index> {
     pub(crate) fn reverse(&mut self) -> Result<(), Error> {
         if self.keys.windows(2).all(|w| w[0] < w[1]) {
             self.keys.reverse();
@@ -84,7 +84,7 @@ impl From<Option<TransactionId>> for PersistenceMode {
 }
 
 /// An operation that is performed on a set of keys.
-pub enum Operation<'a, T> {
+pub enum Operation<'a, T, Index> {
     /// Sets all keys to the value.
     Set(T),
     /// Sets each key to the corresponding entry in this value. The number of
@@ -94,10 +94,10 @@ pub enum Operation<'a, T> {
     Remove,
     /// Executes the `CompareSwap`. The original value (or `None` if not
     /// present) is the only argument.
-    CompareSwap(CompareSwap<'a, T>),
+    CompareSwap(CompareSwap<'a, T, Index>),
 }
 
-impl<'a, T: Debug> Debug for Operation<'a, T> {
+impl<'a, T: Debug, Index> Debug for Operation<'a, T, Index> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Set(arg0) => f.debug_tuple("Set").field(arg0).finish(),
@@ -111,35 +111,36 @@ impl<'a, T: Debug> Debug for Operation<'a, T> {
 /// A function that is allowed to check the current value of a key and determine
 /// how to operate on it. The first parameter is the key, and the second
 /// parameter is the current value, if present.
-pub type CompareSwapFn<'a, T> = dyn FnMut(&ArcBytes<'a>, Option<T>) -> KeyOperation<T> + 'a;
+pub type CompareSwapFn<'a, T, Index> =
+    dyn FnMut(&ArcBytes<'a>, Option<&Index>, Option<T>) -> KeyOperation<T> + 'a;
 
 /// A wrapper for a [`CompareSwapFn`].
-pub struct CompareSwap<'a, T>(&'a mut CompareSwapFn<'a, T>);
+pub struct CompareSwap<'a, T, Index>(&'a mut CompareSwapFn<'a, T, Index>);
 
-impl<'a, T> CompareSwap<'a, T> {
+impl<'a, T, Index> CompareSwap<'a, T, Index> {
     /// Returns a new wrapped callback.
-    pub fn new<F: FnMut(&ArcBytes<'_>, Option<T>) -> KeyOperation<T> + 'a>(
+    pub fn new<F: FnMut(&ArcBytes<'_>, Option<&Index>, Option<T>) -> KeyOperation<T> + 'a>(
         callback: &'a mut F,
     ) -> Self {
         Self(callback)
     }
 }
 
-impl<'a, T> Debug for CompareSwap<'a, T> {
+impl<'a, T, Index> Debug for CompareSwap<'a, T, Index> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("CompareSwap(dyn FnMut)")
     }
 }
 
-impl<'a, T> Deref for CompareSwap<'a, T> {
-    type Target = CompareSwapFn<'a, T>;
+impl<'a, T, Index> Deref for CompareSwap<'a, T, Index> {
+    type Target = CompareSwapFn<'a, T, Index>;
 
     fn deref(&self) -> &Self::Target {
         self.0
     }
 }
 
-impl<'a, T> DerefMut for CompareSwap<'a, T> {
+impl<'a, T, Index> DerefMut for CompareSwap<'a, T, Index> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0
     }

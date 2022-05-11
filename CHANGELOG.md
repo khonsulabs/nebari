@@ -44,7 +44,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   This change also adds `&self` to the `index()` function's signature, allowing
   the embedded indexer to have a configuration/state.
-
+- `CompareSwap`'s function now takes an additional parameter:
+  `Option<&Root::Index>`. This parameter allows inspecting the currently stored
+  index during the swap function.
+- `modify()` now returns a `Vec<ModificationResult<Root::Index>>`, which
+  contains a list of keys that were modified and their new indexes (if the key
+  still exists after the modification). Note that for a Versioned tree,
+  modifications will always produce new indexes as removed keys are still
+  stored.
+- `set()` now returns `Root::Index`, which is the newly stored index for the
+  key.
+- `replace()` now returns a `(Option<ArcBytes>, Root::Index)>`, which is the
+  previously stored value and the new index for this key.
+- `remove()` now returns both the key and index.
+  
 ### Fixed
 
 - When using `Roots::delete_tree()` on a tree that had previously been opened,
@@ -71,6 +84,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   you wish to remove the overhead of synchronizing, passing
   `PersistenceMode::Flush` will only ensure all application-level caches are
   flushed before confirming the write is successful.
+
+### Added
+
+- `TreeFile`, `Tree`, and `TransactionTree` now have additional methods that
+  allow fetching indexes or values and indexes:
+
+  - `get_index()` - single-key index retrieval
+  - `get_with_index()` - single-key value + index retrieval
+  - `get_multiple_indexes()` multi-key index retrieval
+  - `get_multiple_with_indexes()` multi-key value + index retrieval
+  - `get_range_indexes()` ranged index retrieval
+  - `get_range_with_indexes()` ranged value + index retrieval
 
 ## v0.5.3
 

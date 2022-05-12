@@ -99,7 +99,7 @@ pub use self::{
     root::{AnyTreeRoot, Root, TreeRoot},
     state::{ActiveState, State},
     unversioned::{Unversioned, UnversionedTreeRoot},
-    versioned::{KeySequence, Versioned, VersionedTreeRoot},
+    versioned::{KeySequence, SequenceEntry, SequenceIndex, Versioned, VersionedTreeRoot},
 };
 
 /// The number of bytes in each page on-disk.
@@ -1057,8 +1057,9 @@ where
     ) -> Result<(), AbortError<CallerError>>
     where
         Range: RangeBounds<SequenceId> + Debug + 'static,
-        KeyEvaluator: FnMut(KeySequence) -> ScanEvaluation,
-        DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
+        KeyEvaluator: FnMut(KeySequence<Index>) -> ScanEvaluation,
+        DataCallback:
+            FnMut(KeySequence<Index>, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
         self.file.execute(TreeSequenceScanner {
@@ -1068,17 +1069,126 @@ where
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
             range: &U64Range::new(range).borrow_as_bytes(),
-            key_evaluator: &mut move |key: &ArcBytes<'_>, index: &BySequenceIndex| {
+            key_evaluator: &mut move |key: &ArcBytes<'_>, index: &BySequenceIndex<Index>| {
                 let id = SequenceId(BigEndian::read_u64(key));
                 key_evaluator(KeySequence {
                     key: index.key.clone(),
                     sequence: id,
                     last_sequence: index.last_sequence,
+                    embedded: index.embedded.clone(),
                 })
             },
             data_callback,
         })?;
         Ok(())
+    }
+
+    /// Retrieves the keys and values associated with one or more `sequences`.
+    /// The value retrieved is the value of the key at the given [`SequenceId`].
+    /// If a sequence is not found, it will not appear in the result map. If
+    /// the value was removed, None is returned for the value.
+    pub fn get_multiple_by_sequence<Sequences>(
+        &mut self,
+        sequences: Sequences,
+        in_transaction: bool,
+    ) -> Result<HashMap<SequenceId, (ArcBytes<'static>, Option<ArcBytes<'static>>)>, Error>
+    where
+        Sequences: Iterator<Item = SequenceId>,
+    {
+        let results = RefCell::new(HashMap::new());
+        self.file.execute(TreeSequenceGetter {
+            keys: sequences,
+            from_transaction: in_transaction,
+            state: &self.state,
+            vault: self.vault.as_deref(),
+            cache: self.cache.as_ref(),
+            key_evaluator: |sequence, index| {
+                results
+                    .borrow_mut()
+                    .insert(sequence, (index.key.clone(), None));
+                ScanEvaluation::ReadData
+            },
+            key_reader: |sequence, _index, value| {
+                results
+                    .borrow_mut()
+                    .get_mut(&sequence)
+                    .expect("reader can't be invoked without evaluator")
+                    .1 = Some(value);
+                Ok(())
+            },
+        })?;
+        Ok(results.into_inner())
+    }
+
+    /// Retrieves the keys and indexes associated with one or more `sequences`.
+    /// The value retrieved is the value of the key at the given [`SequenceId`].
+    /// If a sequence is not found, it will not appear in the result list.
+    pub fn get_multiple_indexes_by_sequence<Sequences>(
+        &mut self,
+        sequences: Sequences,
+        in_transaction: bool,
+    ) -> Result<Vec<SequenceIndex<Index>>, Error>
+    where
+        Sequences: Iterator<Item = SequenceId>,
+    {
+        let mut results = Vec::new();
+        self.file.execute(TreeSequenceGetter {
+            keys: sequences,
+            from_transaction: in_transaction,
+            state: &self.state,
+            vault: self.vault.as_deref(),
+            cache: self.cache.as_ref(),
+            key_evaluator: |sequence, index| {
+                results.push(SequenceIndex {
+                    sequence,
+                    index: index.clone(),
+                });
+                ScanEvaluation::Skip
+            },
+            key_reader: |_, _, _| unreachable!(),
+        })?;
+        Ok(results)
+    }
+
+    /// Retrieves the keys, values, and indexes associated with one or more
+    /// `sequences`. The value retrieved is the value of the key at the given
+    /// [`SequenceId`]. If a sequence is not found, it will not appear in the
+    /// result list.
+    pub fn get_multiple_with_indexes_by_sequence<Sequences>(
+        &mut self,
+        sequences: Sequences,
+        in_transaction: bool,
+    ) -> Result<HashMap<SequenceId, SequenceEntry<Index>>, Error>
+    where
+        Sequences: Iterator<Item = SequenceId>,
+    {
+        let results = RefCell::new(HashMap::new());
+        self.file.execute(TreeSequenceGetter {
+            keys: sequences,
+            from_transaction: in_transaction,
+            state: &self.state,
+            vault: self.vault.as_deref(),
+            cache: self.cache.as_ref(),
+            key_evaluator: |sequence, index| {
+                results.borrow_mut().insert(
+                    sequence,
+                    SequenceEntry {
+                        index: index.clone(),
+                        value: None,
+                    },
+                );
+                ScanEvaluation::ReadData
+            },
+            key_reader: |sequence, _index, value| {
+                results
+                    .borrow_mut()
+                    .get_mut(&sequence)
+                    .expect("reader can't be invoked without evaluator")
+                    .value = Some(value);
+                Ok(())
+            },
+        })?;
+        Ok(results.into_inner())
     }
 }
 
@@ -1322,30 +1432,32 @@ fn save_tree<Root: root::Root>(
 
 /// One or more keys.
 #[derive(Debug)]
-pub struct KeyRange<'a, I: Iterator<Item = &'a [u8]>> {
+pub struct KeyRange<I: Iterator<Item = Bytes>, Bytes: AsRef<[u8]>> {
     remaining_keys: I,
-    current_key: Option<&'a [u8]>,
+    current_key: Option<Bytes>,
+    _bytes: PhantomData<Bytes>,
 }
 
-impl<'a, I: Iterator<Item = &'a [u8]>> KeyRange<'a, I> {
+impl<I: Iterator<Item = Bytes>, Bytes: AsRef<[u8]>> KeyRange<I, Bytes> {
     fn new(mut keys: I) -> Self {
         Self {
             current_key: keys.next(),
             remaining_keys: keys,
+            _bytes: PhantomData,
         }
     }
 
-    fn current_key(&self) -> Option<&'a [u8]> {
-        self.current_key
+    fn current_key(&self) -> Option<&[u8]> {
+        self.current_key.as_ref().map(Bytes::as_ref)
     }
 }
 
-impl<'a, I: Iterator<Item = &'a [u8]>> Iterator for KeyRange<'a, I> {
-    type Item = &'a [u8];
-    fn next(&mut self) -> Option<&'a [u8]> {
-        let key_to_return = self.current_key;
-        self.current_key = self.remaining_keys.next();
-        key_to_return
+impl<I: Iterator<Item = Bytes>, Bytes: AsRef<[u8]>> Iterator for KeyRange<I, Bytes> {
+    type Item = Bytes;
+    fn next(&mut self) -> Option<Bytes> {
+        let mut key = self.remaining_keys.next();
+        std::mem::swap(&mut key, &mut self.current_key);
+        key
     }
 }
 
@@ -1521,6 +1633,78 @@ where
         }
     }
 }
+
+struct TreeSequenceGetter<
+    'a,
+    Index: EmbeddedIndex + Clone + Debug + 'static,
+    KeyEvaluator: for<'k> FnMut(SequenceId, &'k BySequenceIndex<Index>) -> ScanEvaluation,
+    KeyReader: FnMut(SequenceId, BySequenceIndex<Index>, ArcBytes<'static>) -> Result<(), Error>,
+    Keys: Iterator<Item = SequenceId>,
+> {
+    from_transaction: bool,
+    state: &'a State<VersionedTreeRoot<Index>>,
+    vault: Option<&'a dyn AnyVault>,
+    cache: Option<&'a ChunkCache>,
+    keys: Keys,
+    key_evaluator: KeyEvaluator,
+    key_reader: KeyReader,
+}
+
+impl<'a, KeyEvaluator, KeyReader, Index, Keys> FileOp<Result<(), Error>>
+    for TreeSequenceGetter<'a, Index, KeyEvaluator, KeyReader, Keys>
+where
+    KeyEvaluator: for<'k> FnMut(SequenceId, &'k BySequenceIndex<Index>) -> ScanEvaluation,
+    KeyReader: FnMut(SequenceId, BySequenceIndex<Index>, ArcBytes<'static>) -> Result<(), Error>,
+    Keys: Iterator<Item = SequenceId>,
+    Index: EmbeddedIndex + Clone + Debug + 'static,
+{
+    fn execute(mut self, file: &mut dyn File) -> Result<(), Error> {
+        if self.from_transaction {
+            let state = self.state.lock();
+            if state.file_id != file.id() {
+                return Err(Error::from(ErrorKind::TreeCompacted));
+            }
+
+            state.root.by_sequence_root.get_multiple(
+                &mut self
+                    .keys
+                    .into_iter()
+                    .map(|sequence| sequence.0.to_be_bytes()),
+                &mut |key, index| {
+                    (self.key_evaluator)(SequenceId::try_from(key.as_slice()).unwrap(), index)
+                },
+                &mut |key, value, index| {
+                    (self.key_reader)(SequenceId::try_from(key.as_slice()).unwrap(), index, value)
+                },
+                file,
+                self.vault,
+                self.cache,
+            )
+        } else {
+            let state = self.state.read();
+            if state.file_id != file.id() {
+                return Err(Error::from(ErrorKind::TreeCompacted));
+            }
+
+            state.root.by_sequence_root.get_multiple(
+                &mut self
+                    .keys
+                    .into_iter()
+                    .map(|sequence| sequence.0.to_be_bytes()),
+                &mut |key, index| {
+                    (self.key_evaluator)(SequenceId::try_from(key.as_slice()).unwrap(), index)
+                },
+                &mut |key, value, index| {
+                    (self.key_reader)(SequenceId::try_from(key.as_slice()).unwrap(), index, value)
+                },
+                file,
+                self.vault,
+                self.cache,
+            )
+        }
+    }
+}
+
 struct TreeSequenceScanner<
     'a,
     'keys,
@@ -1530,9 +1714,10 @@ struct TreeSequenceScanner<
     CallerError,
     Index,
 > where
-    KeyEvaluator: FnMut(&ArcBytes<'static>, &BySequenceIndex) -> ScanEvaluation,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &BySequenceIndex<Index>) -> ScanEvaluation,
     KeyRangeBounds: RangeBounds<&'keys [u8]> + ?Sized,
-    DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
+    DataCallback:
+        FnMut(KeySequence<Index>, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
     CallerError: Display + Debug,
     Index: EmbeddedIndex + Clone + Debug + 'static,
 {
@@ -1558,9 +1743,10 @@ impl<'a, 'keys, KeyEvaluator, KeyRangeBounds, DataCallback, CallerError, Index>
         Index,
     >
 where
-    KeyEvaluator: FnMut(&ArcBytes<'static>, &BySequenceIndex) -> ScanEvaluation,
+    KeyEvaluator: FnMut(&ArcBytes<'static>, &BySequenceIndex<Index>) -> ScanEvaluation,
     KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
-    DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
+    DataCallback:
+        FnMut(KeySequence<Index>, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
     CallerError: Display + Debug,
     Index: EmbeddedIndex + Clone + Debug + 'static,
 {
@@ -1577,13 +1763,14 @@ where
             ..
         } = self;
         let mapped_data_callback =
-            |key: ArcBytes<'static>, index: &BySequenceIndex, data: ArcBytes<'static>| {
+            |key: ArcBytes<'static>, index: &BySequenceIndex<Index>, data: ArcBytes<'static>| {
                 let sequence = SequenceId(BigEndian::read_u64(&key));
                 (data_callback)(
                     KeySequence {
                         key: index.key.clone(),
                         sequence,
                         last_sequence: index.last_sequence,
+                        embedded: index.embedded.clone(),
                     },
                     data,
                 )

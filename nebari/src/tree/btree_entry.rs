@@ -1205,13 +1205,62 @@ where
         Ok(true)
     }
 
+    pub(crate) fn get_multiple<KeyEvaluator, KeyReader, Keys, Bytes>(
+        &self,
+        keys: &mut Keys,
+        key_evaluator: &mut KeyEvaluator,
+        key_reader: &mut KeyReader,
+        file: &mut dyn File,
+        vault: Option<&dyn AnyVault>,
+        cache: Option<&ChunkCache>,
+    ) -> Result<(), Error>
+    where
+        KeyEvaluator: for<'k> FnMut(&'k ArcBytes<'static>, &'k Index) -> ScanEvaluation,
+        KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>, Index) -> Result<(), Error>,
+        Keys: Iterator<Item = Bytes>,
+        Bytes: AsRef<[u8]>,
+    {
+        let mut positions_to_read = Vec::new();
+        self.get(
+            &mut KeyRange::new(keys),
+            &mut |key, index| key_evaluator(key, index),
+            &mut |key, index| {
+                // Deleted keys are stored with a 0 position.
+                if index.position() > 0 {
+                    positions_to_read.push((key, index.clone()));
+                }
+                Ok(())
+            },
+            file,
+            vault,
+            cache,
+        )?;
+
+        // Sort by position on disk
+        positions_to_read.sort_by(|a, b| a.1.position().cmp(&b.1.position()));
+
+        for (key, index) in positions_to_read {
+            if index.position() > 0 {
+                match read_chunk(index.position(), false, file, vault, cache)? {
+                    CacheEntry::ArcBytes(contents) => {
+                        key_reader(key, contents, index)?;
+                    }
+                    CacheEntry::Decoded(_) => unreachable!(),
+                };
+            } else {
+                key_reader(key, ArcBytes::default(), index)?;
+            }
+        }
+        Ok(())
+    }
+
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(skip(self, key_evaluator, keys, key_reader, file, vault, cache))
     )]
-    pub(crate) fn get<'keys, KeyEvaluator, KeyReader, Keys>(
+    pub(crate) fn get<KeyEvaluator, KeyReader, Keys, Bytes>(
         &self,
-        keys: &mut KeyRange<'keys, Keys>,
+        keys: &mut KeyRange<Keys, Bytes>,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
         file: &mut dyn File,
@@ -1221,7 +1270,8 @@ where
     where
         KeyEvaluator: FnMut(&ArcBytes<'static>, &Index) -> ScanEvaluation,
         KeyReader: FnMut(ArcBytes<'static>, &Index) -> Result<(), AbortError<Infallible>>,
-        Keys: Iterator<Item = &'keys [u8]>,
+        Keys: Iterator<Item = Bytes>,
+        Bytes: AsRef<[u8]>,
     {
         match &self.node {
             BTreeNode::Leaf(children) => {

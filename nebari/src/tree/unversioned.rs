@@ -11,9 +11,8 @@ use super::{
     btree_entry::BTreeEntry,
     by_id::{ByIdStats, UnversionedByIdIndex},
     modify::Modification,
-    read_chunk,
     serialization::BinarySerialization,
-    KeyRange, PagedWriter, ScanEvaluation,
+    PagedWriter, ScanEvaluation,
 };
 use crate::{
     chunk_cache::CacheEntry,
@@ -266,38 +265,8 @@ where
         KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>, Self::Index) -> Result<(), Error>,
         Keys: Iterator<Item = &'keys [u8]>,
     {
-        let mut positions_to_read = Vec::new();
-        self.by_id_root.get(
-            &mut KeyRange::new(keys),
-            &mut |key, index| key_evaluator(key, index),
-            &mut |key, index| {
-                // Deleted keys are stored with a 0 position.
-                if index.position > 0 {
-                    positions_to_read.push((key, index.clone()));
-                }
-                Ok(())
-            },
-            file,
-            vault,
-            cache,
-        )?;
-
-        // Sort by position on disk
-        positions_to_read.sort_by(|a, b| a.1.position.cmp(&b.1.position));
-
-        for (key, index) in positions_to_read {
-            if index.position > 0 {
-                match read_chunk(index.position, false, file, vault, cache)? {
-                    CacheEntry::ArcBytes(contents) => {
-                        key_reader(key, contents, index)?;
-                    }
-                    CacheEntry::Decoded(_) => unreachable!(),
-                };
-            } else {
-                key_reader(key, ArcBytes::default(), index)?;
-            }
-        }
-        Ok(())
+        self.by_id_root
+            .get_multiple(keys, key_evaluator, key_reader, file, vault, cache)
     }
 
     fn scan<

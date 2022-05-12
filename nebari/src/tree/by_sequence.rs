@@ -44,7 +44,7 @@ impl Display for SequenceId {
 
 /// The index stored within [`VersionedTreeRoot::by_sequence_root`](crate::tree::VersionedTreeRoot::by_sequence_root).
 #[derive(Clone, Debug)]
-pub struct BySequenceIndex {
+pub struct BySequenceIndex<Embedded> {
     /// The key associated with this sequence id.
     pub key: ArcBytes<'static>,
     /// The previous sequence of this key.
@@ -53,9 +53,17 @@ pub struct BySequenceIndex {
     pub value_length: u32,
     /// The position of the value on disk.
     pub position: u64,
+    /// The embeded index at the time of the sequence being written. This value
+    /// is always present on data written from v0.6.0 onwards. If the tree being
+    /// used was created after v0.6.0 or has had compaction run on v0.6.0, it is
+    /// safe to unwrap this value.
+    pub embedded: Option<Embedded>,
 }
 
-impl BinarySerialization for BySequenceIndex {
+impl<Embedded> BinarySerialization for BySequenceIndex<Embedded>
+where
+    Embedded: super::EmbeddedIndex,
+{
     fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
@@ -74,6 +82,11 @@ impl BinarySerialization for BySequenceIndex {
         bytes_written += 2;
         writer.extend_from_slice(&self.key);
         bytes_written += key_length as usize;
+
+        if let Some(embedded) = &self.embedded {
+            bytes_written += embedded.serialize_to(writer)?;
+        }
+
         Ok(bytes_written)
     }
 
@@ -94,6 +107,10 @@ impl BinarySerialization for BySequenceIndex {
         }
         let key = reader.read_bytes(key_length)?.into_owned();
 
+        let embedded = (!reader.is_empty())
+            .then(|| Embedded::deserialize_from(reader))
+            .transpose()?;
+
         Ok(Self {
             key,
             last_sequence: if last_sequence.valid() {
@@ -103,11 +120,12 @@ impl BinarySerialization for BySequenceIndex {
             },
             value_length,
             position,
+            embedded,
         })
     }
 }
 
-impl ValueIndex for BySequenceIndex {
+impl<Embedded> ValueIndex for BySequenceIndex<Embedded> {
     fn position(&self) -> u64 {
         self.position
     }
@@ -144,13 +162,13 @@ impl BinarySerialization for BySequenceStats {
 #[derive(Clone, Default, Debug)]
 pub struct BySequenceReducer;
 
-impl Reducer<BySequenceIndex, BySequenceStats> for BySequenceReducer {
+impl<Embedded> Reducer<BySequenceIndex<Embedded>, BySequenceStats> for BySequenceReducer {
     fn reduce<'a, Indexes, IndexesIter>(&self, indexes: Indexes) -> BySequenceStats
     where
-        BySequenceIndex: 'a,
-        Indexes:
-            IntoIterator<Item = &'a BySequenceIndex, IntoIter = IndexesIter> + ExactSizeIterator,
-        IndexesIter: Iterator<Item = &'a BySequenceIndex> + ExactSizeIterator + Clone,
+        BySequenceIndex<Embedded>: 'a,
+        Indexes: IntoIterator<Item = &'a BySequenceIndex<Embedded>, IntoIter = IndexesIter>
+            + ExactSizeIterator,
+        IndexesIter: Iterator<Item = &'a BySequenceIndex<Embedded>> + ExactSizeIterator + Clone,
     {
         BySequenceStats {
             total_sequences: indexes.len() as u64,

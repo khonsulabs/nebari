@@ -27,8 +27,8 @@ use crate::{
         root::{AnyReducer, AnyTreeRoot},
         state::AnyTreeState,
         EmbeddedIndex, KeySequence, Modification, ModificationResult, Operation, PersistenceMode,
-        ScanEvaluation, SequenceId, State, TransactableCompaction, TreeFile, TreeRoot,
-        VersionedTreeRoot,
+        ScanEvaluation, SequenceEntry, SequenceId, SequenceIndex, State, TransactableCompaction,
+        TreeFile, TreeRoot, VersionedTreeRoot,
     },
     vault::AnyVault,
     ArcBytes, ChunkCache, ErrorKind,
@@ -446,12 +446,55 @@ where
     ) -> Result<(), AbortError<CallerError>>
     where
         Range: RangeBounds<SequenceId> + Debug + 'static,
-        KeyEvaluator: FnMut(KeySequence) -> ScanEvaluation,
-        DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
+        KeyEvaluator: FnMut(KeySequence<Index>) -> ScanEvaluation,
+        DataCallback:
+            FnMut(KeySequence<Index>, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
         self.tree
             .scan_sequences(range, forwards, true, key_evaluator, data_callback)
+    }
+
+    /// Retrieves the keys and values associated with one or more `sequences`.
+    /// The value retrieved is the value of the key at the given [`SequenceId`].
+    /// If a sequence is not found, it will not appear in the result map. If
+    /// the value was removed, None is returned for the value.
+    pub fn get_multiple_by_sequence<Sequences>(
+        &mut self,
+        sequences: Sequences,
+    ) -> Result<HashMap<SequenceId, (ArcBytes<'static>, Option<ArcBytes<'static>>)>, Error>
+    where
+        Sequences: Iterator<Item = SequenceId>,
+    {
+        self.tree.get_multiple_by_sequence(sequences, true)
+    }
+
+    /// Retrieves the keys and indexes associated with one or more `sequences`.
+    /// The value retrieved is the value of the key at the given [`SequenceId`].
+    /// If a sequence is not found, it will not appear in the result list.
+    pub fn get_multiple_indexes_by_sequence<Sequences>(
+        &mut self,
+        sequences: Sequences,
+    ) -> Result<Vec<SequenceIndex<Index>>, Error>
+    where
+        Sequences: Iterator<Item = SequenceId>,
+    {
+        self.tree.get_multiple_indexes_by_sequence(sequences, true)
+    }
+
+    /// Retrieves the keys, values, and indexes associated with one or more
+    /// `sequences`. The value retrieved is the value of the key at the given
+    /// [`SequenceId`]. If a sequence is not found, it will not appear in the
+    /// result list.
+    pub fn get_multiple_with_indexes_by_sequence<Sequences>(
+        &mut self,
+        sequences: Sequences,
+    ) -> Result<HashMap<SequenceId, SequenceEntry<Index>>, Error>
+    where
+        Sequences: Iterator<Item = SequenceId>,
+    {
+        self.tree
+            .get_multiple_with_indexes_by_sequence(sequences, true)
     }
 }
 
@@ -1367,7 +1410,7 @@ where
     /// invoked with the key and values. The callback may not be invoked in the
     /// same order as the keys are scanned.
     pub fn scan_sequences<CallerError, Range, KeyEvaluator, DataCallback>(
-        &mut self,
+        &self,
         range: Range,
         forwards: bool,
         key_evaluator: &mut KeyEvaluator,
@@ -1375,8 +1418,9 @@ where
     ) -> Result<(), AbortError<CallerError>>
     where
         Range: Clone + RangeBounds<SequenceId> + Debug + 'static,
-        KeyEvaluator: FnMut(KeySequence) -> ScanEvaluation,
-        DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
+        KeyEvaluator: FnMut(KeySequence<Index>) -> ScanEvaluation,
+        DataCallback:
+            FnMut(KeySequence<Index>, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
         catch_compaction_and_retry_abortable(|| {
@@ -1388,6 +1432,77 @@ where
             )?;
 
             tree.scan_sequences(range.clone(), forwards, false, key_evaluator, data_callback)
+        })
+    }
+
+    /// Retrieves the keys and values associated with one or more `sequences`.
+    /// The value retrieved is the value of the key at the given [`SequenceId`].
+    /// If a sequence is not found, it will not appear in the result map. If
+    /// the value was removed, None is returned for the value.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn get_multiple_by_sequence<Sequences>(
+        &mut self,
+        sequences: Sequences,
+    ) -> Result<HashMap<SequenceId, (ArcBytes<'static>, Option<ArcBytes<'static>>)>, Error>
+    where
+        Sequences: Iterator<Item = SequenceId> + Clone,
+    {
+        catch_compaction_and_retry(|| {
+            let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::read(
+                self.path(),
+                self.state.clone(),
+                self.roots.context(),
+                Some(self.roots.transactions()),
+            )?;
+
+            tree.get_multiple_by_sequence(sequences.clone(), false)
+        })
+    }
+
+    /// Retrieves the keys and indexes associated with one or more `sequences`.
+    /// The value retrieved is the value of the key at the given [`SequenceId`].
+    /// If a sequence is not found, it will not appear in the result list.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn get_multiple_indexes_by_sequence<Sequences>(
+        &mut self,
+        sequences: Sequences,
+    ) -> Result<Vec<SequenceIndex<Index>>, Error>
+    where
+        Sequences: Iterator<Item = SequenceId> + Clone,
+    {
+        catch_compaction_and_retry(|| {
+            let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::read(
+                self.path(),
+                self.state.clone(),
+                self.roots.context(),
+                Some(self.roots.transactions()),
+            )?;
+
+            tree.get_multiple_indexes_by_sequence(sequences.clone(), false)
+        })
+    }
+
+    /// Retrieves the keys, values, and indexes associated with one or more
+    /// `sequences`. The value retrieved is the value of the key at the given
+    /// [`SequenceId`]. If a sequence is not found, it will not appear in the
+    /// result list.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn get_multiple_with_indexes_by_sequence<Sequences>(
+        &mut self,
+        sequences: Sequences,
+    ) -> Result<HashMap<SequenceId, SequenceEntry<Index>>, Error>
+    where
+        Sequences: Iterator<Item = SequenceId> + Clone,
+    {
+        catch_compaction_and_retry(|| {
+            let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::read(
+                self.path(),
+                self.state.clone(),
+                self.roots.context(),
+                Some(self.roots.transactions()),
+            )?;
+
+            tree.get_multiple_with_indexes_by_sequence(sequences.clone(), false)
         })
     }
 }

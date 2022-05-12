@@ -1,4 +1,8 @@
-use std::{convert::Infallible, fmt::Display};
+use std::{
+    array::TryFromSliceError,
+    convert::Infallible,
+    fmt::{Debug, Display},
+};
 
 use backtrace::Backtrace;
 use parking_lot::{Mutex, MutexGuard};
@@ -7,7 +11,6 @@ use thiserror::Error;
 use crate::AbortError;
 
 /// An error from Nebari as well as an associated backtrace.
-#[derive(Debug)]
 pub struct Error {
     /// The error that occurred.
     pub kind: ErrorKind,
@@ -29,6 +32,50 @@ impl Error {
         backtrace.resolve();
         backtrace
     }
+
+    fn format_backtrace_frames(&self) -> Vec<String> {
+        let mut backtrace = self.backtrace.lock();
+        backtrace.resolve();
+        backtrace
+            .frames()
+            .iter()
+            .filter_map(|frame| frame.symbols().first())
+            .enumerate()
+            .map(|(index, symbol)| {
+                let mut line = format!("{index}: ");
+                if let Some(name) = symbol.name() {
+                    line.push_str(&name.to_string());
+                    line.push(' ');
+                } else if let Some(addr) = symbol.addr() {
+                    line.push_str(&format!("{:x}", addr as usize));
+                    line.push(' ');
+                } else {
+                    // Give up on formatting this one.
+                    line.push_str(&format!("{symbol:?}"));
+                    return line;
+                }
+
+                if let Some(file) = symbol.filename() {
+                    if let Some(file) = file.to_str() {
+                        line.push_str("at ");
+                        line.push_str(file);
+                    } else {
+                        line.push_str(&format!("at {file:?}"));
+                    }
+
+                    if let Some(lineno) = symbol.lineno() {
+                        line.push(':');
+                        line.push_str(&lineno.to_string());
+                        if let Some(col) = symbol.colno() {
+                            line.push(':');
+                            line.push_str(&col.to_string());
+                        }
+                    }
+                }
+                line
+            })
+            .collect()
+    }
 }
 
 impl std::error::Error for Error {
@@ -39,20 +86,28 @@ impl std::error::Error for Error {
 
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.kind.fmt(f)?;
+        Display::fmt(&self.kind, f)?;
 
         #[cfg(debug_assertions)]
         {
             f.write_str("\nstack backtrace:")?;
-            let mut backtrace = self.backtrace.lock();
-            backtrace.resolve();
 
-            for (index, frame) in backtrace.frames().iter().enumerate() {
-                write!(f, "\n#{}: {:?}", index, frame)?;
+            for (index, frame) in self.format_backtrace_frames().into_iter().enumerate() {
+                write!(f, "{index}: {frame}")?;
             }
         }
 
         Ok(())
+    }
+}
+
+impl Debug for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let frames = self.format_backtrace_frames();
+        f.debug_struct("Error")
+            .field("kind", &self.kind)
+            .field("backtrace", &&frames[..])
+            .finish()
     }
 }
 
@@ -111,6 +166,15 @@ impl From<String> for Error {
     fn from(message: String) -> Self {
         Self {
             kind: ErrorKind::message(message),
+            backtrace: Mutex::new(Backtrace::new_unresolved()),
+        }
+    }
+}
+
+impl From<TryFromSliceError> for Error {
+    fn from(_: TryFromSliceError) -> Self {
+        Self {
+            kind: ErrorKind::Internal(InternalError::IncorrectByteLength),
             backtrace: Mutex::new(Backtrace::new_unresolved()),
         }
     }
@@ -219,4 +283,6 @@ pub enum InternalError {
     TransactionManagerStopped,
     #[error("an error on an internal channel has occurred")]
     InternalCommunication,
+    #[error("an unexpected byte length was encountered")]
+    IncorrectByteLength,
 }

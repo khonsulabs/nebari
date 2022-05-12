@@ -84,6 +84,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   you wish to remove the overhead of synchronizing, passing
   `PersistenceMode::Flush` will only ensure all application-level caches are
   flushed before confirming the write is successful.
+- `BySequenceIndex` now has a generic parameter and a new field: the embedded
+  index. When a versioned tree is written, the current embedded index is copied
+  to the `BySequenceIndex`, allowing for historical retrieval of index values.
+  
+  For example, BonsaiDb is using the embedded index to store the document's
+  hash. This change allows for historical lookups to retrieve the document hash
+  without fetching the value from disk.
+
+  When retrieving a `BySequenceIndex` that was stored prior to this change, the
+  embedded index will be None. For all indexes written after this change, the
+  embedded index will be present. If you are only working with files written
+  after this change, it is safe to unwrap the embedded index.
 
 ### Added
 
@@ -99,6 +111,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Tree` and `TransactionTree` now both have `current_sequence_id()` and
   `scan_sequences()` functions. These functions serve the same purpose as those
   already existing on `TreeFile`.
+- `TreeFile`, `Tree`, and `TransactionTree` now have additional methods that
+  allow fetching versioned tree's information by `SequenceId``:
+
+  - `get_multiple_by_sequence` - retrieve one or more values by their sequence
+    id. This retrieves the value at the time of the sequence id.
+  - `get_multiple_indexes_by_sequence` - retrieve one or more indexes by their
+    sequence id.
+  - `get_multiple_with_indexes_by_sequence` - retrieve one or more values and
+    indexes by their sequence id.
+
+  When a sequence is found in any of these functions, a result is returned.
+  Because an index will still be present for deleted keys, all retrievals of
+  values via this method will return an Option. This allows callers to
+  distinguish between `SequenceId` being not found and the value being deleted.
 
 ## v0.5.3
 

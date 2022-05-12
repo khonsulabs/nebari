@@ -1,4 +1,5 @@
 use std::{
+    array::TryFromSliceError,
     collections::HashMap,
     fmt::{Debug, Display},
     marker::PhantomData,
@@ -12,9 +13,8 @@ use super::{
     by_id::{ByIdStats, VersionedByIdIndex},
     by_sequence::{BySequenceIndex, BySequenceStats},
     modify::Modification,
-    read_chunk,
     serialization::BinarySerialization,
-    KeyRange, PagedWriter, ScanEvaluation, PAGE_SIZE,
+    PagedWriter, ScanEvaluation, PAGE_SIZE,
 };
 use crate::{
     chunk_cache::CacheEntry,
@@ -52,7 +52,7 @@ where
     /// The last sequence ID inside of this root.
     pub sequence: SequenceId,
     /// The by-sequence B-Tree.
-    pub by_sequence_root: BTreeEntry<BySequenceIndex, BySequenceStats>,
+    pub by_sequence_root: BTreeEntry<BySequenceIndex<EmbeddedIndex>, BySequenceStats>,
     /// The by-id B-Tree.
     pub by_id_root:
         BTreeEntry<VersionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedIndex::Reduced>>,
@@ -97,7 +97,11 @@ where
 {
     fn modify_sequence_root(
         &mut self,
-        mut modification: Modification<'_, BySequenceIndex, BySequenceIndex>,
+        mut modification: Modification<
+            '_,
+            BySequenceIndex<EmbeddedIndex>,
+            BySequenceIndex<EmbeddedIndex>,
+        >,
         writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
@@ -123,13 +127,14 @@ where
                     minimum_children: by_sequence_minimum_children,
                     indexer:
                         &mut |_key: &ArcBytes<'_>,
-                              value: Option<&BySequenceIndex>,
-                              _existing_index: Option<&BySequenceIndex>,
-                              _changes: &mut EntryChanges,
+                              value: Option<&BySequenceIndex<EmbeddedIndex>>,
+                              _existing_index: Option<&BySequenceIndex<EmbeddedIndex>>,
+                              _changes: &mut EntryChanges<EmbeddedIndex>,
                               _writer: &mut PagedWriter<'_>| {
                             Ok(KeyOperation::Set(value.unwrap().clone()))
                         },
-                    loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_>| Ok(None),
+                    loader: |_index: &BySequenceIndex<EmbeddedIndex>,
+                             _writer: &mut PagedWriter<'_>| Ok(None),
                     reducer: BySequenceReducer,
                     _phantom: PhantomData,
                 },
@@ -152,7 +157,7 @@ where
     fn modify_id_root(
         &mut self,
         mut modification: Modification<'_, ArcBytes<'static>, VersionedByIdIndex<EmbeddedIndex>>,
-        changes: &mut EntryChanges,
+        changes: &mut EntryChanges<EmbeddedIndex>,
         writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
     ) -> Result<Vec<ModificationResult<VersionedByIdIndex<EmbeddedIndex>>>, Error> {
@@ -178,7 +183,7 @@ where
                     indexer: &mut |key: &ArcBytes<'_>,
                                    value: Option<&ArcBytes<'static>>,
                                    existing_index: Option<&VersionedByIdIndex<EmbeddedIndex>>,
-                                   changes: &mut EntryChanges,
+                                   changes: &mut EntryChanges<EmbeddedIndex>,
                                    writer: &mut PagedWriter<'_>| {
                         let (position, value_size) = if let Some(value) = value {
                             let new_position = writer.write_chunk(value)?;
@@ -200,6 +205,7 @@ where
                                 key: key.clone(),
                                 sequence: changes.current_sequence,
                                 last_sequence: existing_index.map(|idx| idx.sequence_id),
+                                embedded: Some(embedded.clone()),
                             },
                             value_position: position,
                             value_size,
@@ -376,6 +382,7 @@ where
                     last_sequence: change.key_sequence.last_sequence,
                     value_length: change.value_size,
                     position: change.value_position,
+                    embedded: change.key_sequence.embedded,
                 });
                 ArcBytes::from(change.key_sequence.sequence.0.to_be_bytes())
             })
@@ -410,38 +417,8 @@ where
         KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>, Self::Index) -> Result<(), Error>,
         Keys: Iterator<Item = &'keys [u8]>,
     {
-        let mut positions_to_read = Vec::new();
-        self.by_id_root.get(
-            &mut KeyRange::new(keys),
-            &mut |key, index| key_evaluator(key, index),
-            &mut |key, index| {
-                // Deleted keys are stored with a 0 position.
-                if index.position > 0 {
-                    positions_to_read.push((key, index.clone()));
-                }
-                Ok(())
-            },
-            file,
-            vault,
-            cache,
-        )?;
-
-        // Sort by position on disk
-        positions_to_read.sort_by(|a, b| a.1.position.cmp(&b.1.position));
-
-        for (key, index) in positions_to_read {
-            if index.position > 0 {
-                match read_chunk(index.position, false, file, vault, cache)? {
-                    CacheEntry::ArcBytes(contents) => {
-                        key_reader(key, contents, index)?;
-                    }
-                    CacheEntry::Decoded(_) => unreachable!(),
-                };
-            } else {
-                key_reader(key, ArcBytes::default(), index)?;
-            }
-        }
-        Ok(())
+        self.by_id_root
+            .get_multiple(keys, key_evaluator, key_reader, file, vault, cache)
     }
 
     fn scan<
@@ -519,6 +496,7 @@ where
                         last_sequence: None,
                         value_length: index.value_length,
                         position: new_position,
+                        embedded: Some(index.embedded.clone()),
                     },
                 ));
 
@@ -555,13 +533,13 @@ where
                 current_order: by_sequence_order,
                 minimum_children,
                 indexer: &mut |_key: &ArcBytes<'_>,
-                               value: Option<&BySequenceIndex>,
-                               _existing_index: Option<&BySequenceIndex>,
-                               _changes: &mut EntryChanges,
+                               value: Option<&BySequenceIndex<EmbeddedIndex>>,
+                               _existing_index: Option<&BySequenceIndex<EmbeddedIndex>>,
+                               _changes: &mut EntryChanges<EmbeddedIndex>,
                                _writer: &mut PagedWriter<'_>| {
                     Ok(KeyOperation::Set(value.unwrap().clone()))
                 },
-                loader: |_index: &BySequenceIndex, _writer: &mut PagedWriter<'_>| unreachable!(),
+                loader: |_index: &BySequenceIndex<EmbeddedIndex>, _writer: &mut PagedWriter<'_>| unreachable!(),
                 reducer: BySequenceReducer,
                 _phantom: PhantomData,
             },
@@ -574,24 +552,61 @@ where
     }
 }
 
-#[derive(Default)]
-pub struct EntryChanges {
+pub struct EntryChanges<Embedded> {
     pub current_sequence: SequenceId,
-    pub changes: Vec<EntryChange>,
+    pub changes: Vec<EntryChange<Embedded>>,
 }
-pub struct EntryChange {
-    pub key_sequence: KeySequence,
+
+impl<Embedded> Default for EntryChanges<Embedded> {
+    fn default() -> Self {
+        Self {
+            current_sequence: SequenceId::default(),
+            changes: Vec::default(),
+        }
+    }
+}
+
+pub struct EntryChange<Embedded> {
+    pub key_sequence: KeySequence<Embedded>,
     pub value_position: u64,
     pub value_size: u32,
 }
 
 /// A stored revision of a key.
 #[derive(Debug)]
-pub struct KeySequence {
+pub struct KeySequence<Embedded> {
     /// The key that this entry was written for.
     pub key: ArcBytes<'static>,
     /// The unique sequence id.
     pub sequence: SequenceId,
     /// The previous sequence id for this key, if any.
     pub last_sequence: Option<SequenceId>,
+    /// The embedded index stored for this sequence.
+    pub embedded: Option<Embedded>,
+}
+
+impl<'a> TryFrom<&'a [u8]> for SequenceId {
+    type Error = TryFromSliceError;
+
+    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
+        value.try_into().map(u64::from_be_bytes).map(Self)
+    }
+}
+
+/// A stored entry in a versioned tree.
+#[derive(Debug)]
+pub struct SequenceEntry<Embedded> {
+    /// The stored index for this sequence id.
+    pub index: BySequenceIndex<Embedded>,
+    /// The value stored for this sequence id, if still present.
+    pub value: Option<ArcBytes<'static>>,
+}
+
+/// A stored index in a versioned tree.
+#[derive(Debug)]
+pub struct SequenceIndex<Embedded> {
+    /// The unique sequence id.
+    pub sequence: SequenceId,
+    /// The stored index for this sequence id.
+    pub index: BySequenceIndex<Embedded>,
 }

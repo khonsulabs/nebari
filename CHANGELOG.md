@@ -96,6 +96,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `get_multiple_with_indexes()` multi-key value + index retrieval
   - `get_range_indexes()` ranged index retrieval
   - `get_range_with_indexes()` ranged value + index retrieval
+- `Tree` and `TransactionTree` now both have `current_sequence_id()` and
+  `scan_sequences()` functions. These functions serve the same purpose as those
+  already existing on `TreeFile`.
 
 ## v0.5.3
 

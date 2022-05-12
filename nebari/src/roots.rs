@@ -424,9 +424,34 @@ where
     Index: Clone + EmbeddedIndex + Debug + 'static,
 {
     /// Returns the latest sequence id.
+    #[must_use]
     pub fn current_sequence_id(&self) -> SequenceId {
         let state = self.tree.state.lock();
         state.root.sequence
+    }
+
+    /// Scans the tree for keys that are contained within `range`. If `forwards`
+    /// is true, scanning starts at the lowest sort-order key and scans forward.
+    /// Otherwise, scanning starts at the highest sort-order key and scans
+    /// backwards. `key_evaluator` is invoked for each key as it is encountered.
+    /// For all [`ScanEvaluation::ReadData`] results returned, `callback` will be
+    /// invoked with the key and values. The callback may not be invoked in the
+    /// same order as the keys are scanned.
+    pub fn scan_sequences<CallerError, Range, KeyEvaluator, DataCallback>(
+        &mut self,
+        range: Range,
+        forwards: bool,
+        key_evaluator: &mut KeyEvaluator,
+        data_callback: &mut DataCallback,
+    ) -> Result<(), AbortError<CallerError>>
+    where
+        Range: RangeBounds<SequenceId> + Debug + 'static,
+        KeyEvaluator: FnMut(KeySequence) -> ScanEvaluation,
+        DataCallback: FnMut(KeySequence, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
+        CallerError: Display + Debug,
+    {
+        self.tree
+            .scan_sequences(range, forwards, true, key_evaluator, data_callback)
     }
 }
 
@@ -1327,6 +1352,13 @@ impl<File: ManagedFile, Index> Tree<VersionedTreeRoot<Index>, File>
 where
     Index: EmbeddedIndex + Clone + Debug + 'static,
 {
+    /// Returns the latest sequence id.
+    #[must_use]
+    pub fn current_sequence_id(&self) -> SequenceId {
+        let state = self.state.lock();
+        state.root.sequence
+    }
+
     /// Scans the tree for keys that are contained within `range`. If `forwards`
     /// is true, scanning starts at the lowest sort-order key and scans forward.
     /// Otherwise, scanning starts at the highest sort-order key and scans
@@ -1334,10 +1366,6 @@ where
     /// For all [`ScanEvaluation::ReadData`] results returned, `callback` will be
     /// invoked with the key and values. The callback may not be invoked in the
     /// same order as the keys are scanned.
-    #[cfg_attr(
-        feature = "tracing",
-        tracing::instrument(skip(self, key_evaluator, data_callback))
-    )]
     pub fn scan_sequences<CallerError, Range, KeyEvaluator, DataCallback>(
         &mut self,
         range: Range,

@@ -1862,6 +1862,34 @@
 <span id="1857">1857</span>
 <span id="1858">1858</span>
 <span id="1859">1859</span>
+<span id="1860">1860</span>
+<span id="1861">1861</span>
+<span id="1862">1862</span>
+<span id="1863">1863</span>
+<span id="1864">1864</span>
+<span id="1865">1865</span>
+<span id="1866">1866</span>
+<span id="1867">1867</span>
+<span id="1868">1868</span>
+<span id="1869">1869</span>
+<span id="1870">1870</span>
+<span id="1871">1871</span>
+<span id="1872">1872</span>
+<span id="1873">1873</span>
+<span id="1874">1874</span>
+<span id="1875">1875</span>
+<span id="1876">1876</span>
+<span id="1877">1877</span>
+<span id="1878">1878</span>
+<span id="1879">1879</span>
+<span id="1880">1880</span>
+<span id="1881">1881</span>
+<span id="1882">1882</span>
+<span id="1883">1883</span>
+<span id="1884">1884</span>
+<span id="1885">1885</span>
+<span id="1886">1886</span>
+<span id="1887">1887</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">any::Any</span>,
     <span class="ident">borrow</span>::{<span class="ident">Borrow</span>, <span class="ident">Cow</span>},
@@ -2288,9 +2316,34 @@
     <span class="ident">Index</span>: <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">EmbeddedIndex</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
 {
     <span class="doccomment">/// Returns the latest sequence id.</span>
+    <span class="attribute">#[<span class="ident">must_use</span>]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">current_sequence_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">SequenceId</span> {
         <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">tree</span>.<span class="ident">state</span>.<span class="ident">lock</span>();
         <span class="ident">state</span>.<span class="ident">root</span>.<span class="ident">sequence</span>
+    }
+
+    <span class="doccomment">/// Scans the tree for keys that are contained within `range`. If `forwards`</span>
+    <span class="doccomment">/// is true, scanning starts at the lowest sort-order key and scans forward.</span>
+    <span class="doccomment">/// Otherwise, scanning starts at the highest sort-order key and scans</span>
+    <span class="doccomment">/// backwards. `key_evaluator` is invoked for each key as it is encountered.</span>
+    <span class="doccomment">/// For all [`ScanEvaluation::ReadData`] results returned, `callback` will be</span>
+    <span class="doccomment">/// invoked with the key and values. The callback may not be invoked in the</span>
+    <span class="doccomment">/// same order as the keys are scanned.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">scan_sequences</span><span class="op">&lt;</span><span class="ident">CallerError</span>, <span class="ident">Range</span>, <span class="ident">KeyEvaluator</span>, <span class="ident">DataCallback</span><span class="op">&gt;</span>(
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
+        <span class="ident">range</span>: <span class="ident">Range</span>,
+        <span class="ident">forwards</span>: <span class="ident">bool</span>,
+        <span class="ident">key_evaluator</span>: <span class="kw-2">&amp;mut</span> <span class="ident">KeyEvaluator</span>,
+        <span class="ident">data_callback</span>: <span class="kw-2">&amp;mut</span> <span class="ident">DataCallback</span>,
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>
+    <span class="kw">where</span>
+        <span class="ident">Range</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">SequenceId</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
+        <span class="ident">KeyEvaluator</span>: <span class="ident">FnMut</span>(<span class="ident">KeySequence</span>) -&gt; <span class="ident">ScanEvaluation</span>,
+        <span class="ident">DataCallback</span>: <span class="ident">FnMut</span>(<span class="ident">KeySequence</span>, <span class="ident">ArcBytes</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AbortError</span><span class="op">&lt;</span><span class="ident">CallerError</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">CallerError</span>: <span class="ident">Display</span> <span class="op">+</span> <span class="ident">Debug</span>,
+    {
+        <span class="self">self</span>.<span class="ident">tree</span>
+            .<span class="ident">scan_sequences</span>(<span class="ident">range</span>, <span class="ident">forwards</span>, <span class="bool-val">true</span>, <span class="ident">key_evaluator</span>, <span class="ident">data_callback</span>)
     }
 }
 
@@ -3191,6 +3244,13 @@
 <span class="kw">where</span>
     <span class="ident">Index</span>: <span class="ident">EmbeddedIndex</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Debug</span> <span class="op">+</span> <span class="lifetime">&#39;static</span>,
 {
+    <span class="doccomment">/// Returns the latest sequence id.</span>
+    <span class="attribute">#[<span class="ident">must_use</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">current_sequence_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">SequenceId</span> {
+        <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>();
+        <span class="ident">state</span>.<span class="ident">root</span>.<span class="ident">sequence</span>
+    }
+
     <span class="doccomment">/// Scans the tree for keys that are contained within `range`. If `forwards`</span>
     <span class="doccomment">/// is true, scanning starts at the lowest sort-order key and scans forward.</span>
     <span class="doccomment">/// Otherwise, scanning starts at the highest sort-order key and scans</span>
@@ -3198,10 +3258,6 @@
     <span class="doccomment">/// For all [`ScanEvaluation::ReadData`] results returned, `callback` will be</span>
     <span class="doccomment">/// invoked with the key and values. The callback may not be invoked in the</span>
     <span class="doccomment">/// same order as the keys are scanned.</span>
-    <span class="attribute">#[<span class="ident">cfg_attr</span>(
-        <span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>,
-        <span class="ident">tracing::instrument</span>(<span class="ident">skip</span>(<span class="self">self</span>, <span class="ident">key_evaluator</span>, <span class="ident">data_callback</span>))
-    )]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">scan_sequences</span><span class="op">&lt;</span><span class="ident">CallerError</span>, <span class="ident">Range</span>, <span class="ident">KeyEvaluator</span>, <span class="ident">DataCallback</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">range</span>: <span class="ident">Range</span>,

@@ -32,12 +32,12 @@ mod test_util;
 pub use arc_bytes::ArcBytes;
 
 pub use self::{
-    chunk_cache::ChunkCache,
+    chunk_cache::{CacheEntry, ChunkCache},
     context::Context,
     error::{Error, ErrorKind},
     roots::{
         AbortError, CompareAndSwapError, Config, ExecutingTransaction, LockedTransactionTree,
         Roots, ThreadPool, TransactionTree, Tree, UnlockedTransactionTree,
     },
-    vault::Vault,
+    vault::{AnyVault, Vault},
 };

@@ -15,12 +15,12 @@ pub struct KeyEntry<Index> {
 }
 
 /// An index that serializes a value to the file.
-pub trait ValueIndex {
+pub trait PositionIndex {
     /// The position on-disk of the stored value.
     fn position(&self) -> u64;
 }
 
-impl<Index: ValueIndex + BinarySerialization> KeyEntry<Index> {
+impl<Index: PositionIndex + BinarySerialization> KeyEntry<Index> {
     pub(crate) fn copy_data_to<Callback>(
         &mut self,
         file: &mut dyn File,

@@ -1,14 +1,13 @@
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
-    marker::PhantomData,
     ops::RangeBounds,
 };
 
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 
 use super::{
-    btree_entry::BTreeEntry,
+    btree::BTreeEntry,
     by_id::{ByIdStats, UnversionedByIdIndex},
     modify::Modification,
     serialization::BinarySerialization,
@@ -21,11 +20,9 @@ use crate::{
     roots::AbortError,
     transaction::TransactionId,
     tree::{
-        btree_entry::{Indexer, KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
+        btree::{Indexer, KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
         by_id::ByIdIndexer,
-        copy_chunk, dynamic_order,
-        versioned::ChangeResult,
-        BTreeNode, ModificationResult, PageHeader, Root,
+        copy_chunk, dynamic_order, BTreeNode, ChangeResult, ModificationResult, PageHeader, Root,
     },
     vault::AnyVault,
     ArcBytes, ChunkCache, ErrorKind,
@@ -40,20 +37,21 @@ pub type Unversioned = UnversionedTreeRoot<()>;
 #[derive(Clone, Debug)]
 pub struct UnversionedTreeRoot<Index>
 where
-    Index: Clone + super::EmbeddedIndex + Debug + 'static,
+    Index: Clone + super::EmbeddedIndex<ArcBytes<'static>> + Debug + 'static,
 {
     /// The transaction ID of the tree root. If this transaction ID isn't
     /// present in the transaction log, this root should not be trusted.
     pub transaction_id: Option<TransactionId>,
     /// The by-id B-Tree.
-    pub by_id_root: BTreeEntry<UnversionedByIdIndex<Index>, ByIdStats<Index::Reduced>>,
+    pub by_id_root:
+        BTreeEntry<UnversionedByIdIndex<Index, ArcBytes<'static>>, ByIdStats<Index::Reduced>>,
 
     reducer: <Self as Root>::Reducer,
 }
 
 impl<Index> Default for UnversionedTreeRoot<Index>
 where
-    Index: Clone + super::EmbeddedIndex + Debug + 'static,
+    Index: Clone + super::EmbeddedIndex<ArcBytes<'static>> + Debug + 'static,
     <Self as Root>::Reducer: Default,
 {
     fn default() -> Self {
@@ -67,15 +65,20 @@ where
 
 impl<Index> UnversionedTreeRoot<Index>
 where
-    Index: Clone + super::EmbeddedIndex + Debug + 'static,
+    Index: Clone + super::EmbeddedIndex<ArcBytes<'static>> + Debug + 'static,
 {
     fn modify_id_root<'a, 'w>(
         &'a mut self,
-        mut modification: Modification<'_, ArcBytes<'static>, UnversionedByIdIndex<Index>>,
+        mut modification: Modification<
+            '_,
+            ArcBytes<'static>,
+            UnversionedByIdIndex<Index, ArcBytes<'static>>,
+        >,
         writer: &'a mut PagedWriter<'w>,
         max_order: Option<usize>,
-    ) -> Result<Vec<ModificationResult<UnversionedByIdIndex<Index>>>, Error> {
-        modification.reverse()?;
+    ) -> Result<Vec<ModificationResult<UnversionedByIdIndex<Index, ArcBytes<'static>>>>, Error>
+    {
+        modification.prepare()?;
 
         let total_keys =
             self.by_id_root.stats(self.reducer()).total_keys() + modification.keys.len() as u64;
@@ -91,24 +94,23 @@ where
         while !modification.keys.is_empty() {
             match self.by_id_root.modify(
                 &mut modification,
-                &mut ModificationContext {
-                    current_order: by_id_order,
+                &mut ModificationContext::new(
+                    by_id_order,
                     minimum_children,
-                    indexer: |key: &ArcBytes<'_>,
-                              value: Option<&ArcBytes<'static>>,
-                              _existing_index,
-                              _changes,
-                              writer: &mut PagedWriter<'_>| {
+                    |key: &ArcBytes<'_>,
+                     value: Option<&ArcBytes<'static>>,
+                     _existing_index,
+                     writer: &mut PagedWriter<'_>| {
                         if let Some(value) = value {
                             let position = writer.write_chunk(value)?;
                             // write_chunk errors if it can't fit within a u32
                             #[allow(clippy::cast_possible_truncation)]
                             let value_length = value.len() as u32;
-                            let new_index = UnversionedByIdIndex {
+                            let new_index = UnversionedByIdIndex::new(
                                 value_length,
                                 position,
-                                embedded: reducer.0.index(key, Some(value)),
-                            };
+                                reducer.0.index(key, Some(value)),
+                            );
                             results.push(ModificationResult {
                                 key: key.to_owned(),
                                 index: Some(new_index.clone()),
@@ -122,15 +124,13 @@ where
                             Ok(KeyOperation::Remove)
                         }
                     },
-                    loader: |index, writer| match writer.read_chunk(index.position)? {
+                    |index, writer| match writer.read_chunk(index.position)? {
                         CacheEntry::ArcBytes(buffer) => Ok(Some(buffer.clone())),
                         CacheEntry::Decoded(_) => unreachable!(),
                     },
-                    reducer: self.reducer().clone(),
-                    _phantom: PhantomData,
-                },
+                    self.reducer().clone(),
+                ),
                 None,
-                &mut (),
                 writer,
             )? {
                 ChangeResult::Absorb | ChangeResult::Changed | ChangeResult::Unchanged => {}
@@ -150,10 +150,11 @@ where
 
 impl<EmbeddedIndex> Root for UnversionedTreeRoot<EmbeddedIndex>
 where
-    EmbeddedIndex: Clone + super::EmbeddedIndex + 'static,
+    EmbeddedIndex: Clone + super::EmbeddedIndex<ArcBytes<'static>> + 'static,
 {
     const HEADER: PageHeader = PageHeader::UnversionedHeader;
-    type Index = UnversionedByIdIndex<EmbeddedIndex>;
+    type Value = ArcBytes<'static>;
+    type Index = UnversionedByIdIndex<EmbeddedIndex, Self::Value>;
     type ReducedIndex = ByIdStats<EmbeddedIndex::Reduced>;
     type Reducer = ByIdIndexer<EmbeddedIndex::Indexer>;
 
@@ -173,38 +174,16 @@ where
         self.by_id_root.stats(self.reducer()).alive_keys
     }
 
-    fn initialized(&self) -> bool {
-        self.transaction_id.is_some()
-    }
-
     fn dirty(&self) -> bool {
         self.by_id_root.dirty
     }
 
-    fn initialize_default(&mut self) {
-        self.transaction_id = Some(TransactionId(0));
+    fn initialized(&self) -> bool {
+        self.transaction_id.is_some()
     }
 
-    fn deserialize(mut bytes: ArcBytes<'_>, reducer: Self::Reducer) -> Result<Self, Error> {
-        let transaction_id = Some(TransactionId(bytes.read_u64::<BigEndian>()?));
-        let by_id_size = bytes.read_u32::<BigEndian>()? as usize;
-        if by_id_size != bytes.len() {
-            return Err(Error::data_integrity(format!(
-                "Header reported index size {}, but data has {} remaining",
-                by_id_size,
-                bytes.len()
-            )));
-        };
-
-        let mut by_id_bytes = bytes.read_bytes(by_id_size)?.to_owned();
-
-        let by_id_root = BTreeEntry::deserialize_from(&mut by_id_bytes, None)?;
-
-        Ok(Self {
-            transaction_id,
-            by_id_root,
-            reducer,
-        })
+    fn initialize_default(&mut self) {
+        self.transaction_id = Some(TransactionId(0));
     }
 
     fn serialize(
@@ -227,6 +206,28 @@ where
         BigEndian::write_u32(&mut output[8..12], by_id_size);
 
         Ok(())
+    }
+
+    fn deserialize(mut bytes: ArcBytes<'_>, reducer: Self::Reducer) -> Result<Self, Error> {
+        let transaction_id = Some(TransactionId(bytes.read_u64::<BigEndian>()?));
+        let by_id_size = bytes.read_u32::<BigEndian>()? as usize;
+        if by_id_size != bytes.len() {
+            return Err(Error::data_integrity(format!(
+                "Header reported index size {}, but data has {} remaining",
+                by_id_size,
+                bytes.len()
+            )));
+        };
+
+        let mut by_id_bytes = bytes.read_bytes(by_id_size)?.to_owned();
+
+        let by_id_root = BTreeEntry::deserialize_from(&mut by_id_bytes, None)?;
+
+        Ok(Self {
+            transaction_id,
+            by_id_root,
+            reducer,
+        })
     }
 
     fn transaction_id(&self) -> TransactionId {
@@ -280,6 +281,7 @@ where
         &self,
         range: &'keys KeyRangeBounds,
         args: &mut ScanArgs<
+            Self::Value,
             Self::Index,
             Self::ReducedIndex,
             CallerError,
@@ -325,7 +327,7 @@ where
             vault,
             &mut scratch,
             &mut |_key,
-                  index: &mut UnversionedByIdIndex<EmbeddedIndex>,
+                  index: &mut UnversionedByIdIndex<EmbeddedIndex, ArcBytes<'static>>,
                   from_file,
                   copied_chunks,
                   to_file,

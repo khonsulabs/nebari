@@ -28,7 +28,7 @@ use crate::{
         state::AnyTreeState,
         EmbeddedIndex, KeySequence, Modification, ModificationResult, Operation, PersistenceMode,
         ScanEvaluation, SequenceEntry, SequenceId, SequenceIndex, State, TransactableCompaction,
-        TreeFile, TreeRoot, VersionedTreeRoot,
+        TreeEntry, TreeFile, TreeRoot, TreeValueIndex, VersionedTreeRoot,
     },
     vault::AnyVault,
     ArcBytes, ChunkCache, ErrorKind,
@@ -421,7 +421,7 @@ impl<Root: tree::Root, File: ManagedFile> AnyTransactionTree<File> for Transacti
 
 impl<File: ManagedFile, Index> TransactionTree<VersionedTreeRoot<Index>, File>
 where
-    Index: Clone + EmbeddedIndex + Debug + 'static,
+    Index: Clone + EmbeddedIndex<ArcBytes<'static>> + Debug + 'static,
 {
     /// Returns the latest sequence id.
     #[must_use]
@@ -503,7 +503,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     pub fn set(
         &mut self,
         key: impl Into<ArcBytes<'static>>,
-        value: impl Into<ArcBytes<'static>>,
+        value: impl Into<Root::Value>,
     ) -> Result<Root::Index, Error> {
         self.tree.set(
             PersistenceMode::Transactional(self.transaction_id),
@@ -516,7 +516,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     pub fn modify<'a>(
         &mut self,
         keys: Vec<ArcBytes<'a>>,
-        operation: Operation<'a, ArcBytes<'static>, Root::Index>,
+        operation: Operation<'a, Root::Value, Root::Index>,
     ) -> Result<Vec<ModificationResult<Root::Index>>, Error> {
         self.tree.modify(Modification {
             keys,
@@ -532,14 +532,14 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     pub fn replace(
         &mut self,
         key: impl Into<ArcBytes<'static>>,
-        value: impl Into<ArcBytes<'static>>,
-    ) -> Result<(Option<ArcBytes<'static>>, Root::Index), Error> {
+        value: impl Into<Root::Value>,
+    ) -> Result<(Option<Root::Value>, Root::Index), Error> {
         self.tree.replace(key, value, self.transaction_id)
     }
 
     /// Returns the current value of `key`. This will return updated information
     /// if it has been previously updated within this transaction.
-    pub fn get(&mut self, key: &[u8]) -> Result<Option<ArcBytes<'static>>, Error> {
+    pub fn get(&mut self, key: &[u8]) -> Result<Option<Root::Value>, Error> {
         self.tree.get(key, true)
     }
 
@@ -551,30 +551,28 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
 
     /// Returns the current value and index of `key`. This will return updated
     /// information if it has been previously updated within this transaction.
-    pub fn get_with_index(
-        &mut self,
-        key: &[u8],
-    ) -> Result<Option<(ArcBytes<'static>, Root::Index)>, Error> {
+    pub fn get_with_index(&mut self, key: &[u8]) -> Result<Option<TreeValueIndex<Root>>, Error> {
         self.tree.get_with_index(key, true)
     }
 
     /// Removes `key` and returns the existing value amd index, if present.
-    pub fn remove(
-        &mut self,
-        key: &[u8],
-    ) -> Result<Option<(ArcBytes<'static>, Root::Index)>, Error> {
+    pub fn remove(&mut self, key: &[u8]) -> Result<Option<TreeValueIndex<Root>>, Error> {
         self.tree.remove(key, self.transaction_id)
     }
 
     /// Compares the value of `key` against `old`. If the values match, key will
     /// be set to the new value if `new` is `Some` or removed if `new` is
     /// `None`.
-    pub fn compare_and_swap(
+    pub fn compare_and_swap<Old>(
         &mut self,
         key: &[u8],
-        old: Option<&[u8]>,
-        new: Option<ArcBytes<'_>>,
-    ) -> Result<(), CompareAndSwapError> {
+        old: Option<&Old>,
+        new: Option<Root::Value>,
+    ) -> Result<(), CompareAndSwapError<Root::Value>>
+    where
+        Old: PartialEq,
+        Root::Value: AsRef<Old> + Clone,
+    {
         self.tree
             .compare_and_swap(key, old, new, self.transaction_id)
     }
@@ -584,7 +582,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     pub fn get_multiple<'keys, KeysIntoIter, KeysIter>(
         &mut self,
         keys: KeysIntoIter,
-    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error>
+    ) -> Result<Vec<(ArcBytes<'static>, Root::Value)>, Error>
     where
         KeysIntoIter: IntoIterator<Item = &'keys [u8], IntoIter = KeysIter>,
         KeysIter: Iterator<Item = &'keys [u8]> + ExactSizeIterator,
@@ -611,7 +609,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     pub fn get_multiple_with_indexes<'keys, KeysIntoIter, KeysIter>(
         &mut self,
         keys: KeysIntoIter,
-    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>, Root::Index)>, Error>
+    ) -> Result<Vec<TreeEntry<Root>>, Error>
     where
         KeysIntoIter: IntoIterator<Item = &'keys [u8], IntoIter = KeysIter>,
         KeysIter: Iterator<Item = &'keys [u8]> + ExactSizeIterator,
@@ -623,7 +621,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     pub fn get_range<'keys, KeyRangeBounds>(
         &mut self,
         range: &'keys KeyRangeBounds,
-    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error>
+    ) -> Result<Vec<(ArcBytes<'static>, Root::Value)>, Error>
     where
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
     {
@@ -645,7 +643,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     pub fn get_range_with_indexes<'keys, KeyRangeBounds>(
         &mut self,
         range: &'keys KeyRangeBounds,
-    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>, Root::Index)>, Error>
+    ) -> Result<Vec<TreeEntry<Root>>, Error>
     where
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
     {
@@ -692,7 +690,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
         DataCallback: FnMut(
             ArcBytes<'static>,
             &Root::Index,
-            ArcBytes<'static>,
+            Root::Value,
         ) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
@@ -735,7 +733,7 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
 
     /// Returns the first key and value of the tree.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
-    pub fn first(&mut self) -> Result<Option<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
+    pub fn first(&mut self) -> Result<Option<(ArcBytes<'static>, Root::Value)>, Error> {
         self.tree.first(true)
     }
 
@@ -747,17 +745,17 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
 
     /// Returns the last key and value of the tree.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
-    pub fn last(&mut self) -> Result<Option<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
+    pub fn last(&mut self) -> Result<Option<(ArcBytes<'static>, Root::Value)>, Error> {
         self.tree.last(true)
     }
 }
 
 /// An error returned from `compare_and_swap()`.
 #[derive(Debug, thiserror::Error)]
-pub enum CompareAndSwapError {
+pub enum CompareAndSwapError<Value: Debug> {
     /// The stored value did not match the conditional value.
     #[error("value did not match. existing value: {0:?}")]
-    Conflict(Option<ArcBytes<'static>>),
+    Conflict(Option<Value>),
     /// Another error occurred while executing the operation.
     #[error("error during compare_and_swap: {0}")]
     Error(#[from] Error),
@@ -907,7 +905,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     pub fn set(
         &self,
         key: impl Into<ArcBytes<'static>>,
-        value: impl Into<ArcBytes<'static>>,
+        value: impl Into<Root::Value>,
     ) -> Result<(), Error> {
         let transaction = self.begin_transaction()?;
         transaction.tree::<Root>(0).unwrap().set(key, value)?;
@@ -945,7 +943,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
 
     /// Retrieves the current value of `key`, if present. Does not reflect any
     /// changes in pending transactions.
-    pub fn get(&self, key: &[u8]) -> Result<Option<ArcBytes<'static>>, Error> {
+    pub fn get(&self, key: &[u8]) -> Result<Option<Root::Value>, Error> {
         catch_compaction_and_retry(|| {
             let mut tree = match self.open_for_read() {
                 Ok(tree) => tree,
@@ -973,10 +971,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
 
     /// Retrieves the current value and index of `key`, if present. Does not reflect any
     /// changes in pending transactions.
-    pub fn get_with_index(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<(ArcBytes<'static>, Root::Index)>, Error> {
+    pub fn get_with_index(&self, key: &[u8]) -> Result<Option<TreeValueIndex<Root>>, Error> {
         catch_compaction_and_retry(|| {
             let mut tree = match self.open_for_read() {
                 Ok(tree) => tree,
@@ -996,8 +991,8 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     pub fn replace(
         &mut self,
         key: impl Into<ArcBytes<'static>>,
-        value: impl Into<ArcBytes<'static>>,
-    ) -> Result<(Option<ArcBytes<'static>>, Root::Index), Error> {
+        value: impl Into<Root::Value>,
+    ) -> Result<(Option<Root::Value>, Root::Index), Error> {
         let transaction = self.begin_transaction()?;
         let existing_value = transaction.tree::<Root>(0).unwrap().replace(key, value)?;
         transaction.commit()?;
@@ -1009,7 +1004,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     pub fn modify<'a>(
         &mut self,
         keys: Vec<ArcBytes<'a>>,
-        operation: Operation<'a, ArcBytes<'static>, Root::Index>,
+        operation: Operation<'a, Root::Value, Root::Index>,
     ) -> Result<Vec<ModificationResult<Root::Index>>, Error> {
         let transaction = self.begin_transaction()?;
         let results = transaction
@@ -1023,7 +1018,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// Removes `key` and returns the existing value and index, if present. This
     /// is executed within its own transaction.
     #[allow(clippy::missing_panics_doc)]
-    pub fn remove(&self, key: &[u8]) -> Result<Option<(ArcBytes<'static>, Root::Index)>, Error> {
+    pub fn remove(&self, key: &[u8]) -> Result<Option<TreeValueIndex<Root>>, Error> {
         let transaction = self.begin_transaction()?;
         let existing_value = transaction.tree::<Root>(0).unwrap().remove(key)?;
         transaction.commit()?;
@@ -1034,12 +1029,16 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// be set to the new value if `new` is `Some` or removed if `new` is
     /// `None`. This is executed within its own transaction.
     #[allow(clippy::missing_panics_doc)]
-    pub fn compare_and_swap(
+    pub fn compare_and_swap<Old>(
         &self,
         key: &[u8],
-        old: Option<&[u8]>,
-        new: Option<ArcBytes<'_>>,
-    ) -> Result<(), CompareAndSwapError> {
+        old: Option<&Old>,
+        new: Option<Root::Value>,
+    ) -> Result<(), CompareAndSwapError<Root::Value>>
+    where
+        Old: PartialEq,
+        Root::Value: AsRef<Old> + Clone,
+    {
         let transaction = self.begin_transaction()?;
         transaction
             .tree::<Root>(0)
@@ -1055,7 +1054,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     pub fn get_multiple<'keys, Keys>(
         &self,
         keys: Keys,
-    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error>
+    ) -> Result<Vec<(ArcBytes<'static>, Root::Value)>, Error>
     where
         Keys: Iterator<Item = &'keys [u8]> + ExactSizeIterator + Clone,
     {
@@ -1099,7 +1098,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     pub fn get_multiple_with_indexes<'keys, KeysIntoIter, KeysIter>(
         &self,
         keys: KeysIntoIter,
-    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>, Root::Index)>, Error>
+    ) -> Result<Vec<TreeEntry<Root>>, Error>
     where
         KeysIntoIter: IntoIterator<Item = &'keys [u8], IntoIter = KeysIter> + Clone,
         KeysIter: Iterator<Item = &'keys [u8]> + ExactSizeIterator,
@@ -1119,7 +1118,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     pub fn get_range<'keys, KeyRangeBounds>(
         &self,
         range: &'keys KeyRangeBounds,
-    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>)>, Error>
+    ) -> Result<Vec<(ArcBytes<'static>, Root::Value)>, Error>
     where
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + Clone + ?Sized,
     {
@@ -1157,7 +1156,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     pub fn get_range_with_indexes<'keys, KeyRangeBounds>(
         &self,
         range: &'keys KeyRangeBounds,
-    ) -> Result<Vec<(ArcBytes<'static>, ArcBytes<'static>, Root::Index)>, Error>
+    ) -> Result<Vec<TreeEntry<Root>>, Error>
     where
         KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
     {
@@ -1211,7 +1210,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         DataCallback: FnMut(
             ArcBytes<'static>,
             &Root::Index,
-            ArcBytes<'static>,
+            Root::Value,
         ) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
@@ -1278,7 +1277,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
 
     /// Returns the first key and value of the tree.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
-    pub fn first(&self) -> Result<Option<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
+    pub fn first(&self) -> Result<Option<(ArcBytes<'static>, Root::Value)>, Error> {
         catch_compaction_and_retry(|| {
             let mut tree = match self.open_for_read() {
                 Ok(tree) => tree,
@@ -1306,7 +1305,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
 
     /// Returns the last key and value of the tree.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
-    pub fn last(&self) -> Result<Option<(ArcBytes<'static>, ArcBytes<'static>)>, Error> {
+    pub fn last(&self) -> Result<Option<(ArcBytes<'static>, Root::Value)>, Error> {
         catch_compaction_and_retry(|| {
             let mut tree = match self.open_for_read() {
                 Ok(tree) => tree,
@@ -1393,7 +1392,7 @@ impl<Root: tree::Root, File: ManagedFile> AnyTreeRoot<File> for Tree<Root, File>
 
 impl<File: ManagedFile, Index> Tree<VersionedTreeRoot<Index>, File>
 where
-    Index: EmbeddedIndex + Clone + Debug + 'static,
+    Index: EmbeddedIndex<ArcBytes<'static>> + Clone + Debug + 'static,
 {
     /// Returns the latest sequence id.
     #[must_use]
@@ -1413,14 +1412,14 @@ where
         &self,
         range: Range,
         forwards: bool,
-        key_evaluator: &mut KeyEvaluator,
-        data_callback: &mut DataCallback,
+        key_evaluator: KeyEvaluator,
+        data_callback: DataCallback,
     ) -> Result<(), AbortError<CallerError>>
     where
         Range: Clone + RangeBounds<SequenceId> + Debug + 'static,
-        KeyEvaluator: FnMut(KeySequence<Index>) -> ScanEvaluation,
-        DataCallback:
-            FnMut(KeySequence<Index>, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
+        KeyEvaluator: FnMut(KeySequence<Index>) -> ScanEvaluation + Clone,
+        DataCallback: FnMut(KeySequence<Index>, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>
+            + Clone,
         CallerError: Display + Debug,
     {
         catch_compaction_and_retry_abortable(|| {
@@ -1431,7 +1430,13 @@ where
                 Some(self.roots.transactions()),
             )?;
 
-            tree.scan_sequences(range.clone(), forwards, false, key_evaluator, data_callback)
+            tree.scan_sequences(
+                range.clone(),
+                forwards,
+                false,
+                key_evaluator.clone(),
+                data_callback.clone(),
+            )
         })
     }
 
@@ -1700,7 +1705,7 @@ mod tests {
     use crate::{
         io::{any::AnyFileManager, fs::StdFileManager, memory::MemoryFileManager},
         test_util::RotatorVault,
-        tree::{Root, Unversioned, Versioned},
+        tree::{Root, Unversioned, ValueIndex, Versioned},
     };
 
     fn basic_get_set<M: FileManager>(file_manager: M) {
@@ -1839,7 +1844,7 @@ mod tests {
         compact_test::<Unversioned, _>(AnyFileManager::memory());
     }
 
-    fn compact_test<R: Root, M: FileManager>(file_manager: M)
+    fn compact_test<R: Root<Value = ArcBytes<'static>>, M: FileManager>(file_manager: M)
     where
         R::Reducer: Default,
     {
@@ -1863,7 +1868,7 @@ mod tests {
                     let absolute_id = (worker * OPERATION_COUNT + relative_id) as u64;
                     tree.set(absolute_id.to_be_bytes(), absolute_id.to_be_bytes())
                         .unwrap();
-                    let (value, _) = tree
+                    let ValueIndex { value, .. } = tree
                         .remove(&absolute_id.to_be_bytes())
                         .unwrap()
                         .ok_or_else(|| panic!("value not found: {:?}", absolute_id))

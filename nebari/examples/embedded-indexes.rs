@@ -4,9 +4,10 @@ use byteorder::BigEndian;
 use nanorand::{Pcg64, Rng};
 use nebari::{
     tree::{
-        EmbeddedIndex, Indexer, Reducer, Root, ScanEvaluation, Serializable, VersionedTreeRoot,
+        btree::{Indexer, Reducer},
+        EmbeddedIndex, Root, ScanEvaluation, Serializable, VersionedTreeRoot,
     },
-    Error,
+    ArcBytes, Error,
 };
 
 fn main() -> Result<(), Error> {
@@ -55,7 +56,7 @@ fn main() -> Result<(), Error> {
 #[derive(Clone, Debug)]
 pub struct Zeroes(pub u32);
 
-impl EmbeddedIndex for Zeroes {
+impl EmbeddedIndex<ArcBytes<'static>> for Zeroes {
     type Reduced = Self;
     type Indexer = ZeroesIndexer;
 }
@@ -63,7 +64,7 @@ impl EmbeddedIndex for Zeroes {
 #[derive(Default, Clone, Debug)]
 pub struct ZeroesIndexer;
 
-impl Indexer<Zeroes> for ZeroesIndexer {
+impl Indexer<ArcBytes<'static>, Zeroes> for ZeroesIndexer {
     fn index(
         &self,
         _key: &nebari::ArcBytes<'_>,

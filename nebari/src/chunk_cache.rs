@@ -88,8 +88,12 @@ impl ChunkCache {
     }
 }
 
+/// A cached chunk of data that has possibly been decoded already.
 #[derive(Clone)]
 pub enum CacheEntry {
+    /// A buffer of bytes that has been cached.
     ArcBytes(ArcBytes<'static>),
+    /// A previously decoded value that was stored using
+    /// [`ChunkCache::replace_with_decoded()`].
     Decoded(Arc<dyn AnySendSync>),
 }

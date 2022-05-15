@@ -2,19 +2,18 @@ use std::{
     array::TryFromSliceError,
     collections::HashMap,
     fmt::{Debug, Display},
-    marker::PhantomData,
     ops::RangeBounds,
 };
 
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 
 use super::{
-    btree_entry::BTreeEntry,
+    btree::BTreeEntry,
     by_id::{ByIdStats, VersionedByIdIndex},
     by_sequence::{BySequenceIndex, BySequenceStats},
     modify::Modification,
     serialization::BinarySerialization,
-    PagedWriter, ScanEvaluation, PAGE_SIZE,
+    ChangeResult, PagedWriter, ScanEvaluation, PAGE_SIZE,
 };
 use crate::{
     chunk_cache::CacheEntry,
@@ -23,7 +22,7 @@ use crate::{
     roots::AbortError,
     transaction::TransactionId,
     tree::{
-        btree_entry::{Indexer, KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
+        btree::{Indexer, KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
         by_id::ByIdIndexer,
         by_sequence::{BySequenceReducer, SequenceId},
         copy_chunk, dynamic_order,
@@ -44,7 +43,7 @@ pub type Versioned = VersionedTreeRoot<()>;
 #[derive(Clone, Debug)]
 pub struct VersionedTreeRoot<EmbeddedIndex>
 where
-    EmbeddedIndex: super::EmbeddedIndex,
+    EmbeddedIndex: super::EmbeddedIndex<ArcBytes<'static>>,
 {
     /// The transaction ID of the tree root. If this transaction ID isn't
     /// present in the transaction log, this root should not be trusted.
@@ -54,14 +53,16 @@ where
     /// The by-sequence B-Tree.
     pub by_sequence_root: BTreeEntry<BySequenceIndex<EmbeddedIndex>, BySequenceStats>,
     /// The by-id B-Tree.
-    pub by_id_root:
-        BTreeEntry<VersionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedIndex::Reduced>>,
+    pub by_id_root: BTreeEntry<
+        VersionedByIdIndex<EmbeddedIndex, ArcBytes<'static>>,
+        ByIdStats<EmbeddedIndex::Reduced>,
+    >,
 
     reducer: ByIdIndexer<EmbeddedIndex::Indexer>,
 }
 impl<EmbeddedIndex> Default for VersionedTreeRoot<EmbeddedIndex>
 where
-    EmbeddedIndex: super::EmbeddedIndex + Clone + Debug + 'static,
+    EmbeddedIndex: super::EmbeddedIndex<ArcBytes<'static>> + Clone + Debug + 'static,
     EmbeddedIndex::Indexer: Default,
 {
     fn default() -> Self {
@@ -74,14 +75,6 @@ where
         }
     }
 }
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum ChangeResult {
-    Unchanged,
-    Remove,
-    Absorb,
-    Changed,
-    Split,
-}
 
 #[derive(Debug)]
 pub enum Children<Index, ReducedIndex> {
@@ -91,9 +84,11 @@ pub enum Children<Index, ReducedIndex> {
 
 impl<EmbeddedIndex> VersionedTreeRoot<EmbeddedIndex>
 where
-    EmbeddedIndex: super::EmbeddedIndex + Clone + Debug + 'static,
-    ByIdIndexer<EmbeddedIndex::Indexer>:
-        Reducer<VersionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedIndex::Reduced>>,
+    EmbeddedIndex: super::EmbeddedIndex<ArcBytes<'static>> + Clone + Debug + 'static,
+    ByIdIndexer<EmbeddedIndex::Indexer>: Reducer<
+        VersionedByIdIndex<EmbeddedIndex, ArcBytes<'static>>,
+        ByIdStats<EmbeddedIndex::Reduced>,
+    >,
 {
     fn modify_sequence_root(
         &mut self,
@@ -106,7 +101,7 @@ where
         max_order: Option<usize>,
     ) -> Result<(), Error> {
         // Reverse so that pop is efficient.
-        modification.reverse()?;
+        modification.prepare()?;
 
         let total_sequence_records = self
             .by_sequence_root
@@ -122,24 +117,21 @@ where
         while !modification.keys.is_empty() {
             match self.by_sequence_root.modify(
                 &mut modification,
-                &mut ModificationContext {
-                    current_order: by_sequence_order,
-                    minimum_children: by_sequence_minimum_children,
-                    indexer:
-                        &mut |_key: &ArcBytes<'_>,
-                              value: Option<&BySequenceIndex<EmbeddedIndex>>,
-                              _existing_index: Option<&BySequenceIndex<EmbeddedIndex>>,
-                              _changes: &mut EntryChanges<EmbeddedIndex>,
-                              _writer: &mut PagedWriter<'_>| {
-                            Ok(KeyOperation::Set(value.unwrap().clone()))
-                        },
-                    loader: |_index: &BySequenceIndex<EmbeddedIndex>,
-                             _writer: &mut PagedWriter<'_>| Ok(None),
-                    reducer: BySequenceReducer,
-                    _phantom: PhantomData,
-                },
+                &mut ModificationContext::new(
+                    by_sequence_order,
+                    by_sequence_minimum_children,
+                    |_key: &ArcBytes<'_>,
+                     value: Option<&BySequenceIndex<EmbeddedIndex>>,
+                     _existing_index: Option<&BySequenceIndex<EmbeddedIndex>>,
+                     _writer: &mut PagedWriter<'_>| {
+                        Ok(KeyOperation::Set(value.unwrap().clone()))
+                    },
+                    |_index: &BySequenceIndex<EmbeddedIndex>, _writer: &mut PagedWriter<'_>| {
+                        Ok(None)
+                    },
+                    BySequenceReducer,
+                ),
                 None,
-                &mut EntryChanges::default(),
                 writer,
             )? {
                 ChangeResult::Absorb
@@ -156,12 +148,17 @@ where
 
     fn modify_id_root(
         &mut self,
-        mut modification: Modification<'_, ArcBytes<'static>, VersionedByIdIndex<EmbeddedIndex>>,
+        mut modification: Modification<
+            '_,
+            ArcBytes<'static>,
+            VersionedByIdIndex<EmbeddedIndex, ArcBytes<'static>>,
+        >,
         changes: &mut EntryChanges<EmbeddedIndex>,
         writer: &mut PagedWriter<'_>,
         max_order: Option<usize>,
-    ) -> Result<Vec<ModificationResult<VersionedByIdIndex<EmbeddedIndex>>>, Error> {
-        modification.reverse()?;
+    ) -> Result<Vec<ModificationResult<VersionedByIdIndex<EmbeddedIndex, ArcBytes<'static>>>>, Error>
+    {
+        modification.prepare()?;
 
         let total_id_records =
             self.by_id_root.stats(self.reducer()).total_keys() + modification.keys.len() as u64;
@@ -177,14 +174,15 @@ where
             let reducer = self.reducer.clone();
             match self.by_id_root.modify(
                 &mut modification,
-                &mut ModificationContext {
-                    current_order: by_id_order,
-                    minimum_children: by_id_minimum_children,
-                    indexer: &mut |key: &ArcBytes<'_>,
-                                   value: Option<&ArcBytes<'static>>,
-                                   existing_index: Option<&VersionedByIdIndex<EmbeddedIndex>>,
-                                   changes: &mut EntryChanges<EmbeddedIndex>,
-                                   writer: &mut PagedWriter<'_>| {
+                &mut ModificationContext::new(
+                    by_id_order,
+                    by_id_minimum_children,
+                    |key: &ArcBytes<'_>,
+                     value: Option<&ArcBytes<'static>>,
+                     existing_index: Option<
+                        &VersionedByIdIndex<EmbeddedIndex, ArcBytes<'static>>,
+                    >,
+                     writer: &mut PagedWriter<'_>| {
                         let (position, value_size) = if let Some(value) = value {
                             let new_position = writer.write_chunk(value)?;
                             // write_chunk errors if it can't fit within a u32
@@ -210,19 +208,19 @@ where
                             value_position: position,
                             value_size,
                         });
-                        let new_index = VersionedByIdIndex {
-                            sequence_id: changes.current_sequence,
+                        let new_index = VersionedByIdIndex::new(
+                            changes.current_sequence,
+                            value_size,
                             position,
-                            value_length: value_size,
                             embedded,
-                        };
+                        );
                         results.push(ModificationResult {
                             key,
                             index: Some(new_index.clone()),
                         });
                         Ok(KeyOperation::Set(new_index))
                     },
-                    loader: |index, writer| {
+                    |index, writer| {
                         if index.position > 0 {
                             match writer.read_chunk(index.position) {
                                 Ok(CacheEntry::ArcBytes(buffer)) => Ok(Some(buffer)),
@@ -233,11 +231,9 @@ where
                             Ok(None)
                         }
                     },
-                    reducer: self.reducer().clone(),
-                    _phantom: PhantomData,
-                },
+                    self.reducer().clone(),
+                ),
                 None,
-                changes,
                 writer,
             )? {
                 ChangeResult::Absorb | ChangeResult::Changed | ChangeResult::Unchanged => {}
@@ -259,10 +255,11 @@ where
 
 impl<EmbeddedIndex> Root for VersionedTreeRoot<EmbeddedIndex>
 where
-    EmbeddedIndex: super::EmbeddedIndex + Clone + Debug + 'static,
+    EmbeddedIndex: super::EmbeddedIndex<ArcBytes<'static>> + Clone + Debug + 'static,
 {
     const HEADER: PageHeader = PageHeader::VersionedHeader;
-    type Index = VersionedByIdIndex<EmbeddedIndex>;
+    type Value = ArcBytes<'static>;
+    type Index = VersionedByIdIndex<EmbeddedIndex, Self::Value>;
     type ReducedIndex = ByIdStats<EmbeddedIndex::Reduced>;
     type Reducer = ByIdIndexer<EmbeddedIndex::Indexer>;
 
@@ -280,20 +277,47 @@ where
         &self.reducer
     }
 
-    fn initialized(&self) -> bool {
-        self.sequence.valid()
+    fn count(&self) -> u64 {
+        self.by_id_root.stats(self.reducer()).alive_keys
     }
 
     fn dirty(&self) -> bool {
         self.by_id_root.dirty || self.by_sequence_root.dirty
     }
 
+    fn initialized(&self) -> bool {
+        self.sequence.valid()
+    }
+
     fn initialize_default(&mut self) {
         self.sequence = SequenceId(1);
     }
 
-    fn count(&self) -> u64 {
-        self.by_id_root.stats(self.reducer()).alive_keys
+    fn serialize(
+        &mut self,
+        paged_writer: &mut PagedWriter<'_>,
+        output: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        output.reserve(PAGE_SIZE);
+        output.write_u64::<BigEndian>(self.transaction_id.0)?;
+        output.write_u64::<BigEndian>(self.sequence.0)?;
+        // Reserve space for by_sequence and by_id sizes (2xu16).
+        output.write_u64::<BigEndian>(0)?;
+
+        let by_sequence_size = self.by_sequence_root.serialize_to(output, paged_writer)?;
+
+        let by_id_size = self.by_id_root.serialize_to(output, paged_writer)?;
+
+        let by_sequence_size = u32::try_from(by_sequence_size)
+            .ok()
+            .ok_or(ErrorKind::Internal(InternalError::HeaderTooLarge))?;
+        BigEndian::write_u32(&mut output[16..20], by_sequence_size);
+        let by_id_size = u32::try_from(by_id_size)
+            .ok()
+            .ok_or(ErrorKind::Internal(InternalError::HeaderTooLarge))?;
+        BigEndian::write_u32(&mut output[20..24], by_id_size);
+
+        Ok(())
     }
 
     fn deserialize(mut bytes: ArcBytes<'_>, reducer: Self::Reducer) -> Result<Self, Error> {
@@ -323,33 +347,6 @@ where
             by_id_root,
             reducer,
         })
-    }
-
-    fn serialize(
-        &mut self,
-        paged_writer: &mut PagedWriter<'_>,
-        output: &mut Vec<u8>,
-    ) -> Result<(), Error> {
-        output.reserve(PAGE_SIZE);
-        output.write_u64::<BigEndian>(self.transaction_id.0)?;
-        output.write_u64::<BigEndian>(self.sequence.0)?;
-        // Reserve space for by_sequence and by_id sizes (2xu16).
-        output.write_u64::<BigEndian>(0)?;
-
-        let by_sequence_size = self.by_sequence_root.serialize_to(output, paged_writer)?;
-
-        let by_id_size = self.by_id_root.serialize_to(output, paged_writer)?;
-
-        let by_sequence_size = u32::try_from(by_sequence_size)
-            .ok()
-            .ok_or(ErrorKind::Internal(InternalError::HeaderTooLarge))?;
-        BigEndian::write_u32(&mut output[16..20], by_sequence_size);
-        let by_id_size = u32::try_from(by_id_size)
-            .ok()
-            .ok_or(ErrorKind::Internal(InternalError::HeaderTooLarge))?;
-        BigEndian::write_u32(&mut output[20..24], by_id_size);
-
-        Ok(())
     }
 
     fn transaction_id(&self) -> TransactionId {
@@ -432,6 +429,7 @@ where
         &self,
         range: &'keys KeyRangeBounds,
         args: &mut ScanArgs<
+            Self::Value,
             Self::Index,
             Self::ReducedIndex,
             CallerError,
@@ -481,7 +479,7 @@ where
             vault,
             &mut scratch,
             &mut |key,
-                  index: &mut VersionedByIdIndex<EmbeddedIndex>,
+                  index: &mut VersionedByIdIndex<EmbeddedIndex, ArcBytes<'static>>,
                   from_file,
                   copied_chunks,
                   to_file,
@@ -529,22 +527,19 @@ where
         // This modification copies the `sequence_indexes` into the sequence root.
         self.by_sequence_root.modify(
             &mut modification,
-            &mut ModificationContext {
-                current_order: by_sequence_order,
+            &mut ModificationContext::new(
+                by_sequence_order,
                 minimum_children,
-                indexer: &mut |_key: &ArcBytes<'_>,
+                |_key: &ArcBytes<'_>,
                                value: Option<&BySequenceIndex<EmbeddedIndex>>,
                                _existing_index: Option<&BySequenceIndex<EmbeddedIndex>>,
-                               _changes: &mut EntryChanges<EmbeddedIndex>,
                                _writer: &mut PagedWriter<'_>| {
                     Ok(KeyOperation::Set(value.unwrap().clone()))
                 },
-                loader: |_index: &BySequenceIndex<EmbeddedIndex>, _writer: &mut PagedWriter<'_>| unreachable!(),
-                reducer: BySequenceReducer,
-                _phantom: PhantomData,
-            },
+                |_index: &BySequenceIndex<EmbeddedIndex>, _writer: &mut PagedWriter<'_>| unreachable!(),
+                BySequenceReducer,
+            ),
             None,
-            &mut EntryChanges::default(),
             writer,
         )?;
 

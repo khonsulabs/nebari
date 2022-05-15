@@ -4,7 +4,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::{
     error::Error,
-    tree::{btree_entry::Reducer, key_entry::ValueIndex, BinarySerialization, PagedWriter},
+    tree::{btree::Reducer, key_entry::PositionIndex, BinarySerialization, PagedWriter},
     ArcBytes, ErrorKind,
 };
 
@@ -62,7 +62,7 @@ pub struct BySequenceIndex<Embedded> {
 
 impl<Embedded> BinarySerialization for BySequenceIndex<Embedded>
 where
-    Embedded: super::EmbeddedIndex,
+    Embedded: super::EmbeddedIndex<ArcBytes<'static>>,
 {
     fn serialize_to(
         &mut self,
@@ -125,7 +125,7 @@ where
     }
 }
 
-impl<Embedded> ValueIndex for BySequenceIndex<Embedded> {
+impl<Embedded> PositionIndex for BySequenceIndex<Embedded> {
     fn position(&self) -> u64 {
         self.position
     }

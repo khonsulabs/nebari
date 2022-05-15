@@ -5,8 +5,8 @@ use libfuzzer_sys::fuzz_target;
 use nebari::{
     io::{fs::StdFile, FileManager},
     tree::{
-        CompareSwap, KeyOperation, Modification, Operation, PersistenceMode, State, TreeFile,
-        Unversioned,
+        btree::KeyOperation, CompareSwap, Modification, Operation, PersistenceMode, State,
+        TreeFile, Unversioned,
     },
     ArcBytes, Context,
 };

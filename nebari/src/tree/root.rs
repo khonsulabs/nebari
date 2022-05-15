@@ -15,7 +15,7 @@ use crate::{
     roots::AnyTransactionTree,
     transaction::{TransactionId, TransactionManager},
     tree::{
-        btree_entry::ScanArgs, state::AnyTreeState, Modification, ModificationResult, PageHeader,
+        btree::ScanArgs, state::AnyTreeState, Modification, ModificationResult, PageHeader,
         PagedWriter, Reducer, ScanEvaluation, State, TreeFile,
     },
     vault::AnyVault,
@@ -33,6 +33,8 @@ pub trait Root: Debug + Send + Sync + Clone + 'static {
     type ReducedIndex: Clone + Debug + 'static;
     /// The reducer that reduces `Index`es and re-reduces `ReducedIndex`es.
     type Reducer: Reducer<Self::Index, Self::ReducedIndex> + 'static;
+    /// The value type stored by this root.
+    type Value: Debug + 'static;
 
     /// Returns a new instance with the provided reducer.
     fn default_with(reducer: Self::Reducer) -> Self;
@@ -98,7 +100,7 @@ pub trait Root: Debug + Send + Sync + Clone + 'static {
     /// indexes, if the keys are still present.
     fn modify<'a, 'w>(
         &'a mut self,
-        modification: Modification<'_, ArcBytes<'static>, Self::Index>,
+        modification: Modification<'_, Self::Value, Self::Index>,
         writer: &'a mut PagedWriter<'w>,
         max_order: Option<usize>,
     ) -> Result<Vec<ModificationResult<Self::Index>>, Error>;
@@ -119,7 +121,7 @@ pub trait Root: Debug + Send + Sync + Clone + 'static {
     ) -> Result<(), Error>
     where
         KeyEvaluator: FnMut(&ArcBytes<'static>, &Self::Index) -> ScanEvaluation,
-        KeyReader: FnMut(ArcBytes<'static>, ArcBytes<'static>, Self::Index) -> Result<(), Error>,
+        KeyReader: FnMut(ArcBytes<'static>, Self::Value, Self::Index) -> Result<(), Error>,
         Keys: Iterator<Item = &'keys [u8]>;
 
     /// Scans the tree over `range`. `args.key_evaluator` is invoked for each key as
@@ -137,6 +139,7 @@ pub trait Root: Debug + Send + Sync + Clone + 'static {
         &self,
         range: &'keys KeyRangeBounds,
         args: &mut ScanArgs<
+            Self::Value,
             Self::Index,
             Self::ReducedIndex,
             CallerError,
@@ -155,7 +158,7 @@ pub trait Root: Debug + Send + Sync + Clone + 'static {
         ScanDataCallback: FnMut(
             ArcBytes<'static>,
             &Self::Index,
-            ArcBytes<'static>,
+            Self::Value,
         ) -> Result<(), AbortError<CallerError>>;
 
     /// Copies all data from `file` into `writer`, updating `self` with the new

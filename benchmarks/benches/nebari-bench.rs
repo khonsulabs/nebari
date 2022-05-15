@@ -98,7 +98,7 @@ pub trait BenchConfig: Display {
 
 pub trait NebariBenchmark {
     const BACKEND: &'static str;
-    type Root: Root + Default;
+    type Root: Root<Value = ArcBytes<'static>> + Default;
 }
 
 pub struct VersionedBenchmark;
@@ -120,7 +120,10 @@ use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
     Throughput,
 };
-use nebari::tree::{Root, Unversioned, Versioned};
+use nebari::{
+    tree::{Root, Unversioned, Versioned},
+    ArcBytes,
+};
 
 fn all_benches(c: &mut Criterion) {
     blobs::benches(c);

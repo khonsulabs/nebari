@@ -5,12 +5,12 @@ use std::{
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use super::{btree_entry::BTreeEntry, read_chunk, BinarySerialization, PagedWriter};
+use super::{btree::BTreeEntry, read_chunk, BinarySerialization, PagedWriter};
 use crate::{
     chunk_cache::CacheEntry,
     error::Error,
     io::File,
-    tree::{btree_entry::NodeInclusion, key_entry::ValueIndex},
+    tree::{btree::NodeInclusion, key_entry::PositionIndex},
     vault::AnyVault,
     AbortError, ArcBytes, ChunkCache, ErrorKind,
 };
@@ -155,7 +155,7 @@ impl<
 }
 
 impl<
-        Index: Clone + ValueIndex + BinarySerialization + Debug + 'static,
+        Index: Clone + PositionIndex + BinarySerialization + Debug + 'static,
         ReducedIndex: Clone + BinarySerialization + Debug + 'static,
     > Interior<Index, ReducedIndex>
 {

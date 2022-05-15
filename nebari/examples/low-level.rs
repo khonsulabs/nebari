@@ -48,8 +48,8 @@ fn main() -> Result<(), Error> {
         ..,
         true,
         false,
-        &mut |_key| ScanEvaluation::ReadData,
-        &mut |key, data| {
+        |_key| ScanEvaluation::ReadData,
+        |key, data| {
             println!(
                 "Key {:?} contained {:?} at sequence {:?}. Previous sequence: {:?}",
                 key.key, data, key.sequence, key.last_sequence
@@ -61,7 +61,7 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn tree_basics<Root: nebari::tree::Root, File: ManagedFile>(
+fn tree_basics<Root: nebari::tree::Root<Value = ArcBytes<'static>>, File: ManagedFile>(
     tree: &mut TreeFile<Root, File>,
 ) -> Result<(), Error> {
     // Insert a few key-value pairs.
@@ -76,9 +76,9 @@ fn tree_basics<Root: nebari::tree::Root, File: ManagedFile>(
         &(..),
         true,
         false,
-        &mut |_, _, _| ScanEvaluation::ReadData,
-        &mut |_key, _index| ScanEvaluation::ReadData,
-        &mut |key, _index, value| {
+        |_, _, _| ScanEvaluation::ReadData,
+        |_key, _index| ScanEvaluation::ReadData,
+        |key, _index, value| {
             println!("Found key {:?} with value {:?}", key, value);
             Ok(())
         },

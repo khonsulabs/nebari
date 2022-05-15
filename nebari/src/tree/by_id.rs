@@ -1,15 +1,17 @@
+use std::marker::PhantomData;
+
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use super::{btree_entry::Reducer, BinarySerialization, PagedWriter};
+use super::{btree::Reducer, BinarySerialization, PagedWriter};
 use crate::{
     error::Error,
-    tree::{by_sequence::SequenceId, key_entry::ValueIndex},
+    tree::{by_sequence::SequenceId, key_entry::PositionIndex},
     ArcBytes,
 };
 
 /// The index stored within [`VersionedTreeRoot::by_id_root`](crate::tree::VersionedTreeRoot::by_id_root).
 #[derive(Clone, Debug)]
-pub struct VersionedByIdIndex<EmbeddedIndex: super::EmbeddedIndex> {
+pub struct VersionedByIdIndex<EmbeddedIndex: super::EmbeddedIndex<Value>, Value> {
     /// The unique sequence id generated when writing the value to the file.
     pub sequence_id: SequenceId,
     /// The size of the value stored on disk.
@@ -18,11 +20,35 @@ pub struct VersionedByIdIndex<EmbeddedIndex: super::EmbeddedIndex> {
     pub position: u64,
     /// The embedded index.
     pub embedded: EmbeddedIndex,
+
+    _value: PhantomData<Value>,
 }
 
-impl<EmbeddedIndex> BinarySerialization for VersionedByIdIndex<EmbeddedIndex>
+impl<EmbeddedIndex, Value> VersionedByIdIndex<EmbeddedIndex, Value>
 where
-    EmbeddedIndex: super::EmbeddedIndex,
+    EmbeddedIndex: super::EmbeddedIndex<Value>,
+{
+    /// Retruns a new index instance.
+    pub fn new(
+        sequence_id: SequenceId,
+        value_length: u32,
+        position: u64,
+        embedded: EmbeddedIndex,
+    ) -> Self {
+        Self {
+            sequence_id,
+            value_length,
+            position,
+            embedded,
+            _value: PhantomData,
+        }
+    }
+}
+
+impl<EmbeddedIndex, Value> BinarySerialization for VersionedByIdIndex<EmbeddedIndex, Value>
+where
+    EmbeddedIndex: super::EmbeddedIndex<Value>,
+    Value: Send + Sync,
 {
     fn serialize_to(
         &mut self,
@@ -42,16 +68,19 @@ where
         let sequence_id = SequenceId(reader.read_u64::<BigEndian>()?);
         let value_length = reader.read_u32::<BigEndian>()?;
         let position = reader.read_u64::<BigEndian>()?;
-        Ok(Self {
+        Ok(Self::new(
             sequence_id,
             value_length,
             position,
-            embedded: EmbeddedIndex::deserialize_from(reader)?,
-        })
+            EmbeddedIndex::deserialize_from(reader)?,
+        ))
     }
 }
 
-impl<EmbeddedIndex: super::EmbeddedIndex> ValueIndex for VersionedByIdIndex<EmbeddedIndex> {
+impl<EmbeddedIndex, Value> PositionIndex for VersionedByIdIndex<EmbeddedIndex, Value>
+where
+    EmbeddedIndex: super::EmbeddedIndex<Value>,
+{
     fn position(&self) -> u64 {
         self.position
     }
@@ -59,18 +88,36 @@ impl<EmbeddedIndex: super::EmbeddedIndex> ValueIndex for VersionedByIdIndex<Embe
 
 /// The index stored within [`UnversionedTreeRoot::by_id_root`](crate::tree::UnversionedTreeRoot::by_id_root).
 #[derive(Clone, Debug)]
-pub struct UnversionedByIdIndex<EmbeddedIndex: super::EmbeddedIndex> {
+pub struct UnversionedByIdIndex<EmbeddedIndex: super::EmbeddedIndex<Value>, Value> {
     /// The size of the value stored on disk.
     pub value_length: u32,
     /// The position of the value on disk.
     pub position: u64,
     /// The embedded index.
     pub embedded: EmbeddedIndex,
+
+    _value: PhantomData<Value>,
 }
 
-impl<EmbeddedIndex> BinarySerialization for UnversionedByIdIndex<EmbeddedIndex>
+impl<EmbeddedIndex, Value> UnversionedByIdIndex<EmbeddedIndex, Value>
 where
-    EmbeddedIndex: super::EmbeddedIndex,
+    EmbeddedIndex: super::EmbeddedIndex<Value>,
+{
+    /// Retruns a new index instance.
+    pub fn new(value_length: u32, position: u64, embedded: EmbeddedIndex) -> Self {
+        Self {
+            value_length,
+            position,
+            embedded,
+            _value: PhantomData,
+        }
+    }
+}
+
+impl<EmbeddedIndex, Value> BinarySerialization for UnversionedByIdIndex<EmbeddedIndex, Value>
+where
+    EmbeddedIndex: super::EmbeddedIndex<Value>,
+    Value: Send + Sync,
 {
     fn serialize_to(
         &mut self,
@@ -88,15 +135,18 @@ where
     ) -> Result<Self, Error> {
         let value_length = reader.read_u32::<BigEndian>()?;
         let position = reader.read_u64::<BigEndian>()?;
-        Ok(Self {
+        Ok(Self::new(
             value_length,
             position,
-            embedded: EmbeddedIndex::deserialize_from(reader)?,
-        })
+            EmbeddedIndex::deserialize_from(reader)?,
+        ))
     }
 }
 
-impl<EmbeddedIndex: super::EmbeddedIndex> ValueIndex for UnversionedByIdIndex<EmbeddedIndex> {
+impl<EmbeddedIndex, Value> PositionIndex for UnversionedByIdIndex<EmbeddedIndex, Value>
+where
+    EmbeddedIndex: super::EmbeddedIndex<Value>,
+{
     fn position(&self) -> u64 {
         self.position
     }
@@ -159,20 +209,24 @@ where
 #[derive(Clone, Default, Debug)]
 pub struct ByIdIndexer<EmbeddedIndexer>(pub EmbeddedIndexer);
 
-impl<EmbeddedIndexer, EmbeddedIndex, EmbeddedStats>
-    Reducer<VersionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedStats>>
+impl<EmbeddedIndexer, EmbeddedIndex, EmbeddedStats, Value>
+    Reducer<VersionedByIdIndex<EmbeddedIndex, Value>, ByIdStats<EmbeddedStats>>
     for ByIdIndexer<EmbeddedIndexer>
 where
     EmbeddedIndexer: Reducer<EmbeddedIndex, EmbeddedStats>,
-    EmbeddedIndex: super::EmbeddedIndex<Indexer = EmbeddedIndexer, Reduced = EmbeddedStats>,
+    EmbeddedIndex: super::EmbeddedIndex<Value, Indexer = EmbeddedIndexer, Reduced = EmbeddedStats>,
+    Value: Send + Sync + 'static,
 {
     fn reduce<'a, Indexes, IndexesIter>(&self, indexes: Indexes) -> ByIdStats<EmbeddedStats>
     where
         EmbeddedIndex: 'a,
-        Indexes: IntoIterator<Item = &'a VersionedByIdIndex<EmbeddedIndex>, IntoIter = IndexesIter>
-            + ExactSizeIterator,
-        IndexesIter:
-            Iterator<Item = &'a VersionedByIdIndex<EmbeddedIndex>> + ExactSizeIterator + Clone,
+        Indexes: IntoIterator<
+                Item = &'a VersionedByIdIndex<EmbeddedIndex, Value>,
+                IntoIter = IndexesIter,
+            > + ExactSizeIterator,
+        IndexesIter: Iterator<Item = &'a VersionedByIdIndex<EmbeddedIndex, Value>>
+            + ExactSizeIterator
+            + Clone,
     {
         self.reduce(indexes)
     }
@@ -194,20 +248,24 @@ where
     }
 }
 
-impl<EmbeddedIndexer, EmbeddedIndex, EmbeddedStats>
-    Reducer<UnversionedByIdIndex<EmbeddedIndex>, ByIdStats<EmbeddedStats>>
+impl<EmbeddedIndexer, EmbeddedIndex, EmbeddedStats, Value>
+    Reducer<UnversionedByIdIndex<EmbeddedIndex, Value>, ByIdStats<EmbeddedStats>>
     for ByIdIndexer<EmbeddedIndexer>
 where
     EmbeddedIndexer: Reducer<EmbeddedIndex, EmbeddedStats>,
-    EmbeddedIndex: super::EmbeddedIndex<Indexer = EmbeddedIndexer, Reduced = EmbeddedStats>,
+    EmbeddedIndex: super::EmbeddedIndex<Value, Indexer = EmbeddedIndexer, Reduced = EmbeddedStats>,
+    Value: 'static,
 {
     fn reduce<'a, Indexes, IndexesIter>(&self, indexes: Indexes) -> ByIdStats<EmbeddedStats>
     where
         EmbeddedIndex: 'a,
-        Indexes: IntoIterator<Item = &'a UnversionedByIdIndex<EmbeddedIndex>, IntoIter = IndexesIter>
-            + ExactSizeIterator,
-        IndexesIter:
-            Iterator<Item = &'a UnversionedByIdIndex<EmbeddedIndex>> + ExactSizeIterator + Clone,
+        Indexes: IntoIterator<
+                Item = &'a UnversionedByIdIndex<EmbeddedIndex, Value>,
+                IntoIter = IndexesIter,
+            > + ExactSizeIterator,
+        IndexesIter: Iterator<Item = &'a UnversionedByIdIndex<EmbeddedIndex, Value>>
+            + ExactSizeIterator
+            + Clone,
     {
         self.reduce(indexes)
     }
@@ -229,14 +287,14 @@ where
 }
 
 impl<EmbeddedIndexer> ByIdIndexer<EmbeddedIndexer> {
-    fn reduce<'a, EmbeddedIndex, EmbeddedStats, Id, Indexes, IndexesIter>(
+    fn reduce<'a, EmbeddedIndex, EmbeddedStats, Id, Indexes, IndexesIter, Value>(
         &self,
         values: Indexes,
     ) -> ByIdStats<EmbeddedStats>
     where
         Id: IdIndex<EmbeddedIndex> + 'a,
         EmbeddedIndex:
-            super::EmbeddedIndex<Indexer = EmbeddedIndexer, Reduced = EmbeddedStats> + 'a,
+            super::EmbeddedIndex<Value, Indexer = EmbeddedIndexer, Reduced = EmbeddedStats> + 'a,
         Indexes: IntoIterator<Item = &'a Id, IntoIter = IndexesIter> + ExactSizeIterator,
         IndexesIter: Iterator<Item = &'a Id> + ExactSizeIterator + Clone,
         EmbeddedIndexer: Reducer<EmbeddedIndex, EmbeddedStats>,
@@ -300,9 +358,9 @@ pub trait IdIndex<EmbeddedIndex> {
     fn embedded(&self) -> &EmbeddedIndex;
 }
 
-impl<EmbeddedIndex> IdIndex<EmbeddedIndex> for UnversionedByIdIndex<EmbeddedIndex>
+impl<EmbeddedIndex, Value> IdIndex<EmbeddedIndex> for UnversionedByIdIndex<EmbeddedIndex, Value>
 where
-    EmbeddedIndex: super::EmbeddedIndex,
+    EmbeddedIndex: super::EmbeddedIndex<Value>,
 {
     fn value_size(&self) -> u32 {
         self.value_length
@@ -317,9 +375,9 @@ where
     }
 }
 
-impl<EmbeddedIndex> IdIndex<EmbeddedIndex> for VersionedByIdIndex<EmbeddedIndex>
+impl<EmbeddedIndex, Value> IdIndex<EmbeddedIndex> for VersionedByIdIndex<EmbeddedIndex, Value>
 where
-    EmbeddedIndex: super::EmbeddedIndex,
+    EmbeddedIndex: super::EmbeddedIndex<Value>,
 {
     fn value_size(&self) -> u32 {
         self.value_length

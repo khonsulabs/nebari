@@ -3,7 +3,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use super::btree_entry::KeyOperation;
+use super::btree::KeyOperation;
 use crate::{error::Error, transaction::TransactionId, ArcBytes, ErrorKind};
 
 /// A tree modification.
@@ -18,7 +18,12 @@ pub struct Modification<'a, T, Index> {
 }
 
 impl<'a, T, Index> Modification<'a, T, Index> {
-    pub(crate) fn reverse(&mut self) -> Result<(), Error> {
+    /// Prepares this modification for efficient operation, and ensures that the
+    /// keys are properly ordered.
+    ///
+    /// After calling this function, the keys and values (if applicable) are
+    /// reversed so that keys and values can be removed by calling [`Vec::pop`].
+    pub fn prepare(&mut self) -> Result<(), Error> {
         if self.keys.windows(2).all(|w| w[0] < w[1]) {
             self.keys.reverse();
             if let Operation::SetEach(values) = &mut self.operation {

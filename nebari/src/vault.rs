@@ -14,6 +14,7 @@ pub trait Vault: std::fmt::Debug + Send + Sync + 'static {
     fn decrypt(&self, payload: &[u8]) -> Result<Vec<u8>, Self::Error>;
 }
 
+/// A [`Vault`] that can be boxed.
 pub trait AnyVault: std::fmt::Debug + Send + Sync + 'static {
     /// Encrypts `payload`, returning a new buffer that contains all information
     /// necessary to decrypt it in the future.

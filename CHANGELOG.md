@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.5.4
+
+### Fixed
+
+- `log::State::current_transaction_id()` now behaves as documented. Previously,
+  it was returning the last transaction ID that the log file had allocated, but
+  the transaction ID returned may not have been committed. Now the ID returned
+  is guaranteed to be the last ID written to the log.
+
 ## v0.5.3
 
 - File operations are now fully persisted to disk to the best ability provided

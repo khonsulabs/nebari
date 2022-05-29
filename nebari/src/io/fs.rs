@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, VecDeque},
     fs::{File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
 };
 
@@ -11,15 +11,14 @@ use parking_lot::Mutex;
 use super::{FileManager, FileOp, ManagedFile, OpenableFile};
 use crate::{
     error::Error,
-    io::{File as _, ManagedFileOpener, OperableFile, PathIds},
+    io::{File as _, IntoPathId, ManagedFileOpener, OperableFile, PathId, PathIds},
 };
 
 /// An open file that uses [`std::fs`].
 #[derive(Debug)]
 pub struct StdFile {
     file: File,
-    path: PathBuf,
-    id: Option<u64>,
+    id: PathId,
 }
 
 impl ManagedFile for StdFile {
@@ -27,12 +26,8 @@ impl ManagedFile for StdFile {
 }
 
 impl super::File for StdFile {
-    fn id(&self) -> Option<u64> {
-        self.id
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
+    fn id(&self) -> &PathId {
+        &self.id
     }
 
     fn length(&self) -> Result<u64, Error> {
@@ -45,7 +40,7 @@ impl super::File for StdFile {
     }
 
     fn synchronize(&mut self) -> Result<(), crate::Error> {
-        self.file.sync_all().map_err(Error::from)
+        self.file.sync_data().map_err(Error::from)
     }
 }
 
@@ -53,34 +48,24 @@ impl super::File for StdFile {
 pub struct StdFileOpener;
 
 impl ManagedFileOpener<StdFile> for StdFileOpener {
-    fn open_for_read(
-        &self,
-        path: impl AsRef<std::path::Path> + Send,
-        id: Option<u64>,
-    ) -> Result<StdFile, Error> {
-        let path = path.as_ref();
+    fn open_for_read(&self, path: impl IntoPathId + Send) -> Result<StdFile, Error> {
+        let path = path.into_path_id();
         Ok(StdFile {
-            file: File::open(path)?,
-            path: path.to_path_buf(),
-            id,
+            file: File::open(path.path())?,
+            id: path,
         })
     }
 
-    fn open_for_append(
-        &self,
-        path: impl AsRef<std::path::Path> + Send,
-        id: Option<u64>,
-    ) -> Result<StdFile, Error> {
-        let path = path.as_ref();
+    fn open_for_append(&self, path: impl IntoPathId + Send) -> Result<StdFile, Error> {
+        let path = path.into_path_id();
         Ok(StdFile {
             file: OpenOptions::new()
                 .write(true)
                 .append(true)
                 .read(true)
                 .create(true)
-                .open(path)?,
-            path: path.to_path_buf(),
-            id,
+                .open(path.path())?,
+            id: path,
         })
     }
 }
@@ -129,11 +114,40 @@ enum FileSlot {
 impl FileManager for StdFileManager {
     type File = StdFile;
     type FileHandle = OpenStdFile;
-    fn append(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error> {
-        let path = path.as_ref();
+
+    fn resolve_path(&self, path: impl AsRef<Path>, create_if_not_found: bool) -> Option<PathId> {
+        self.file_ids
+            .file_id_for_path(path.as_ref(), create_if_not_found)
+    }
+
+    fn read(&self, path: impl IntoPathId) -> Result<Self::FileHandle, Error> {
+        let path = path.into_path_id();
+        let file_id = self.file_ids.file_id_for_path(path, true).unwrap();
+
+        let mut reader_files = self.reader_files.lock();
+        let files = reader_files.entry(file_id.id().unwrap()).or_default();
+
+        if let Some(file) = files.pop_front() {
+            return Ok(OpenStdFile {
+                file: Some(file),
+                manager: Some(self.clone()),
+                reader: true,
+            });
+        }
+
+        let file = StdFileOpener.open_for_read(file_id)?;
+        Ok(OpenStdFile {
+            file: Some(file),
+            manager: Some(self.clone()),
+            reader: true,
+        })
+    }
+
+    fn append(&self, path: impl IntoPathId) -> Result<Self::FileHandle, Error> {
+        let path = path.into_path_id();
         let file_id = self.file_ids.file_id_for_path(path, true).unwrap();
         let mut open_files = self.open_files.lock();
-        if let Some(open_file) = open_files.get_mut(&file_id) {
+        if let Some(open_file) = open_files.get_mut(&file_id.id().unwrap()) {
             let mut file = FileSlot::Taken;
             std::mem::swap(&mut file, open_file);
             let file = match file {
@@ -149,7 +163,8 @@ impl FileManager for StdFileManager {
                             // happen in real usage), we need to reinstall it.
                             if let FileSlot::Waiting(other_sender) = other {
                                 let mut open_files = self.open_files.lock();
-                                if let Some(open_file) = open_files.get_mut(&file_id) {
+                                if let Some(open_file) = open_files.get_mut(&file_id.id().unwrap())
+                                {
                                     *open_file = FileSlot::Waiting(other_sender);
                                 }
                             }
@@ -158,7 +173,7 @@ impl FileManager for StdFileManager {
                         Err(flume::RecvError::Disconnected) => {
                             // If we are disconnected, we should recurse to try
                             // to acquire the file again.
-                            return self.append(path);
+                            return self.append(file_id);
                         }
                     }
                 }
@@ -169,8 +184,8 @@ impl FileManager for StdFileManager {
                 manager: Some(self.clone()),
             })
         } else {
-            let file = self.open_for_append(path, Some(file_id))?;
-            open_files.insert(file_id, FileSlot::Taken);
+            let file = self.open_for_append(file_id.clone())?;
+            open_files.insert(file_id.id().unwrap(), FileSlot::Taken);
             Ok(OpenStdFile {
                 file: Some(file),
                 reader: false,
@@ -179,41 +194,55 @@ impl FileManager for StdFileManager {
         }
     }
 
-    fn read(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error> {
-        let path = path.as_ref();
-        let file_id = self.file_ids.file_id_for_path(path, true).unwrap();
-
-        let mut reader_files = self.reader_files.lock();
-        let files = reader_files.entry(file_id).or_default();
-
-        if let Some(file) = files.pop_front() {
-            return Ok(OpenStdFile {
-                file: Some(file),
-                manager: Some(self.clone()),
-                reader: true,
-            });
-        }
-
-        let file = StdFileOpener.open_for_read(path, Some(file_id))?;
-        Ok(OpenStdFile {
-            file: Some(file),
-            manager: Some(self.clone()),
-            reader: true,
-        })
+    fn file_length(&self, path: impl IntoPathId) -> Result<u64, Error> {
+        path.path()
+            .metadata()
+            .map_err(Error::from)
+            .map(|metadata| metadata.len())
     }
 
-    fn delete(&self, path: impl AsRef<Path>) -> Result<bool, Error> {
-        let path = path.as_ref();
-        let file_id = self.file_ids.remove_file_id_for_path(path);
+    fn exists(&self, path: impl IntoPathId) -> Result<bool, crate::Error> {
+        if let Some(path_id) = self.resolve_path(path.path(), false) {
+            {
+                let open_files = self.open_files.lock();
+                if open_files.contains_key(&path_id.id().unwrap()) {
+                    return Ok(true);
+                }
+            }
+            {
+                let reader_files = self.reader_files.lock();
+                if reader_files.contains_key(&path_id.id().unwrap()) {
+                    return Ok(true);
+                }
+            }
+        }
+
+        // Not already open, just ask the filesystem
+        Ok(path.path().exists())
+    }
+
+    fn close_handles<F: FnOnce(PathId)>(&self, path: impl IntoPathId, publish_callback: F) {
+        if let Some(result) = self.file_ids.recreate_file_id_for_path(path) {
+            let mut open_files = self.open_files.lock();
+            let mut reader_files = self.reader_files.lock();
+            open_files.remove(&result.previous_id.id().unwrap());
+            reader_files.remove(&result.previous_id.id().unwrap());
+            publish_callback(result.new_id);
+        }
+    }
+
+    fn delete(&self, path: impl IntoPathId) -> Result<bool, Error> {
+        let in_path = path.into_path_id();
+        let file_id = self.file_ids.remove_file_id_for_path(&in_path);
         if let Some(file_id) = file_id {
             let mut open_files = self.open_files.lock();
             let mut reader_files = self.reader_files.lock();
-            open_files.remove(&file_id);
-            reader_files.remove(&file_id);
+            open_files.remove(&file_id.id().unwrap());
+            reader_files.remove(&file_id.id().unwrap());
         }
 
-        if path.exists() {
-            std::fs::remove_file(path)?;
+        if in_path.path().exists() {
+            std::fs::remove_file(in_path.path())?;
             Ok(true)
         } else {
             Ok(false)
@@ -225,9 +254,9 @@ impl FileManager for StdFileManager {
         let removed_ids = self.file_ids.remove_file_ids_for_path_prefix(path);
         let mut open_files = self.open_files.lock();
         let mut reader_files = self.reader_files.lock();
-        for id in removed_ids {
-            open_files.remove(&id);
-            reader_files.remove(&id);
+        for path_id in removed_ids {
+            open_files.remove(&path_id.id().unwrap());
+            reader_files.remove(&path_id.id().unwrap());
         }
 
         if path.exists() {
@@ -236,44 +265,15 @@ impl FileManager for StdFileManager {
 
         Ok(())
     }
-
-    fn close_handles<F: FnOnce(u64)>(&self, path: impl AsRef<Path>, publish_callback: F) {
-        if let Some(result) = self.file_ids.recreate_file_id_for_path(path.as_ref()) {
-            let mut open_files = self.open_files.lock();
-            let mut reader_files = self.reader_files.lock();
-            open_files.remove(&result.previous_id);
-            reader_files.remove(&result.previous_id);
-            publish_callback(result.new_id);
-        }
-    }
-
-    fn exists(&self, path: impl AsRef<std::path::Path>) -> Result<bool, crate::Error> {
-        Ok(path.as_ref().exists())
-    }
-
-    fn file_length(&self, path: impl AsRef<Path>) -> Result<u64, Error> {
-        path.as_ref()
-            .metadata()
-            .map_err(Error::from)
-            .map(|metadata| metadata.len())
-    }
 }
 
 impl ManagedFileOpener<StdFile> for StdFileManager {
-    fn open_for_read(
-        &self,
-        path: impl AsRef<Path> + Send,
-        id: Option<u64>,
-    ) -> Result<StdFile, Error> {
-        StdFileOpener.open_for_read(path, id)
+    fn open_for_read(&self, path: impl IntoPathId + Send) -> Result<StdFile, Error> {
+        StdFileOpener.open_for_read(path)
     }
 
-    fn open_for_append(
-        &self,
-        path: impl AsRef<Path> + Send,
-        id: Option<u64>,
-    ) -> Result<StdFile, Error> {
-        StdFileOpener.open_for_append(path, id)
+    fn open_for_append(&self, path: impl IntoPathId + Send) -> Result<StdFile, Error> {
+        StdFileOpener.open_for_append(path)
     }
 }
 
@@ -286,22 +286,22 @@ pub struct OpenStdFile {
 }
 
 impl OpenableFile<StdFile> for OpenStdFile {
-    fn id(&self) -> Option<u64> {
-        self.file.as_ref().and_then(StdFile::id)
+    fn id(&self) -> &PathId {
+        self.file.as_ref().unwrap().id()
     }
 
-    fn replace_with<C: FnOnce(u64)>(
+    fn replace_with<C: FnOnce(PathId)>(
         self,
         replacement: StdFile,
         manager: &StdFileManager,
         publish_callback: C,
     ) -> Result<Self, Error> {
-        let current_path = self.file.as_ref().unwrap().path.clone();
+        let current_path = self.file.as_ref().unwrap().id.path.clone();
         self.close()?;
-        let path = replacement.path.clone();
+        let path = replacement.id.clone();
         replacement.close()?;
 
-        std::fs::rename(path, &current_path)?;
+        std::fs::rename(path.path(), current_path.path())?;
         manager.close_handles(&current_path, publish_callback);
         manager.append(current_path)
     }
@@ -322,7 +322,7 @@ impl Drop for OpenStdFile {
     fn drop(&mut self) {
         if let Some(manager) = &self.manager {
             let file = self.file.take().unwrap();
-            if let Some(file_id) = file.id {
+            if let Some(file_id) = file.id.id() {
                 if self.reader {
                     let mut reader_files = manager.reader_files.lock();
                     if let Some(path_files) = reader_files.get_mut(&file_id) {

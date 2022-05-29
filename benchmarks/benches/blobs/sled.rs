@@ -28,7 +28,7 @@ impl SimpleBench for InsertBlobs {
         config: &Self::Config,
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
-        let tempfile = TempDir::new()?;
+        let tempfile = TempDir::new_in(".")?;
         let db = _sled::open(tempfile.path())?;
 
         Ok(Self {
@@ -48,9 +48,17 @@ impl SimpleBench for InsertBlobs {
             let batch = self.blob.next().unwrap();
             let start = Instant::now();
             self.db
-                .insert(&batch.0.to_be_bytes(), IVec::from(batch.1.to_vec()))?;
-            self.db.flush()?;
-            total_duration += Instant::now() - start;
+                .transaction::<_, _, ()>(|db| {
+                    db.insert(&batch.0.to_be_bytes(), IVec::from(batch.1.to_vec()))?;
+                    db.flush();
+                    Ok(())
+                })
+                .unwrap();
+            let iter = Instant::now() - start;
+            total_duration += iter;
+            // if iter.as_nanos() > 500_000 {
+            //     println!("Iter: {}", iter.as_nanos());
+            // }
         }
         Ok(total_duration)
     }

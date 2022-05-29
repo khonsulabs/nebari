@@ -34,7 +34,7 @@ pub use arc_bytes::ArcBytes;
 pub use self::{
     chunk_cache::{CacheEntry, ChunkCache},
     context::Context,
-    error::{Error, ErrorKind},
+    error::{Error, ErrorKind, InternalError},
     roots::{
         AbortError, CompareAndSwapError, Config, ExecutingTransaction, LockedTransactionTree,
         Roots, ThreadPool, TransactionTree, Tree, UnlockedTransactionTree,

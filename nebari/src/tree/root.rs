@@ -5,13 +5,12 @@ use std::{
     fmt::{Debug, Display},
     marker::PhantomData,
     ops::RangeBounds,
-    path::Path,
     sync::Arc,
 };
 
 use crate::{
     error::Error,
-    io::{File, ManagedFile},
+    io::{File, ManagedFile, PathId},
     roots::AnyTransactionTree,
     transaction::{TransactionId, TransactionManager},
     tree::{
@@ -138,7 +137,7 @@ pub trait Root: Debug + Send + Sync + Clone + 'static {
     >(
         &self,
         range: &'keys KeyRangeBounds,
-        args: &mut ScanArgs<
+        args: ScanArgs<
             Self::Value,
             Self::Index,
             Self::ReducedIndex,
@@ -228,7 +227,7 @@ pub trait AnyTreeRoot<File: ManagedFile> {
     fn begin_transaction(
         &self,
         transaction_id: TransactionId,
-        file_path: &Path,
+        file_path: &PathId,
         state: &dyn AnyTreeState,
         context: &Context<File::Manager>,
         transactions: Option<&TransactionManager<File::Manager>>,
@@ -258,7 +257,7 @@ impl<R: Root, File: ManagedFile> AnyTreeRoot<File> for TreeRoot<R, File> {
     fn begin_transaction(
         &self,
         transaction_id: TransactionId,
-        file_path: &Path,
+        file_path: &PathId,
         state: &dyn AnyTreeState,
         context: &Context<File::Manager>,
         transactions: Option<&TransactionManager<File::Manager>>,

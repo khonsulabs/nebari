@@ -25,7 +25,7 @@ use crate::{
         btree::{Indexer, KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
         by_id::ByIdIndexer,
         by_sequence::{BySequenceReducer, SequenceId},
-        copy_chunk, dynamic_order,
+        dynamic_order,
         key_entry::KeyEntry,
         modify::Operation,
         BTreeNode, Interior, ModificationResult, PageHeader, PersistenceMode, Reducer, Root,
@@ -168,7 +168,7 @@ where
         let by_id_minimum_children =
             by_id_minimum_children.min(usize::try_from(total_id_records).unwrap_or(usize::MAX));
 
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(modification.keys.len());
 
         while !modification.keys.is_empty() {
             let reducer = self.reducer.clone();
@@ -184,7 +184,7 @@ where
                     >,
                      writer: &mut PagedWriter<'_>| {
                         let (position, value_size) = if let Some(value) = value {
-                            let new_position = writer.write_chunk(value)?;
+                            let new_position = writer.write_chunk_cached(value.clone())?;
                             // write_chunk errors if it can't fit within a u32
                             #[allow(clippy::cast_possible_truncation)]
                             let value_length = value.len() as u32;
@@ -301,7 +301,7 @@ where
         output.reserve(PAGE_SIZE);
         output.write_u64::<BigEndian>(self.transaction_id.0)?;
         output.write_u64::<BigEndian>(self.sequence.0)?;
-        // Reserve space for by_sequence and by_id sizes (2xu16).
+        // Reserve space for by_sequence and by_id sizes (2xu32).
         output.write_u64::<BigEndian>(0)?;
 
         let by_sequence_size = self.by_sequence_root.serialize_to(output, paged_writer)?;
@@ -332,7 +332,7 @@ where
                 by_id_size,
                 bytes.len()
             )));
-        };
+        }
 
         let mut by_sequence_bytes = bytes.read_bytes(by_sequence_size)?.to_owned();
         let mut by_id_bytes = bytes.read_bytes(by_id_size)?.to_owned();
@@ -428,7 +428,7 @@ where
     >(
         &self,
         range: &'keys KeyRangeBounds,
-        args: &mut ScanArgs<
+        mut args: ScanArgs<
             Self::Value,
             Self::Index,
             Self::ReducedIndex,
@@ -451,7 +451,8 @@ where
             ArcBytes<'static>,
         ) -> Result<(), AbortError<CallerError>>,
     {
-        self.by_id_root.scan(range, args, file, vault, cache, 0)
+        self.by_id_root
+            .scan(range, &mut args, file, vault, cache, 0)
     }
 
     fn copy_data_to(
@@ -485,7 +486,7 @@ where
                   to_file,
                   vault| {
                 let new_position =
-                    copy_chunk(index.position, from_file, copied_chunks, to_file, vault)?;
+                    to_file.copy_chunk_from(index.position, from_file, copied_chunks, vault)?;
 
                 sequence_indexes.push((
                     key.clone(),

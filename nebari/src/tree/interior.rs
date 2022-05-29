@@ -135,7 +135,7 @@ impl<
                     let decoded = BTreeEntry::deserialize_from(&mut buffer, current_order)?;
 
                     let result = callback(&decoded, file);
-                    if let (Some(cache), Some(file_id)) = (cache, file.id()) {
+                    if let (Some(cache), Some(file_id)) = (cache, file.id().id()) {
                         cache.replace_with_decoded(file_id, *position, Box::new(decoded));
                     }
                     result
@@ -254,7 +254,9 @@ impl<
                     let position =
                         paged_writer.write_chunk(&writer[old_writer_length..writer.len()])?;
                     writer.truncate(old_writer_length);
-                    if let (Some(cache), Some(file_id)) = (paged_writer.cache, paged_writer.id()) {
+                    if let (Some(cache), Some(file_id)) =
+                        (paged_writer.cache, paged_writer.id().id())
+                    {
                         cache.replace_with_decoded(file_id, position, entry);
                     }
                     position

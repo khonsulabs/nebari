@@ -20,7 +20,7 @@ use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 use crate::{
     context::Context,
     error::Error,
-    io::{fs::StdFileManager, FileManager, ManagedFile},
+    io::{fs::StdFileManager, FileManager, ManagedFile, PathId},
     transaction::{LogEntry, ManagedTransaction, TransactionId, TransactionManager},
     tree::{
         self,
@@ -47,6 +47,7 @@ struct Data<File: ManagedFile> {
     thread_pool: ThreadPool<File>,
     path: PathBuf,
     tree_states: Mutex<HashMap<String, Box<dyn AnyTreeState>>>,
+    tree_paths: Mutex<HashMap<String, PathId>>,
 }
 
 impl<File: ManagedFile> Roots<File> {
@@ -73,6 +74,7 @@ impl<File: ManagedFile> Roots<File> {
                 transactions,
                 thread_pool,
                 tree_states: Mutex::default(),
+                tree_paths: Mutex::default(),
             }),
         })
     }
@@ -107,12 +109,13 @@ impl<File: ManagedFile> Roots<File> {
     ) -> Result<Tree<Root, File>, Error> {
         check_name(&root.name)?;
         let path = self.tree_path(&root.name);
-        if !path.exists() {
+        if !self.context().file_manager.exists(&path)? {
             self.context().file_manager.append(&path)?;
         }
         let state = self.tree_state(root.clone());
         Ok(Tree {
             roots: self.clone(),
+            path,
             state,
             vault: root.vault,
             reducer: root.reducer,
@@ -120,8 +123,19 @@ impl<File: ManagedFile> Roots<File> {
         })
     }
 
-    fn tree_path(&self, name: &str) -> PathBuf {
-        self.path().join(format!("{}.nebari", name))
+    fn tree_path(&self, name: &str) -> PathId {
+        let mut paths = self.data.tree_paths.lock();
+        if let Some(id) = paths.get(name) {
+            id.clone()
+        } else {
+            let id = self
+                .context()
+                .file_manager
+                .resolve_path(self.path().join(format!("{}.nebari", name)), true)
+                .unwrap();
+            paths.insert(name.to_owned(), id.clone());
+            id
+        }
     }
 
     /// Removes a tree. Returns true if a tree was deleted.
@@ -137,6 +151,7 @@ impl<File: ManagedFile> Roots<File> {
     /// Returns a list of all the names of trees contained in this database.
     pub fn tree_names(&self) -> Result<Vec<String>, Error> {
         let mut names = Vec::new();
+        // TODO use the file manager
         for entry in std::fs::read_dir(self.path())? {
             let entry = entry?;
             if let Some(name) = entry.file_name().to_str() {
@@ -384,7 +399,8 @@ impl<File: ManagedFile> Drop for ExecutingTransaction<File> {
 /// A tree that is modifiable during a transaction.
 pub struct TransactionTree<Root: tree::Root, File: ManagedFile> {
     pub(crate) transaction_id: TransactionId,
-    pub(crate) tree: TreeFile<Root, File>,
+    /// The underlying tree file.
+    pub tree: TreeFile<Root, File>,
 }
 
 pub trait AnyTransactionTree<File: ManagedFile>: Any + Send + Sync {
@@ -862,6 +878,7 @@ impl<M: FileManager> Config<M> {
 /// A named collection of keys and values.
 pub struct Tree<Root: tree::Root, File: ManagedFile> {
     roots: Roots<File>,
+    path: PathId,
     state: State<Root>,
     reducer: Arc<dyn AnyReducer>,
     vault: Option<Arc<dyn AnyVault>>,
@@ -872,6 +889,7 @@ impl<Root: tree::Root, File: ManagedFile> Clone for Tree<Root, File> {
     fn clone(&self) -> Self {
         Self {
             roots: self.roots.clone(),
+            path: self.path.clone(),
             state: self.state.clone(),
             vault: self.vault.clone(),
             reducer: self.reducer.clone(),
@@ -889,8 +907,8 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
 
     /// Returns the path to the file for this tree.
     #[must_use]
-    pub fn path(&self) -> PathBuf {
-        self.roots.tree_path(self.name())
+    pub fn path(&self) -> &Path {
+        self.path.path()
     }
 
     /// Returns the number of keys stored in the tree. Does not include deleted keys.
@@ -927,14 +945,44 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         self.roots.transaction(&[root])
     }
 
-    fn open_for_read(&self) -> Result<TreeFile<Root, File>, Error> {
+    /// Returns a [`TreeFile`] for lower-level operations within the context of
+    /// Roots.
+    ///
+    /// Using this direct access, it is possible to circumvent some of the
+    /// safety provided by Roots (e.g., passing an incorrect value for
+    /// `in_transaction`). This function is provided for those who are
+    /// implementing custom roots and wish to expose functionality through
+    /// Roots.
+    pub fn open_for_read(&self) -> Result<TreeFile<Root, File>, Error> {
         let context = self.vault.as_ref().map_or_else(
             || Cow::Borrowed(self.roots.context()),
             |vault| Cow::Owned(self.roots.context().clone().with_any_vault(vault.clone())),
         );
 
         TreeFile::<Root, File>::read(
-            self.path(),
+            &self.path,
+            self.state.clone(),
+            &context,
+            Some(self.roots.transactions()),
+        )
+    }
+
+    /// Returns a [`TreeFile`] for lower-level operations within the context of
+    /// Roots.
+    ///
+    /// Using this direct access, it is possible to circumvent some of the
+    /// safety provided by Roots (e.g., passing an incorrect value for
+    /// `in_transaction`). This function is provided for those who are
+    /// implementing custom roots and wish to expose functionality through
+    /// Roots.
+    pub fn open_for_write(&self) -> Result<TreeFile<Root, File>, Error> {
+        let context = self.vault.as_ref().map_or_else(
+            || Cow::Borrowed(self.roots.context()),
+            |vault| Cow::Owned(self.roots.context().clone().with_any_vault(vault.clone())),
+        );
+
+        TreeFile::<Root, File>::write(
+            &self.path,
             self.state.clone(),
             &context,
             Some(self.roots.transactions()),
@@ -1363,7 +1411,7 @@ impl<Root: tree::Root, File: ManagedFile> AnyTreeRoot<File> for Tree<Root, File>
     fn begin_transaction(
         &self,
         transaction_id: TransactionId,
-        file_path: &Path,
+        file_path: &PathId,
         state: &dyn AnyTreeState,
         context: &Context<File::Manager>,
         transactions: Option<&TransactionManager<File::Manager>>,
@@ -1412,19 +1460,19 @@ where
         &self,
         range: Range,
         forwards: bool,
-        key_evaluator: KeyEvaluator,
-        data_callback: DataCallback,
+        mut key_evaluator: KeyEvaluator,
+        mut data_callback: DataCallback,
     ) -> Result<(), AbortError<CallerError>>
     where
         Range: Clone + RangeBounds<SequenceId> + Debug + 'static,
-        KeyEvaluator: FnMut(KeySequence<Index>) -> ScanEvaluation + Clone,
-        DataCallback: FnMut(KeySequence<Index>, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>
-            + Clone,
+        KeyEvaluator: FnMut(KeySequence<Index>) -> ScanEvaluation,
+        DataCallback:
+            FnMut(KeySequence<Index>, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
         catch_compaction_and_retry_abortable(|| {
             let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::read(
-                self.path(),
+                &self.path,
                 self.state.clone(),
                 self.roots.context(),
                 Some(self.roots.transactions()),
@@ -1434,8 +1482,8 @@ where
                 range.clone(),
                 forwards,
                 false,
-                key_evaluator.clone(),
-                data_callback.clone(),
+                &mut key_evaluator,
+                &mut data_callback,
             )
         })
     }
@@ -1454,7 +1502,7 @@ where
     {
         catch_compaction_and_retry(|| {
             let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::read(
-                self.path(),
+                &self.path,
                 self.state.clone(),
                 self.roots.context(),
                 Some(self.roots.transactions()),
@@ -1477,7 +1525,7 @@ where
     {
         catch_compaction_and_retry(|| {
             let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::read(
-                self.path(),
+                &self.path,
                 self.state.clone(),
                 self.roots.context(),
                 Some(self.roots.transactions()),
@@ -1501,7 +1549,7 @@ where
     {
         catch_compaction_and_retry(|| {
             let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::read(
-                self.path(),
+                &self.path,
                 self.state.clone(),
                 self.roots.context(),
                 Some(self.roots.transactions()),

@@ -27,8 +27,8 @@ impl SimpleBench for InsertBlobs {
         config: &Self::Config,
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
-        let _ = std::fs::remove_file("/tmp/persy");
-        let db = Persy::open_or_create_with("/tmp/persy", Config::default(), |persy| {
+        let _ = std::fs::remove_file("persy");
+        let db = Persy::open_or_create_with("persy", Config::default(), |persy| {
             let mut tx = persy.begin()?;
             tx.create_index::<u64, ByteVec>("index", ValueMode::Replace)?;
             let prepared = tx.prepare()?;

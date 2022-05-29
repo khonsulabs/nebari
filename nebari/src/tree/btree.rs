@@ -429,7 +429,7 @@ where
                             if children.capacity() < children.len() + 1
                                 && context.current_order > children.len()
                             {
-                                children.reserve(context.current_order - children.len());
+                                children.reserve(context.current_order + 1);
                             }
                             children.insert(
                                 last_index,
@@ -1514,7 +1514,7 @@ impl<
                 // Interior
                 let mut nodes = Vec::new();
                 if let Some(current_order) = current_order {
-                    nodes.reserve(current_order);
+                    nodes.reserve(current_order + 1);
                 }
                 while !reader.is_empty() {
                     nodes.push(Interior::deserialize_from(reader, current_order)?);
@@ -1528,7 +1528,7 @@ impl<
                 // Leaf
                 let mut nodes = Vec::new();
                 if let Some(current_order) = current_order {
-                    nodes.reserve(current_order);
+                    nodes.reserve(current_order + 1);
                 }
                 while !reader.is_empty() {
                     nodes.push(KeyEntry::deserialize_from(reader, current_order)?);

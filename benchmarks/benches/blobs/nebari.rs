@@ -36,7 +36,7 @@ impl<B: NebariBenchmark> SimpleBench for InsertBlobs<B> {
         config: &Self::Config,
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
-        let tempfile = TempDir::new()?;
+        let tempfile = TempDir::new_in(".")?;
         let tree = TreeFile::<B::Root, StdFile>::write(
             tempfile.path().join("tree"),
             State::default(),

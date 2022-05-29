@@ -6,7 +6,8 @@ use std::{
 use crate::io::{
     fs::{OpenStdFile, StdFile, StdFileManager},
     memory::{MemoryFile, MemoryFileManager, OpenMemoryFile},
-    FileManager, FileOp, ManagedFile, ManagedFileOpener, OpenableFile, OperableFile,
+    FileManager, FileOp, IntoPathId, ManagedFile, ManagedFileOpener, OpenableFile, OperableFile,
+    PathId,
 };
 
 /// A file that can be either a [`StdFile`] or [`MemoryFile`].
@@ -23,17 +24,10 @@ impl ManagedFile for AnyFile {
 }
 
 impl super::File for AnyFile {
-    fn id(&self) -> Option<u64> {
+    fn id(&self) -> &PathId {
         match self {
             Self::Std(file) => file.id(),
             Self::Memory(file) => file.id(),
-        }
-    }
-
-    fn path(&self) -> &std::path::Path {
-        match self {
-            Self::Std(file) => file.path(),
-            Self::Memory(file) => file.path(),
         }
     }
 
@@ -120,53 +114,56 @@ impl FileManager for AnyFileManager {
     type File = AnyFile;
     type FileHandle = AnyFileHandle;
 
-    fn read(&self, path: impl AsRef<std::path::Path>) -> Result<Self::FileHandle, crate::Error> {
+    fn resolve_path(&self, path: impl AsRef<Path>, create_if_not_found: bool) -> Option<PathId> {
+        match self {
+            Self::Std(manager) => manager.resolve_path(path, create_if_not_found),
+            Self::Memory(manager) => manager.resolve_path(path, create_if_not_found),
+        }
+    }
+
+    fn read(&self, path: impl IntoPathId) -> Result<Self::FileHandle, crate::Error> {
         match self {
             Self::Std(manager) => manager.read(path).map(AnyFileHandle::Std),
             Self::Memory(manager) => manager.read(path).map(AnyFileHandle::Memory),
         }
     }
 
-    fn append(&self, path: impl AsRef<std::path::Path>) -> Result<Self::FileHandle, crate::Error> {
+    fn append(&self, path: impl IntoPathId) -> Result<Self::FileHandle, crate::Error> {
         match self {
             Self::Std(manager) => manager.append(path).map(AnyFileHandle::Std),
             Self::Memory(manager) => manager.append(path).map(AnyFileHandle::Memory),
         }
     }
 
-    fn close_handles<F: FnOnce(u64)>(
-        &self,
-        path: impl AsRef<std::path::Path>,
-        publish_callback: F,
-    ) {
+    fn close_handles<F: FnOnce(PathId)>(&self, path: impl IntoPathId, publish_callback: F) {
         match self {
             Self::Std(manager) => manager.close_handles(path, publish_callback),
             Self::Memory(manager) => manager.close_handles(path, publish_callback),
         }
     }
 
-    fn delete(&self, path: impl AsRef<std::path::Path>) -> Result<bool, crate::Error> {
+    fn delete(&self, path: impl IntoPathId) -> Result<bool, crate::Error> {
         match self {
             Self::Std(manager) => manager.delete(path),
             Self::Memory(manager) => manager.delete(path),
         }
     }
 
-    fn delete_directory(&self, path: impl AsRef<std::path::Path>) -> Result<(), crate::Error> {
+    fn delete_directory(&self, path: impl AsRef<Path>) -> Result<(), crate::Error> {
         match self {
             Self::Std(manager) => manager.delete_directory(path),
             Self::Memory(manager) => manager.delete_directory(path),
         }
     }
 
-    fn exists(&self, path: impl AsRef<std::path::Path>) -> Result<bool, crate::Error> {
+    fn exists(&self, path: impl IntoPathId) -> Result<bool, crate::Error> {
         match self {
             Self::Std(manager) => manager.exists(path),
             Self::Memory(manager) => manager.exists(path),
         }
     }
 
-    fn file_length(&self, path: impl AsRef<Path>) -> Result<u64, crate::Error> {
+    fn file_length(&self, path: impl IntoPathId) -> Result<u64, crate::Error> {
         match self {
             Self::Std(manager) => manager.file_length(path),
             Self::Memory(manager) => manager.file_length(path),
@@ -175,27 +172,17 @@ impl FileManager for AnyFileManager {
 }
 
 impl ManagedFileOpener<AnyFile> for AnyFileManager {
-    fn open_for_read(
-        &self,
-        path: impl AsRef<std::path::Path> + Send,
-        id: Option<u64>,
-    ) -> Result<AnyFile, crate::Error> {
+    fn open_for_read(&self, path: impl IntoPathId + Send) -> Result<AnyFile, crate::Error> {
         match self {
-            AnyFileManager::Std(manager) => manager.open_for_read(path, id).map(AnyFile::Std),
-            AnyFileManager::Memory(manager) => manager.open_for_read(path, id).map(AnyFile::Memory),
+            AnyFileManager::Std(manager) => manager.open_for_read(path).map(AnyFile::Std),
+            AnyFileManager::Memory(manager) => manager.open_for_read(path).map(AnyFile::Memory),
         }
     }
 
-    fn open_for_append(
-        &self,
-        path: impl AsRef<std::path::Path> + Send,
-        id: Option<u64>,
-    ) -> Result<AnyFile, crate::Error> {
+    fn open_for_append(&self, path: impl IntoPathId + Send) -> Result<AnyFile, crate::Error> {
         match self {
-            AnyFileManager::Std(manager) => manager.open_for_append(path, id).map(AnyFile::Std),
-            AnyFileManager::Memory(manager) => {
-                manager.open_for_append(path, id).map(AnyFile::Memory)
-            }
+            AnyFileManager::Std(manager) => manager.open_for_append(path).map(AnyFile::Std),
+            AnyFileManager::Memory(manager) => manager.open_for_append(path).map(AnyFile::Memory),
         }
     }
 }
@@ -216,14 +203,14 @@ pub enum AnyFileHandle {
 }
 
 impl OpenableFile<AnyFile> for AnyFileHandle {
-    fn id(&self) -> Option<u64> {
+    fn id(&self) -> &PathId {
         match self {
             AnyFileHandle::Std(file) => file.id(),
             AnyFileHandle::Memory(file) => file.id(),
         }
     }
 
-    fn replace_with<C: FnOnce(u64)>(
+    fn replace_with<C: FnOnce(PathId)>(
         self,
         replacement: AnyFile,
         manager: &<AnyFile as ManagedFile>::Manager,

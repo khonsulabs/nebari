@@ -38,7 +38,7 @@ impl<B: NebariBenchmark> SimpleBench for InsertLogs<B> {
         config: &Self::Config,
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
-        let tempfile = TempDir::new()?;
+        let tempfile = TempDir::new_in(".")?;
         let tree = TreeFile::<B::Root, StdFile>::write(
             tempfile.path().join("tree"),
             State::default(),
@@ -102,7 +102,7 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
         config: &Self::Config,
         _group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Self::GroupState {
-        let tempfile = TempDir::new().unwrap();
+        let tempfile = TempDir::new_in(".").unwrap();
         let mut tree = TreeFile::<B::Root, StdFile>::write(
             tempfile.path().join("tree"),
             State::default(),
@@ -191,7 +191,7 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
         config: &Self::Config,
         _group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Self::GroupState {
-        let tempfile = TempDir::new().unwrap();
+        let tempfile = TempDir::new_in(".").unwrap();
         let mut tree = TreeFile::<B::Root, StdFile>::write(
             tempfile.path().join("tree"),
             State::default(),

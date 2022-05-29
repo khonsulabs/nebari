@@ -34,8 +34,12 @@ impl SimpleBench for InsertLogs {
         config: &Self::Config,
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
-        let tempfile = TempDir::new()?;
-        let db = _sled::open(tempfile.path())?;
+        let tempfile = TempDir::new_in(".")?;
+        let db = _sled::Config::default()
+            .path("/path/to/data".to_owned())
+            .flush_every_ms(None)
+            .open()
+            .unwrap();
 
         Ok(Self {
             _tempfile: tempfile,
@@ -63,6 +67,7 @@ impl SimpleBench for InsertLogs {
                 db.flush();
                 Ok(())
             })?;
+            self.db.flush().unwrap();
             total_duration += Instant::now() - start;
         }
         Ok(total_duration)
@@ -83,7 +88,7 @@ impl SimpleBench for ReadLogs {
         config: &Self::Config,
         _group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Self::GroupState {
-        let tempfile = TempDir::new().unwrap();
+        let tempfile = TempDir::new_in(".").unwrap();
         let db = _sled::Config::default()
             .cache_capacity(2_000 * 160_384)
             .path(tempfile.path())
@@ -177,7 +182,7 @@ impl SimpleBench for ScanLogs {
         config: &Self::Config,
         _group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Self::GroupState {
-        let tempfile = TempDir::new().unwrap();
+        let tempfile = TempDir::new_in(".").unwrap();
         let db = _sled::Config::default()
             .cache_capacity(2_000 * 160_384)
             .path(tempfile.path())

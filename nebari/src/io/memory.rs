@@ -12,7 +12,7 @@ use parking_lot::{Mutex, RwLock};
 use super::{FileManager, FileOp, ManagedFile, OpenableFile};
 use crate::{
     error::Error,
-    io::{File, ManagedFileOpener, OperableFile, PathIds},
+    io::{File, IntoPathId, ManagedFileOpener, OperableFile, PathId, PathIds},
     ErrorKind,
 };
 
@@ -22,8 +22,7 @@ type FileBuffer = Arc<RwLock<Vec<u8>>>;
 /// in testing, as this database format is not optimized for memory efficiency.
 #[derive(Clone)]
 pub struct MemoryFile {
-    id: Option<u64>,
-    path: PathBuf,
+    id: PathId,
     buffer: FileBuffer,
     position: usize,
 }
@@ -33,27 +32,23 @@ impl std::fmt::Debug for MemoryFile {
         let buffer = self.buffer.read();
         f.debug_struct("MemoryFile")
             .field("id", &self.id)
-            .field("path", &self.path)
             .field("buffer", &buffer.len())
             .field("position", &self.position)
             .finish()
     }
 }
 
-type OpenBuffers = Arc<Mutex<HashMap<PathBuf, Weak<RwLock<Vec<u8>>>>>>;
+type OpenBuffers = Arc<Mutex<HashMap<Arc<PathBuf>, Weak<RwLock<Vec<u8>>>>>>;
 static OPEN_BUFFERS: Lazy<OpenBuffers> = Lazy::new(Arc::default);
 
 #[allow(clippy::needless_pass_by_value)]
-fn lookup_buffer(
-    path: impl AsRef<std::path::Path> + Send,
-    create_if_not_found: bool,
-) -> Option<Arc<RwLock<Vec<u8>>>> {
+fn lookup_buffer(path: &PathId, create_if_not_found: bool) -> Option<Arc<RwLock<Vec<u8>>>> {
     let mut open_buffers = OPEN_BUFFERS.lock();
-    if let Some(existing_buffer) = open_buffers.get(path.as_ref()).and_then(Weak::upgrade) {
+    if let Some(existing_buffer) = open_buffers.get(&path.path).and_then(Weak::upgrade) {
         Some(existing_buffer)
     } else if create_if_not_found {
         let new_buffer = Arc::default();
-        open_buffers.insert(path.as_ref().to_path_buf(), Arc::downgrade(&new_buffer));
+        open_buffers.insert(path.path.clone(), Arc::downgrade(&new_buffer));
         Some(new_buffer)
     } else {
         None
@@ -66,12 +61,8 @@ impl ManagedFile for MemoryFile {
 
 #[allow(clippy::cast_possible_truncation)]
 impl super::File for MemoryFile {
-    fn id(&self) -> Option<u64> {
-        self.id
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
+    fn id(&self) -> &PathId {
+        &self.id
     }
 
     fn length(&self) -> Result<u64, Error> {
@@ -92,27 +83,19 @@ impl super::File for MemoryFile {
 pub struct MemoryFileOpener;
 
 impl ManagedFileOpener<MemoryFile> for MemoryFileOpener {
-    fn open_for_read(
-        &self,
-        path: impl AsRef<std::path::Path> + Send,
-        id: Option<u64>,
-    ) -> Result<MemoryFile, Error> {
-        let path = path.as_ref();
+    fn open_for_read(&self, path: impl IntoPathId + Send) -> Result<MemoryFile, Error> {
+        let id = path.into_path_id();
+        let buffer = lookup_buffer(&id, true).unwrap();
         Ok(MemoryFile {
             id,
-            path: path.to_path_buf(),
-            buffer: lookup_buffer(path, true).unwrap(),
+            buffer,
             position: 0,
         })
     }
 
-    fn open_for_append(
-        &self,
-        path: impl AsRef<std::path::Path> + Send,
-        id: Option<u64>,
-    ) -> Result<MemoryFile, Error> {
-        let path = path.as_ref();
-        let buffer = lookup_buffer(path, true).unwrap();
+    fn open_for_append(&self, path: impl IntoPathId + Send) -> Result<MemoryFile, Error> {
+        let id = path.into_path_id();
+        let buffer = lookup_buffer(&id, true).unwrap();
         let position = {
             let buffer = buffer.read();
             buffer.len()
@@ -121,7 +104,6 @@ impl ManagedFileOpener<MemoryFile> for MemoryFileOpener {
             id,
             buffer,
             position,
-            path: path.to_path_buf(),
         })
     }
 }
@@ -195,39 +177,34 @@ pub struct MemoryFileManager {
 impl MemoryFileManager {
     fn lookup_file(
         &self,
-        path: impl AsRef<Path>,
+        path: impl IntoPathId,
         create_if_needed: bool,
-        id: Option<u64>,
     ) -> Result<Option<MemoryFile>, Error> {
-        let path = path.as_ref();
-        let id = match id {
+        let path = path.into_path_id();
+        let id = match self.file_ids.file_id_for_path(path, create_if_needed) {
             Some(id) => id,
-            None => match self.file_ids.file_id_for_path(path, create_if_needed) {
-                Some(id) => id,
-                None => return Ok(None),
-            },
+            None => return Ok(None),
         };
         let mut open_files = self.open_files.lock();
-        if let Some(open_file) = open_files.get(&id) {
+        if let Some(open_file) = open_files.get(&id.id().unwrap()) {
             Ok(Some(MemoryFile {
-                id: Some(id),
+                id,
                 buffer: open_file.clone(),
-                path: path.to_path_buf(),
                 position: 0,
             }))
         } else if create_if_needed {
-            let file = MemoryFileOpener.open_for_append(path, Some(id))?;
-            open_files.insert(id, file.buffer.clone());
+            let file = MemoryFileOpener.open_for_append(id.clone())?;
+            open_files.insert(id.id().unwrap(), file.buffer.clone());
             Ok(Some(file))
         } else {
             Ok(None)
         }
     }
 
-    fn forget_file(&self, path: &Path) -> bool {
+    fn forget_file(&self, path: PathId) -> bool {
         if let Some(id) = self.file_ids.remove_file_id_for_path(path) {
             let mut open_files = self.open_files.lock();
-            open_files.remove(&id).is_some()
+            open_files.remove(&id.id().unwrap()).is_some()
         } else {
             false
         }
@@ -238,21 +215,24 @@ impl FileManager for MemoryFileManager {
     type File = MemoryFile;
     type FileHandle = OpenMemoryFile;
 
-    fn append(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error> {
-        let path = path.as_ref();
-        let id = self.file_ids.file_id_for_path(path, true);
-        self.lookup_file(path, true, id).map(|file| OpenMemoryFile {
+    fn resolve_path(&self, path: impl AsRef<Path>, create_if_not_found: bool) -> Option<PathId> {
+        self.file_ids
+            .file_id_for_path(path.as_ref(), create_if_not_found)
+    }
+
+    fn read(&self, path: impl IntoPathId) -> Result<Self::FileHandle, Error> {
+        self.append(path)
+    }
+
+    fn append(&self, path: impl IntoPathId) -> Result<Self::FileHandle, Error> {
+        self.lookup_file(path, true).map(|file| OpenMemoryFile {
             file: file.unwrap(),
             manager: self.clone(),
         })
     }
 
-    fn read(&self, path: impl AsRef<Path>) -> Result<Self::FileHandle, Error> {
-        self.append(path)
-    }
-
-    fn file_length(&self, path: impl AsRef<Path>) -> Result<u64, Error> {
-        let file = self.lookup_file(path, false, None)?.ok_or_else(|| {
+    fn file_length(&self, path: impl IntoPathId) -> Result<u64, Error> {
+        let file = self.lookup_file(path, false)?.ok_or_else(|| {
             ErrorKind::Io(io::Error::new(
                 io::ErrorKind::NotFound,
                 ErrorKind::message("not found"),
@@ -261,15 +241,22 @@ impl FileManager for MemoryFileManager {
         file.length()
     }
 
-    fn exists(&self, path: impl AsRef<Path>) -> Result<bool, Error> {
-        Ok(self.lookup_file(path, false, None)?.is_some())
+    fn exists(&self, path: impl IntoPathId) -> Result<bool, Error> {
+        Ok(self.lookup_file(path, false)?.is_some())
     }
 
-    fn delete(&self, path: impl AsRef<Path>) -> Result<bool, Error> {
-        let path = path.as_ref();
+    fn close_handles<F: FnOnce(PathId)>(&self, path: impl IntoPathId, publish_callback: F) {
+        let path = path.into_path_id();
+        self.forget_file(path.clone());
+        let new_id = self.file_ids.file_id_for_path(path.path(), true).unwrap();
+        publish_callback(new_id);
+    }
+
+    fn delete(&self, path: impl IntoPathId) -> Result<bool, Error> {
+        let path = path.into_path_id();
         {
             let mut open_buffers = OPEN_BUFFERS.lock();
-            open_buffers.remove(path);
+            open_buffers.remove(&path.path);
         }
         Ok(self.forget_file(path))
     }
@@ -279,35 +266,20 @@ impl FileManager for MemoryFileManager {
         let removed_ids = self.file_ids.remove_file_ids_for_path_prefix(path);
         let mut open_files = self.open_files.lock();
         for id in removed_ids {
-            open_files.remove(&id);
+            open_files.remove(&id.id().unwrap());
         }
 
         Ok(())
     }
-
-    fn close_handles<F: FnOnce(u64)>(&self, path: impl AsRef<Path>, publish_callback: F) {
-        let path = path.as_ref();
-        self.forget_file(path);
-        let new_id = self.file_ids.file_id_for_path(path, true).unwrap();
-        publish_callback(new_id);
-    }
 }
 
 impl ManagedFileOpener<MemoryFile> for MemoryFileManager {
-    fn open_for_read(
-        &self,
-        path: impl AsRef<Path> + Send,
-        id: Option<u64>,
-    ) -> Result<MemoryFile, Error> {
-        MemoryFileOpener.open_for_read(path, id)
+    fn open_for_read(&self, path: impl IntoPathId + Send) -> Result<MemoryFile, Error> {
+        MemoryFileOpener.open_for_read(path)
     }
 
-    fn open_for_append(
-        &self,
-        path: impl AsRef<Path> + Send,
-        id: Option<u64>,
-    ) -> Result<MemoryFile, Error> {
-        MemoryFileOpener.open_for_append(path, id)
+    fn open_for_append(&self, path: impl IntoPathId + Send) -> Result<MemoryFile, Error> {
+        MemoryFileOpener.open_for_append(path)
     }
 }
 
@@ -319,26 +291,25 @@ pub struct OpenMemoryFile {
 }
 
 impl OpenableFile<MemoryFile> for OpenMemoryFile {
-    fn id(&self) -> Option<u64> {
-        self.file.id
+    fn id(&self) -> &PathId {
+        &self.file.id
     }
 
-    fn replace_with<C: FnOnce(u64)>(
+    fn replace_with<C: FnOnce(PathId)>(
         self,
         replacement: MemoryFile,
         manager: &MemoryFileManager,
         publish_callback: C,
     ) -> Result<Self, Error> {
         let weak_buffer = Arc::downgrade(&replacement.buffer);
-        drop(self.manager.delete(replacement.path()));
+        drop(self.manager.delete(replacement.id()));
         {
             let mut open_buffers = OPEN_BUFFERS.lock();
-            open_buffers.insert(self.file.path.clone(), weak_buffer);
+            open_buffers.insert(self.file.id.path.clone(), weak_buffer);
         }
+        manager.close_handles(&self.file.id, publish_callback);
 
-        manager.close_handles(&self.file.path, publish_callback);
-
-        let new_file = manager.append(&self.file.path)?;
+        let new_file = manager.append(&self.file.id.path)?;
         {
             assert!(Arc::ptr_eq(&new_file.file.buffer, &replacement.buffer));
         }

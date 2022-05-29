@@ -16,7 +16,8 @@ fuzz_target!(|batches: Vec<BTreeSet<u16>>| {
     let context = Context::default();
     let file = NamedTempFile::new().unwrap();
     let mut tree =
-        TreeFile::<Unversioned, StdFile>::write(&file, State::default(), &context, None).unwrap();
+        TreeFile::<Unversioned, StdFile>::write(file.as_ref(), State::default(), &context, None)
+            .unwrap();
 
     let mut oracle = BTreeMap::new();
     let ops = batches.iter().map(|b| b.len()).sum::<usize>();
@@ -81,5 +82,5 @@ fuzz_target!(|batches: Vec<BTreeSet<u16>>| {
     }
 
     drop(tree);
-    context.file_manager.delete(&file).unwrap();
+    context.file_manager.delete(file.as_ref()).unwrap();
 });

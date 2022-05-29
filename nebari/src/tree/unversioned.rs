@@ -22,7 +22,7 @@ use crate::{
     tree::{
         btree::{Indexer, KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
         by_id::ByIdIndexer,
-        copy_chunk, dynamic_order, BTreeNode, ChangeResult, ModificationResult, PageHeader, Root,
+        dynamic_order, BTreeNode, ChangeResult, ModificationResult, PageHeader, Root,
     },
     vault::AnyVault,
     ArcBytes, ChunkCache, ErrorKind,
@@ -102,7 +102,7 @@ where
                      _existing_index,
                      writer: &mut PagedWriter<'_>| {
                         if let Some(value) = value {
-                            let position = writer.write_chunk(value)?;
+                            let position = writer.write_chunk_cached(value.clone())?;
                             // write_chunk errors if it can't fit within a u32
                             #[allow(clippy::cast_possible_truncation)]
                             let value_length = value.len() as u32;
@@ -280,7 +280,7 @@ where
     >(
         &self,
         range: &'keys KeyRangeBounds,
-        args: &mut ScanArgs<
+        mut args: ScanArgs<
             Self::Value,
             Self::Index,
             Self::ReducedIndex,
@@ -303,7 +303,8 @@ where
             ArcBytes<'static>,
         ) -> Result<(), AbortError<CallerError>>,
     {
-        self.by_id_root.scan(range, args, file, vault, cache, 0)
+        self.by_id_root
+            .scan(range, &mut args, file, vault, cache, 0)
     }
 
     fn copy_data_to(
@@ -333,7 +334,7 @@ where
                   to_file,
                   vault| {
                 let new_position =
-                    copy_chunk(index.position, from_file, copied_chunks, to_file, vault)?;
+                    to_file.copy_chunk_from(index.position, from_file, copied_chunks, vault)?;
 
                 if new_position == index.position {
                     // Data is already in the new file

@@ -245,7 +245,10 @@ impl ErrorKind {
         Self::DataIntegrity(Box::new(error.into()))
     }
 
-    pub(crate) fn is_file_not_found(&self) -> bool {
+    /// Returns true if this error represents an
+    /// [`std::io::ErrorKind::NotFound`].
+    #[must_use]
+    pub fn is_file_not_found(&self) -> bool {
         matches!(self, Self::Io(err) if err.kind() == std::io::ErrorKind::NotFound)
     }
 }
@@ -277,12 +280,16 @@ impl From<String> for ErrorKind {
 /// An internal database error.
 #[derive(Debug, Error)]
 pub enum InternalError {
+    /// A b-tree header was too large.
     #[error("the b-tree header is too large")]
     HeaderTooLarge,
+    /// The transaction manager is no longer running.
     #[error("the transaction manager has stopped")]
     TransactionManagerStopped,
+    /// An internal error communicating over a channel has ocurred.
     #[error("an error on an internal channel has occurred")]
     InternalCommunication,
+    /// An unexpected byte length was encountered.
     #[error("an unexpected byte length was encountered")]
     IncorrectByteLength,
 }

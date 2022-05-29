@@ -36,7 +36,7 @@ impl SimpleBench for InsertLogs {
         // production, it alters more than just insert performance. A more
         // complete benchmark which includes both inserts and queries would be
         // better to compare roots against sqlite's WAL performance.
-        let tempfile = NamedTempFile::new()?;
+        let tempfile = NamedTempFile::new_in(".")?;
         let sqlite = Connection::open(tempfile.path())?;
         // Sets the journal to what seems to be the most optimal, safe setting
         // for @ecton. See:
@@ -114,7 +114,7 @@ impl SimpleBench for ReadLogs {
         config: &Self::Config,
         _group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Self::GroupState {
-        let tempfile = NamedTempFile::new().unwrap();
+        let tempfile = NamedTempFile::new_in(".").unwrap();
         let sqlite = Connection::open(tempfile.path()).unwrap();
         sqlite
             .execute(
@@ -214,7 +214,7 @@ impl SimpleBench for ScanLogs {
         config: &Self::Config,
         _group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Self::GroupState {
-        let tempfile = NamedTempFile::new().unwrap();
+        let tempfile = NamedTempFile::new_in(".").unwrap();
         let sqlite = Connection::open(tempfile.path()).unwrap();
         sqlite
             .execute(

@@ -58,6 +58,12 @@ impl ChunkCache {
         }
     }
 
+    /// Returns the maximum size of data that can be cached.
+    #[must_use]
+    pub const fn max_chunk_size(&self) -> usize {
+        self.max_block_length
+    }
+
     /// Adds a new cached chunk for `file_path` at `position`.
     pub fn insert(&self, file_id: u64, position: u64, buffer: ArcBytes<'static>) {
         if buffer.len() <= self.max_block_length {

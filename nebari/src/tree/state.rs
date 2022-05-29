@@ -49,7 +49,7 @@ where
     }
 
     /// Locks the state for writing.
-    pub(crate) fn lock(&self) -> MutexGuard<'_, ActiveState<Root>> {
+    pub fn lock(&self) -> MutexGuard<'_, ActiveState<Root>> {
         self.writer.lock()
     }
 

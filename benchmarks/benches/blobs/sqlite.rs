@@ -33,7 +33,7 @@ impl SimpleBench for InsertBlobs {
         // production, it alters more than just insert performance. A more
         // complete benchmark which includes both inserts and queries would be
         // better to compare roots against sqlite's WAL performance.
-        let tempfile = NamedTempFile::new()?;
+        let tempfile = NamedTempFile::new_in(".")?;
         let sqlite = Connection::open(tempfile.path())?;
         // Sets the journal to what seems to be the most optimal, safe setting
         // for @ecton. See:

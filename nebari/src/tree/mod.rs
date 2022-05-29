@@ -56,7 +56,6 @@ use std::{
     io::SeekFrom,
     marker::PhantomData,
     ops::{Bound, Deref, DerefMut, Range, RangeBounds},
-    path::Path,
     sync::Arc,
 };
 
@@ -67,13 +66,13 @@ use parking_lot::MutexGuard;
 use crate::{
     chunk_cache::CacheEntry,
     error::Error,
-    io::{File, FileManager, FileOp, ManagedFile, ManagedFileOpener, OpenableFile, OperableFile},
+    io::{
+        File, FileManager, FileOp, IntoPathId, ManagedFile, ManagedFileOpener, OpenableFile,
+        OperableFile, PathId,
+    },
     roots::AbortError,
     transaction::{ManagedTransaction, TransactionManager},
-    tree::{
-        btree::{BTreeNode, Indexer, KeyOperation, Reducer, ScanArgs},
-        serialization::BinarySerialization,
-    },
+    tree::btree::{BTreeNode, Indexer, KeyOperation, Reducer, ScanArgs},
     vault::AnyVault,
     ArcBytes, ChunkCache, CompareAndSwapError, Context, ErrorKind,
 };
@@ -100,6 +99,7 @@ pub use self::{
     key_entry::{KeyEntry, PositionIndex},
     modify::{CompareSwap, CompareSwapFn, Modification, Operation, PersistenceMode},
     root::{AnyTreeRoot, Root, TreeRoot},
+    serialization::BinarySerialization,
     state::{ActiveState, State},
     unversioned::{Unversioned, UnversionedTreeRoot},
     versioned::{KeySequence, SequenceEntry, SequenceIndex, Versioned, VersionedTreeRoot},
@@ -142,11 +142,14 @@ impl TryFrom<u8> for PageHeader {
 /// - `File`: An [`ManagedFile`] implementor.
 #[derive(Debug)]
 pub struct TreeFile<Root: root::Root, File: ManagedFile> {
-    pub(crate) file: <File::Manager as FileManager>::FileHandle,
+    /// The file handle the tree is stored within.
+    pub file: <File::Manager as FileManager>::FileHandle,
     /// The state of the file.
     pub state: State<Root>,
-    vault: Option<Arc<dyn AnyVault>>,
-    cache: Option<ChunkCache>,
+    /// The vault used to encrypt/decrypt chunks.
+    pub vault: Option<Arc<dyn AnyVault>>,
+    /// The cache used to cache chunks from the file.
+    pub cache: Option<ChunkCache>,
     scratch: Vec<u8>,
 }
 
@@ -185,33 +188,32 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
 
     /// Opens a tree file with read-only permissions.
     pub fn read(
-        path: impl AsRef<Path>,
+        path: impl IntoPathId,
         state: State<Root>,
         context: &Context<File::Manager>,
         transactions: Option<&TransactionManager<File::Manager>>,
     ) -> Result<Self, Error> {
-        let file = context.file_manager.read(path.as_ref())?;
-        Self::initialize_state(&state, path.as_ref(), file.id(), context, transactions)?;
+        let file = context.file_manager.read(path)?;
+        Self::initialize_state(&state, file.id(), context, transactions)?;
         Self::new(file, state, context.vault.clone(), context.cache.clone())
     }
 
     /// Opens a tree file with the ability to read and write.
     pub fn write(
-        path: impl AsRef<Path>,
+        path: impl IntoPathId,
         state: State<Root>,
         context: &Context<File::Manager>,
         transactions: Option<&TransactionManager<File::Manager>>,
     ) -> Result<Self, Error> {
-        let file = context.file_manager.append(path.as_ref())?;
-        Self::initialize_state(&state, path.as_ref(), file.id(), context, transactions)?;
+        let file = context.file_manager.append(path)?;
+        Self::initialize_state(&state, file.id(), context, transactions)?;
         Self::new(file, state, context.vault.clone(), context.cache.clone())
     }
 
     /// Attempts to load the last saved state of this tree into `state`.
     pub fn initialize_state(
         state: &State<Root>,
-        file_path: &Path,
-        file_id: Option<u64>,
+        file_path: &PathId,
         context: &Context<File::Manager>,
         transaction_manager: Option<&TransactionManager<File::Manager>>,
     ) -> Result<(), Error> {
@@ -227,7 +229,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             return Ok(());
         }
 
-        active_state.file_id = file_id;
+        active_state.file_id = file_path.id();
         let file_length = context.file_manager.file_length(file_path)?;
         if file_length == 0 {
             active_state.root.initialize_default();
@@ -235,7 +237,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             return Ok(());
         }
 
-        let mut tree = context.file_manager.open_for_read(file_path, None)?;
+        let mut tree = context.file_manager.open_for_read(file_path)?;
 
         // Scan back block by block until we find a header page.
         let mut block_start = file_length - (file_length % PAGE_SIZE as u64);
@@ -955,7 +957,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         self.file = self
             .file
             .replace_with(compacted_file, file_manager, |file_id| {
-                finisher.finish(file_id);
+                finisher.finish(file_id.id().expect("id can't be none at this stage"));
             })?;
         Ok(self)
     }
@@ -1227,7 +1229,7 @@ where
         self,
         file: &mut dyn File,
     ) -> Result<(Manager::File, TreeCompactionFinisher<'a, Root, Manager>), Error> {
-        let current_path = file.path().to_path_buf();
+        let current_path = file.id().path();
         let file_name = current_path
             .file_name()
             .ok_or_else(|| ErrorKind::message("could not retrieve file name"))?;
@@ -1247,7 +1249,7 @@ where
                 .manager
                 .new_transaction([transactions.name.as_bytes()])
         });
-        let mut new_file = self.manager.open_for_append(&compacted_path, None)?;
+        let mut new_file = self.manager.open_for_append(&compacted_path)?;
         let mut writer = PagedWriter::new(None, &mut new_file, self.vault, None, 0)?;
 
         // Use the read state to list all the currently live chunks
@@ -1315,7 +1317,7 @@ where
 {
     fn execute(self, file: &mut dyn File) -> Result<(), Error> {
         let mut active_state = self.state.lock();
-        if active_state.file_id != file.id() {
+        if active_state.file_id != file.id().id() {
             return Err(Error::from(ErrorKind::TreeCompacted));
         }
         if active_state.root.dirty() {
@@ -1360,7 +1362,7 @@ where
         file: &mut dyn File,
     ) -> Result<Vec<ModificationResult<Root::Index>>, Error> {
         let mut active_state = self.state.lock();
-        if active_state.file_id != file.id() {
+        if active_state.file_id != file.id().id() {
             return Err(Error::from(ErrorKind::TreeCompacted));
         }
 
@@ -1447,7 +1449,8 @@ pub struct KeyRange<I: Iterator<Item = Bytes>, Bytes: AsRef<[u8]>> {
 }
 
 impl<I: Iterator<Item = Bytes>, Bytes: AsRef<[u8]>> KeyRange<I, Bytes> {
-    fn new(mut keys: I) -> Self {
+    /// Returns a new instance from the keys provided.
+    pub fn new(mut keys: I) -> Self {
         Self {
             current_key: keys.next(),
             remaining_keys: keys,
@@ -1508,7 +1511,7 @@ where
     fn execute(mut self, file: &mut dyn File) -> Result<(), Error> {
         if self.from_transaction {
             let state = self.state.lock();
-            if state.file_id != file.id() {
+            if state.file_id != file.id().id() {
                 return Err(Error::from(ErrorKind::TreeCompacted));
             }
 
@@ -1522,7 +1525,7 @@ where
             )
         } else {
             let state = self.state.read();
-            if state.file_id != file.id() {
+            if state.file_id != file.id().id() {
                 return Err(Error::from(ErrorKind::TreeCompacted));
             }
 
@@ -1598,13 +1601,13 @@ where
     fn execute(mut self, file: &mut dyn File) -> Result<bool, AbortError<CallerError>> {
         if self.from_transaction {
             let state = self.state.lock();
-            if state.file_id != file.id() {
+            if state.file_id != file.id().id() {
                 return Err(AbortError::Nebari(Error::from(ErrorKind::TreeCompacted)));
             }
 
             state.root.scan(
                 self.range,
-                &mut ScanArgs::new(
+                ScanArgs::new(
                     self.forwards,
                     &mut self.node_evaluator,
                     &mut self.key_evaluator,
@@ -1616,13 +1619,13 @@ where
             )
         } else {
             let state = self.state.read();
-            if state.file_id != file.id() {
+            if state.file_id != file.id().id() {
                 return Err(AbortError::Nebari(Error::from(ErrorKind::TreeCompacted)));
             }
 
             state.root.scan(
                 self.range,
-                &mut ScanArgs::new(
+                ScanArgs::new(
                     self.forwards,
                     &mut self.node_evaluator,
                     &mut self.key_evaluator,
@@ -1663,7 +1666,7 @@ where
     fn execute(mut self, file: &mut dyn File) -> Result<(), Error> {
         if self.from_transaction {
             let state = self.state.lock();
-            if state.file_id != file.id() {
+            if state.file_id != file.id().id() {
                 return Err(Error::from(ErrorKind::TreeCompacted));
             }
 
@@ -1684,7 +1687,7 @@ where
             )
         } else {
             let state = self.state.read();
-            if state.file_id != file.id() {
+            if state.file_id != file.id().id() {
                 return Err(Error::from(ErrorKind::TreeCompacted));
             }
 
@@ -1779,7 +1782,7 @@ where
             };
         if from_transaction {
             let state = state.lock();
-            if state.file_id != file.id() {
+            if state.file_id != file.id().id() {
                 return Err(AbortError::Nebari(Error::from(ErrorKind::TreeCompacted)));
             }
 
@@ -1802,7 +1805,7 @@ where
                 .map(|_| {})
         } else {
             let state = state.read();
-            if state.file_id != file.id() {
+            if state.file_id != file.id().id() {
                 return Err(AbortError::Nebari(Error::from(ErrorKind::TreeCompacted)));
             }
 
@@ -1892,26 +1895,31 @@ impl<'a> PagedWriter<'a> {
         self.position + self.offset as u64
     }
 
+    fn fill_and_write_buffer(&mut self, data: &mut &[u8]) -> Result<(), Error> {
+        let bytes_available = self.buffered_write.len() - self.offset;
+        let bytes_to_copy = bytes_available.min(data.len());
+        let new_offset = self.offset + bytes_to_copy;
+        let (data_to_copy, remaining) = data.split_at(bytes_to_copy);
+        self.buffered_write[self.offset..new_offset].copy_from_slice(data_to_copy);
+        self.offset = new_offset;
+        if self.offset == self.buffered_write.len() {
+            self.commit()?;
+        }
+
+        *data = remaining;
+        Ok(())
+    }
+
     fn write(&mut self, mut data: &[u8]) -> Result<usize, Error> {
         let bytes_written = data.len();
+
+        self.fill_and_write_buffer(&mut data)?;
+
         if data.len() > self.buffered_write.len() {
-            self.commit_if_needed()?;
             self.file.write_all(data)?;
             self.position += data.len() as u64;
         } else {
-            while !data.is_empty() {
-                let bytes_available = self.buffered_write.len() - self.offset;
-                let bytes_to_copy = bytes_available.min(data.len());
-                let new_offset = self.offset + bytes_to_copy;
-                let (data_to_copy, remaining) = data.split_at(bytes_to_copy);
-                self.buffered_write[self.offset..new_offset].copy_from_slice(data_to_copy);
-                self.offset = new_offset;
-                if self.offset == self.buffered_write.len() {
-                    self.commit()?;
-                }
-
-                data = remaining;
-            }
+            self.fill_and_write_buffer(&mut data)?;
         }
         Ok(bytes_written)
     }
@@ -1947,6 +1955,29 @@ impl<'a> PagedWriter<'a> {
         self.write_u32::<BigEndian>(crc)?;
         self.write(&possibly_encrypted)?;
 
+        if let (Some(cache), Some(file_id)) = (self.cache, self.file.id().id()) {
+            if cache.max_chunk_size() >= contents.len() {
+                cache.insert(
+                    file_id,
+                    position,
+                    ArcBytes::owned(possibly_encrypted.to_vec()),
+                );
+            }
+        }
+
+        Ok(position)
+    }
+
+    /// Writes a chunk of data to the file, after possibly encrypting it.
+    /// Returns the position that this chunk can be read from in the file.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn write_chunk_cached(&mut self, contents: ArcBytes<'static>) -> Result<u64, Error> {
+        let position = self.write_chunk(&contents)?;
+
+        if let (Some(cache), Some(file_id)) = (self.cache, self.file.id().id()) {
+            cache.insert(file_id, position, contents);
+        }
+
         Ok(position)
     }
 
@@ -1954,6 +1985,36 @@ impl<'a> PagedWriter<'a> {
     /// location previously returned by [`Self::write_chunk()`].
     pub fn read_chunk(&mut self, position: u64) -> Result<CacheEntry, Error> {
         read_chunk(position, false, self.file, self.vault, self.cache)
+    }
+
+    /// Copies a chunk from `original_position` in file `from_file` to this
+    /// file. This function will update `copied_chunks` with the newly written
+    /// location and return the new position. If `copied_chunks` already
+    /// contains `original_position`, the already copied position is returned.
+    pub fn copy_chunk_from<Hasher: BuildHasher>(
+        &mut self,
+        original_position: u64,
+        from_file: &mut dyn File,
+        copied_chunks: &mut std::collections::HashMap<u64, u64, Hasher>,
+        vault: Option<&dyn AnyVault>,
+    ) -> Result<u64, Error> {
+        if original_position == 0 {
+            Ok(0)
+        } else if let Some(new_position) = copied_chunks.get(&original_position) {
+            Ok(*new_position)
+        } else {
+            // Since these are one-time copies, and receiving a Decoded entry
+            // makes things tricky, we're going to not use caching for reads
+            // here. This gives the added benefit for a long-running server to
+            // ensure it's doing CRC checks occasionally as it copies itself.
+            let chunk = match read_chunk(original_position, true, from_file, vault, None)? {
+                CacheEntry::ArcBytes(buffer) => buffer,
+                CacheEntry::Decoded(_) => unreachable!(),
+            };
+            let new_location = self.write_chunk(&chunk)?;
+            copied_chunks.insert(original_position, new_location);
+            Ok(new_location)
+        }
     }
 
     fn write_u32<B: ByteOrder>(&mut self, value: u32) -> Result<usize, Error> {
@@ -1977,7 +2038,7 @@ fn read_chunk(
     vault: Option<&dyn AnyVault>,
     cache: Option<&ChunkCache>,
 ) -> Result<CacheEntry, Error> {
-    if let (Some(cache), Some(file_id)) = (cache, file.id()) {
+    if let (Some(cache), Some(file_id)) = (cache, file.id().id()) {
         if let Some(entry) = cache.get(file_id, position) {
             return Ok(entry);
         }
@@ -2009,37 +2070,11 @@ fn read_chunk(
         None => scratch,
     });
 
-    if let (Some(cache), Some(file_id)) = (cache, file.id()) {
+    if let (Some(cache), Some(file_id)) = (cache, file.id().id()) {
         cache.insert(file_id, position, decrypted.clone());
     }
 
     Ok(CacheEntry::ArcBytes(decrypted))
-}
-
-pub(crate) fn copy_chunk<Hasher: BuildHasher>(
-    original_position: u64,
-    from_file: &mut dyn File,
-    copied_chunks: &mut std::collections::HashMap<u64, u64, Hasher>,
-    to_file: &mut PagedWriter<'_>,
-    vault: Option<&dyn AnyVault>,
-) -> Result<u64, Error> {
-    if original_position == 0 {
-        Ok(0)
-    } else if let Some(new_position) = copied_chunks.get(&original_position) {
-        Ok(*new_position)
-    } else {
-        // Since these are one-time copies, and receiving a Decoded entry
-        // makes things tricky, we're going to not use caching for reads
-        // here. This gives the added benefit for a long-running server to
-        // ensure it's doing CRC checks occasionally as it copies itself.
-        let chunk = match read_chunk(original_position, true, from_file, vault, None)? {
-            CacheEntry::ArcBytes(buffer) => buffer,
-            CacheEntry::Decoded(_) => unreachable!(),
-        };
-        let new_location = to_file.write_chunk(&chunk)?;
-        copied_chunks.insert(original_position, new_location);
-        Ok(new_location)
-    }
 }
 
 /// Returns a value for the "order" (maximum children per node) value for the
@@ -2297,6 +2332,7 @@ mod tests {
     use std::{
         collections::{BTreeMap, HashSet},
         convert::Infallible,
+        path::Path,
     };
 
     use nanorand::{Pcg64, Rng};
@@ -2311,8 +2347,7 @@ mod tests {
     };
 
     fn test_paged_write(offset: usize, length: usize) -> Result<(), Error> {
-        let mut file =
-            MemoryFileOpener.open_for_append(format!("test-{}-{}", offset, length), None)?;
+        let mut file = MemoryFileOpener.open_for_append(format!("test-{}-{}", offset, length))?;
         let mut paged_writer =
             PagedWriter::new(Some(PageHeader::VersionedHeader), &mut file, None, None, 0)?;
 
@@ -2415,8 +2450,7 @@ mod tests {
         {
             let file = context.file_manager.append(file_path).unwrap();
             let state = State::new(None, max_order, R::default());
-            TreeFile::<R, F>::initialize_state(&state, file_path, file.id(), context, None)
-                .unwrap();
+            TreeFile::<R, F>::initialize_state(&state, file.id(), context, None).unwrap();
             let mut tree =
                 TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
                     .unwrap();
@@ -2436,8 +2470,7 @@ mod tests {
         {
             let file = context.file_manager.append(file_path).unwrap();
             let state = State::default();
-            TreeFile::<R, F>::initialize_state(&state, file_path, file.id(), context, None)
-                .unwrap();
+            TreeFile::<R, F>::initialize_state(&state, file.id(), context, None).unwrap();
 
             let mut tree =
                 TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())

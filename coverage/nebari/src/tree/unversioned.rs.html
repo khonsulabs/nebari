@@ -15,7 +15,7 @@
         <div>
             <p class="heading">Lines</p>
             <p class="title has-text-success">
-                <abbr title="206 / 216">95.37 %</abbr></p>
+                <abbr title="207 / 217">95.39 %</abbr></p>
         </div>
     </div>
 
@@ -359,7 +359,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">        copy_chunk, dynamic_order, BTreeNode, ChangeResult, ModificationResult, PageHeader, Root,</pre>
+                <pre class="has-background-white py-0 px-2">        dynamic_order, BTreeNode, ChangeResult, ModificationResult, PageHeader, Root,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -512,7 +512,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                31371
+                31191
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">#[derive(Clone, Debug)]</pre>
@@ -1399,7 +1399,7 @@
                 150495
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">                            let position = writer.write_chunk(value)?;</pre>
+                <pre class="has-background-success-light py-0 px-2">                            let position = writer.write_chunk_cached(value.clone())?;</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -2228,7 +2228,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                77763
+                77674
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">    fn reducer(&amp;self) -&gt; &amp;Self::Reducer {</pre>
@@ -2241,7 +2241,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                77763
+                77674
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        &amp;self.reducer</pre>
@@ -2254,7 +2254,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                77763
+                77674
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">    }</pre>
@@ -2280,7 +2280,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                1811
+                1721
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">    fn count(&amp;self) -&gt; u64 {</pre>
@@ -2293,7 +2293,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                1811
+                1721
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        self.by_id_root.stats(self.reducer()).alive_keys</pre>
@@ -2306,7 +2306,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                1811
+                1721
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">    }</pre>
@@ -2384,7 +2384,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                26327
+                26237
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">    fn initialized(&amp;self) -&gt; bool {</pre>
@@ -2397,7 +2397,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                26327
+                26237
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        self.transaction_id.is_some()</pre>
@@ -2410,7 +2410,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                26327
+                26237
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">    }</pre>
@@ -2553,7 +2553,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                21424
+                21334
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        output.write_u64::&lt;BigEndian&gt;(</pre>
@@ -2566,7 +2566,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                21424
+                21334
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">            self.transaction_id</pre>
@@ -2579,7 +2579,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                21424
+                21334
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">                .expect(&quot;serializing an uninitialized root&quot;)</pre>
@@ -2592,7 +2592,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                21424
+                21334
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">                .0,</pre>
@@ -2605,7 +2605,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                21424
+                21334
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        )?;</pre>
@@ -2631,7 +2631,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                21424
+                21334
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        output.write_u32::&lt;BigEndian&gt;(0)?;</pre>
@@ -2657,7 +2657,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                21424
+                21334
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        let by_id_size = self.by_id_root.serialize_to(output, paged_writer)?;</pre>
@@ -2670,7 +2670,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                21424
+                21334
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        let by_id_size = u32::try_from(by_id_size)</pre>
@@ -2683,7 +2683,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                21424
+                21334
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">            .ok()</pre>
@@ -2696,7 +2696,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                21424
+                21334
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">            .ok_or(ErrorKind::Internal(InternalError::HeaderTooLarge))?;</pre>
@@ -2709,7 +2709,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                21424
+                21334
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        BigEndian::write_u32(&amp;mut output[8..12], by_id_size);</pre>
@@ -2722,7 +2722,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                21424
+                21334
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2"></pre>
@@ -2735,7 +2735,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                21424
+                21334
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        Ok(())</pre>
@@ -2748,7 +2748,7 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                21424
+                21334
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">    }</pre>
@@ -3713,7 +3713,7 @@
                 32660
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">        args: &amp;mut ScanArgs&lt;</pre>
+                <pre class="has-background-success-light py-0 px-2">        mut args: ScanArgs&lt;</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4012,7 +4012,7 @@
                 32660
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">        self.by_id_root.scan(range, args, file, vault, cache, 0)</pre>
+                <pre class="has-background-success-light py-0 px-2">        self.by_id_root</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4025,13 +4025,26 @@
                 32660
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">    }</pre>
+                <pre class="has-background-success-light py-0 px-2">            .scan(range, &amp;mut args, file, vault, cache, 0)</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
                 id="308">
                 <a href="#308">308</a>
+            </div>
+            <div
+                class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
+                32660
+            </div>
+            <div class="column has-background-success-light p-0">
+                <pre class="has-background-success-light py-0 px-2">    }</pre>
+            </div>
+        </div><div class="columns p-0 m-0">
+            <div
+                class="column is-1 is-narrow p-0 has-text-centered"
+                id="309">
+                <a href="#309">309</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
@@ -4043,28 +4056,15 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="309">
-                <a href="#309">309</a>
-            </div>
-            <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
-            </div>
-            <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">    fn copy_data_to(</pre>
-            </div>
-        </div><div class="columns p-0 m-0">
-            <div
-                class="column is-1 is-narrow p-0 has-text-centered"
                 id="310">
                 <a href="#310">310</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">        &amp;mut self,</pre>
+                <pre class="has-background-success-light py-0 px-2">    fn copy_data_to(</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4074,10 +4074,10 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">        include_nodes: bool,</pre>
+                <pre class="has-background-success-light py-0 px-2">        &amp;mut self,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4087,10 +4087,10 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">        file: &amp;mut dyn File,</pre>
+                <pre class="has-background-success-light py-0 px-2">        include_nodes: bool,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4100,10 +4100,10 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">        copied_chunks: &amp;mut HashMap&lt;u64, u64&gt;,</pre>
+                <pre class="has-background-success-light py-0 px-2">        file: &amp;mut dyn File,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4113,10 +4113,10 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">        writer: &amp;mut PagedWriter&lt;&#x27;_&gt;,</pre>
+                <pre class="has-background-success-light py-0 px-2">        copied_chunks: &amp;mut HashMap&lt;u64, u64&gt;,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4126,10 +4126,10 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">        vault: Option&lt;&amp;dyn AnyVault&gt;,</pre>
+                <pre class="has-background-success-light py-0 px-2">        writer: &amp;mut PagedWriter&lt;&#x27;_&gt;,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4139,10 +4139,10 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">    ) -&gt; Result&lt;(), Error&gt; {</pre>
+                <pre class="has-background-success-light py-0 px-2">        vault: Option&lt;&amp;dyn AnyVault&gt;,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4152,10 +4152,10 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">        let mut scratch = Vec::new();</pre>
+                <pre class="has-background-success-light py-0 px-2">    ) -&gt; Result&lt;(), Error&gt; {</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4165,10 +4165,10 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">        self.by_id_root.copy_data_to(</pre>
+                <pre class="has-background-success-light py-0 px-2">        let mut scratch = Vec::new();</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4178,10 +4178,10 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">            if include_nodes {</pre>
+                <pre class="has-background-success-light py-0 px-2">        self.by_id_root.copy_data_to(</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4191,7 +4191,20 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                1811
+                3442
+            </div>
+            <div class="column has-background-success-light p-0">
+                <pre class="has-background-success-light py-0 px-2">            if include_nodes {</pre>
+            </div>
+        </div><div class="columns p-0 m-0">
+            <div
+                class="column is-1 is-narrow p-0 has-text-centered"
+                id="321">
+                <a href="#321">321</a>
+            </div>
+            <div
+                class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
+                1721
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">                NodeInclusion::IncludeNext</pre>
@@ -4199,8 +4212,8 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="321">
-                <a href="#321">321</a>
+                id="322">
+                <a href="#322">322</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
@@ -4212,12 +4225,12 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="322">
-                <a href="#322">322</a>
+                id="323">
+                <a href="#323">323</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                1811
+                1721
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">                NodeInclusion::Exclude</pre>
@@ -4225,8 +4238,8 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="323">
-                <a href="#323">323</a>
+                id="324">
+                <a href="#324">324</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
@@ -4238,28 +4251,15 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="324">
-                <a href="#324">324</a>
-            </div>
-            <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
-            </div>
-            <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">            file,</pre>
-            </div>
-        </div><div class="columns p-0 m-0">
-            <div
-                class="column is-1 is-narrow p-0 has-text-centered"
                 id="325">
                 <a href="#325">325</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">            copied_chunks,</pre>
+                <pre class="has-background-success-light py-0 px-2">            file,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4269,10 +4269,10 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">            writer,</pre>
+                <pre class="has-background-success-light py-0 px-2">            copied_chunks,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4282,10 +4282,10 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">            vault,</pre>
+                <pre class="has-background-success-light py-0 px-2">            writer,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4295,10 +4295,10 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">            &amp;mut scratch,</pre>
+                <pre class="has-background-success-light py-0 px-2">            vault,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4308,10 +4308,10 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">            &amp;mut |_key,</pre>
+                <pre class="has-background-success-light py-0 px-2">            &amp;mut scratch,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4320,11 +4320,11 @@
                 <a href="#330">330</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
-                
+                class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
+                3442
             </div>
-            <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">                  index: &amp;mut UnversionedByIdIndex&lt;EmbeddedIndex, ArcBytes&lt;&#x27;static&gt;&gt;,</pre>
+            <div class="column has-background-success-light p-0">
+                <pre class="has-background-success-light py-0 px-2">            &amp;mut |_key,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4337,7 +4337,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">                  from_file,</pre>
+                <pre class="has-background-white py-0 px-2">                  index: &amp;mut UnversionedByIdIndex&lt;EmbeddedIndex, ArcBytes&lt;&#x27;static&gt;&gt;,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4350,7 +4350,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">                  copied_chunks,</pre>
+                <pre class="has-background-white py-0 px-2">                  from_file,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4363,7 +4363,7 @@
                 
             </div>
             <div class="column has-background-white p-0">
-                <pre class="has-background-white py-0 px-2">                  to_file,</pre>
+                <pre class="has-background-white py-0 px-2">                  copied_chunks,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4372,11 +4372,11 @@
                 <a href="#334">334</a>
             </div>
             <div
-                class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                1840071
+                class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
+                
             </div>
-            <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">                  vault| {</pre>
+            <div class="column has-background-white p-0">
+                <pre class="has-background-white py-0 px-2">                  to_file,</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4386,10 +4386,10 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                1840071
+                1701554
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">                let new_position =</pre>
+                <pre class="has-background-success-light py-0 px-2">                  vault| {</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
@@ -4399,16 +4399,29 @@
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                1840071
+                1701554
             </div>
             <div class="column has-background-success-light p-0">
-                <pre class="has-background-success-light py-0 px-2">                    copy_chunk(index.position, from_file, copied_chunks, to_file, vault)?;</pre>
+                <pre class="has-background-success-light py-0 px-2">                let new_position =</pre>
             </div>
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
                 id="337">
                 <a href="#337">337</a>
+            </div>
+            <div
+                class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
+                1701554
+            </div>
+            <div class="column has-background-success-light p-0">
+                <pre class="has-background-success-light py-0 px-2">                    to_file.copy_chunk_from(index.position, from_file, copied_chunks, vault)?;</pre>
+            </div>
+        </div><div class="columns p-0 m-0">
+            <div
+                class="column is-1 is-narrow p-0 has-text-centered"
+                id="338">
+                <a href="#338">338</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
@@ -4420,12 +4433,12 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="338">
-                <a href="#338">338</a>
+                id="339">
+                <a href="#339">339</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                1840071
+                1701554
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">                if new_position == index.position {</pre>
@@ -4433,8 +4446,8 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="339">
-                <a href="#339">339</a>
+                id="340">
+                <a href="#340">340</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
@@ -4446,12 +4459,12 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="340">
-                <a href="#340">340</a>
+                id="341">
+                <a href="#341">341</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                619652
+                639442
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">                    Ok(false)</pre>
@@ -4459,8 +4472,8 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="341">
-                <a href="#341">341</a>
+                id="342">
+                <a href="#342">342</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
@@ -4472,12 +4485,12 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="342">
-                <a href="#342">342</a>
+                id="343">
+                <a href="#343">343</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                1220438
+                1062112
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">                    index.position = new_position;</pre>
@@ -4485,12 +4498,12 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="343">
-                <a href="#343">343</a>
+                id="344">
+                <a href="#344">344</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                1220438
+                1062112
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">                    Ok(true)</pre>
@@ -4498,8 +4511,8 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="344">
-                <a href="#344">344</a>
+                id="345">
+                <a href="#345">345</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
@@ -4511,12 +4524,12 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="345">
-                <a href="#345">345</a>
+                id="346">
+                <a href="#346">346</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                1840090
+                1701554
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">            },</pre>
@@ -4524,8 +4537,8 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="346">
-                <a href="#346">346</a>
+                id="347">
+                <a href="#347">347</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-danger-light has-background-danger">
@@ -4537,8 +4550,8 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="347">
-                <a href="#347">347</a>
+                id="348">
+                <a href="#348">348</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
@@ -4550,12 +4563,12 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="348">
-                <a href="#348">348</a>
+                id="349">
+                <a href="#349">349</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">        Ok(())</pre>
@@ -4563,12 +4576,12 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="349">
-                <a href="#349">349</a>
+                id="350">
+                <a href="#350">350</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-success-light has-background-success">
-                3622
+                3442
             </div>
             <div class="column has-background-success-light p-0">
                 <pre class="has-background-success-light py-0 px-2">    }</pre>
@@ -4576,8 +4589,8 @@
         </div><div class="columns p-0 m-0">
             <div
                 class="column is-1 is-narrow p-0 has-text-centered"
-                id="350">
-                <a href="#350">350</a>
+                id="351">
+                <a href="#351">351</a>
             </div>
             <div
                 class="column is-1 is-narrow p-0 has-text-centered has-text-white has-background-white">
@@ -4589,7 +4602,7 @@
         </div></div>
         <footer class="footer">
             <div class="content has-text-centered">
-                <p class="heading">Date: 2022-05-15 22:41</p>
+                <p class="heading">Date: 2022-05-29 16:47</p>
             </div>
         </footer>
     </body>

@@ -182,7 +182,7 @@ impl<
         include_nodes: NodeInclusion,
         file: &mut dyn File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
         scratch: &mut Vec<u8>,
         index_callback: &mut Callback,
@@ -193,7 +193,7 @@ impl<
             &mut Index,
             &mut dyn File,
             &mut HashMap<u64, u64>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
             Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,
     {
@@ -236,7 +236,7 @@ impl<
     fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        paged_writer: &mut PagedWriter<'_>,
+        paged_writer: &mut PagedWriter<'_, '_>,
     ) -> Result<usize, Error> {
         let mut pointer = Pointer::OnDisk(0);
         std::mem::swap(&mut pointer, &mut self.position);

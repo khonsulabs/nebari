@@ -94,6 +94,9 @@ pub trait FileManager:
     /// Check if the file exists.
     fn exists(&self, path: impl IntoPathId) -> Result<bool, Error>;
 
+    /// Synchronizes a path to ensure all data is on-disk.
+    fn synchronize(&self, path: impl AsRef<Path>) -> Result<(), Error>;
+
     /// Closes all open handles for `path`, and calls `publish_callback` before
     /// unlocking any locks aquired during the operation.
     fn close_handles<F: FnOnce(PathId)>(&self, path: impl IntoPathId, publish_callback: F);
@@ -182,6 +185,12 @@ impl PartialEq<Path> for PathId {
 
 impl Borrow<Path> for PathId {
     fn borrow(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl AsRef<Path> for PathId {
+    fn as_ref(&self) -> &Path {
         &self.path
     }
 }

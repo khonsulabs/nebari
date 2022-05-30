@@ -85,7 +85,7 @@ pub trait Root: Debug + Send + Sync + Clone + 'static {
     /// `paged_writer` in the process of serialization.
     fn serialize(
         &mut self,
-        paged_writer: &mut PagedWriter<'_>,
+        paged_writer: &mut PagedWriter<'_, '_>,
         output: &mut Vec<u8>,
     ) -> Result<(), Error>;
 
@@ -100,7 +100,7 @@ pub trait Root: Debug + Send + Sync + Clone + 'static {
     fn modify<'a, 'w>(
         &'a mut self,
         modification: Modification<'_, Self::Value, Self::Index>,
-        writer: &'a mut PagedWriter<'w>,
+        writer: &'a mut PagedWriter<'w, '_>,
         max_order: Option<usize>,
     ) -> Result<Vec<ModificationResult<Self::Index>>, Error>;
 
@@ -167,7 +167,7 @@ pub trait Root: Debug + Send + Sync + Clone + 'static {
         include_nodes: bool,
         file: &mut dyn File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error>;
 }

@@ -97,7 +97,7 @@ where
             BySequenceIndex<EmbeddedIndex>,
             BySequenceIndex<EmbeddedIndex>,
         >,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
         // Reverse so that pop is efficient.
@@ -123,10 +123,10 @@ where
                     |_key: &ArcBytes<'_>,
                      value: Option<&BySequenceIndex<EmbeddedIndex>>,
                      _existing_index: Option<&BySequenceIndex<EmbeddedIndex>>,
-                     _writer: &mut PagedWriter<'_>| {
+                     _writer: &mut PagedWriter<'_, '_>| {
                         Ok(KeyOperation::Set(value.unwrap().clone()))
                     },
-                    |_index: &BySequenceIndex<EmbeddedIndex>, _writer: &mut PagedWriter<'_>| {
+                    |_index: &BySequenceIndex<EmbeddedIndex>, _writer: &mut PagedWriter<'_, '_>| {
                         Ok(None)
                     },
                     BySequenceReducer,
@@ -154,7 +154,7 @@ where
             VersionedByIdIndex<EmbeddedIndex, ArcBytes<'static>>,
         >,
         changes: &mut EntryChanges<EmbeddedIndex>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
         max_order: Option<usize>,
     ) -> Result<Vec<ModificationResult<VersionedByIdIndex<EmbeddedIndex, ArcBytes<'static>>>>, Error>
     {
@@ -182,7 +182,7 @@ where
                      existing_index: Option<
                         &VersionedByIdIndex<EmbeddedIndex, ArcBytes<'static>>,
                     >,
-                     writer: &mut PagedWriter<'_>| {
+                     writer: &mut PagedWriter<'_, '_>| {
                         let (position, value_size) = if let Some(value) = value {
                             let new_position = writer.write_chunk_cached(value.clone())?;
                             // write_chunk errors if it can't fit within a u32
@@ -295,7 +295,7 @@ where
 
     fn serialize(
         &mut self,
-        paged_writer: &mut PagedWriter<'_>,
+        paged_writer: &mut PagedWriter<'_, '_>,
         output: &mut Vec<u8>,
     ) -> Result<(), Error> {
         output.reserve(PAGE_SIZE);
@@ -356,7 +356,7 @@ where
     fn modify(
         &mut self,
         modification: Modification<'_, ArcBytes<'static>, Self::Index>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
         max_order: Option<usize>,
     ) -> Result<Vec<ModificationResult<Self::Index>>, Error> {
         let persistence_mode = modification.persistence_mode;
@@ -460,7 +460,7 @@ where
         include_nodes: bool,
         file: &mut dyn File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error> {
         // Copy all of the data using the ID root.
@@ -534,10 +534,10 @@ where
                 |_key: &ArcBytes<'_>,
                                value: Option<&BySequenceIndex<EmbeddedIndex>>,
                                _existing_index: Option<&BySequenceIndex<EmbeddedIndex>>,
-                               _writer: &mut PagedWriter<'_>| {
+                               _writer: &mut PagedWriter<'_, '_>| {
                     Ok(KeyOperation::Set(value.unwrap().clone()))
                 },
-                |_index: &BySequenceIndex<EmbeddedIndex>, _writer: &mut PagedWriter<'_>| unreachable!(),
+                |_index: &BySequenceIndex<EmbeddedIndex>, _writer: &mut PagedWriter<'_, '_>| unreachable!(),
                 BySequenceReducer,
             ),
             None,

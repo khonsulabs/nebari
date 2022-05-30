@@ -67,7 +67,7 @@ where
     fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_>,
+        _paged_writer: &mut PagedWriter<'_, '_>,
     ) -> Result<usize, Error> {
         let mut bytes_written = 0;
         writer.write_u32::<BigEndian>(self.value_length)?;
@@ -142,7 +142,7 @@ impl BinarySerialization for BySequenceStats {
     fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_>,
+        _paged_writer: &mut PagedWriter<'_, '_>,
     ) -> Result<usize, Error> {
         writer.write_u64::<BigEndian>(self.total_sequences)?;
         Ok(8)

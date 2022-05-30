@@ -67,14 +67,14 @@ impl<Index> UnversionedTreeRoot<Index>
 where
     Index: Clone + super::EmbeddedIndex<ArcBytes<'static>> + Debug + 'static,
 {
-    fn modify_id_root<'a, 'w>(
-        &'a mut self,
+    fn modify_id_root(
+        &mut self,
         mut modification: Modification<
             '_,
             ArcBytes<'static>,
             UnversionedByIdIndex<Index, ArcBytes<'static>>,
         >,
-        writer: &'a mut PagedWriter<'w>,
+        writer: &mut PagedWriter<'_, '_>,
         max_order: Option<usize>,
     ) -> Result<Vec<ModificationResult<UnversionedByIdIndex<Index, ArcBytes<'static>>>>, Error>
     {
@@ -100,7 +100,7 @@ where
                     |key: &ArcBytes<'_>,
                      value: Option<&ArcBytes<'static>>,
                      _existing_index,
-                     writer: &mut PagedWriter<'_>| {
+                     writer: &mut PagedWriter<'_, '_>| {
                         if let Some(value) = value {
                             let position = writer.write_chunk_cached(value.clone())?;
                             // write_chunk errors if it can't fit within a u32
@@ -188,7 +188,7 @@ where
 
     fn serialize(
         &mut self,
-        paged_writer: &mut PagedWriter<'_>,
+        paged_writer: &mut PagedWriter<'_, '_>,
         output: &mut Vec<u8>,
     ) -> Result<(), Error> {
         output.write_u64::<BigEndian>(
@@ -237,7 +237,7 @@ where
     fn modify(
         &mut self,
         modification: Modification<'_, ArcBytes<'static>, Self::Index>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
         max_order: Option<usize>,
     ) -> Result<Vec<ModificationResult<Self::Index>>, Error> {
         let transaction_id = modification.persistence_mode.transaction_id();
@@ -312,7 +312,7 @@ where
         include_nodes: bool,
         file: &mut dyn File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error> {
         let mut scratch = Vec::new();

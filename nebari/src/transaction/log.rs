@@ -938,7 +938,7 @@ mod tests {
             vault,
             cache,
         };
-        let manager = TransactionManager::spawn(&temp_dir, context).unwrap();
+        let manager = TransactionManager::spawn(&temp_dir, context, None).unwrap();
         assert_eq!(manager.current_transaction_id(), None);
         assert_eq!(manager.len(), 0);
         assert!(manager.is_empty());
@@ -949,7 +949,7 @@ mod tests {
             handles.push(std::thread::spawn(move || {
                 for id in 0_u32..1_000 {
                     let tx = manager.new_transaction([&id.to_be_bytes()[..]]);
-                    tx.commit().unwrap();
+                    tx.commit(Vec::new()).unwrap();
                 }
             }));
         }
@@ -1031,7 +1031,7 @@ mod tests {
             vault,
             cache,
         };
-        let manager = TransactionManager::spawn(&temp_dir, context).unwrap();
+        let manager = TransactionManager::spawn(&temp_dir, context, None).unwrap();
         let mut rng = Pcg64::new_seed(1);
 
         for batch in 1..=100_u8 {
@@ -1062,7 +1062,7 @@ mod tests {
                     let (handle_index, handle) = handle_receiver.recv().unwrap();
                     if should_commit_handles[handle_index] {
                         println!("Committing handle {}", handle.id);
-                        handle.commit().unwrap();
+                        handle.commit(Vec::new()).unwrap();
                     } else {
                         println!("Dropping handle {}", handle.id);
                         handle.rollback();

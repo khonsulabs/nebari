@@ -69,6 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it was returning the last transaction ID that the log file had allocated, but
   the transaction ID returned may not have been committed. Now the ID returned
   is guaranteed to be the last ID written to the log.
+- `Tree::current_sequence_id()` now returns the current sequence ID from the
+  currently published Read state rather than the Write state.
 
 ### Changed
 

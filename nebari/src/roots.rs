@@ -1442,7 +1442,7 @@ where
     /// Returns the latest sequence id.
     #[must_use]
     pub fn current_sequence_id(&self) -> SequenceId {
-        let state = self.state.lock();
+        let state = self.state.read();
         state.root.sequence
     }
 

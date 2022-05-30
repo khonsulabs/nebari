@@ -341,17 +341,26 @@ impl<File: ManagedFile> ExecutingTransaction<File> {
         // Write the trees to disk
         let trees = self.roots.data.thread_pool.commit_trees(trees)?;
 
-        // Push the transaction to the log.
-        let transaction = self.transaction.take().unwrap();
-        let tree_locks = transaction.commit()?;
-
-        // Publish the tree states, now that the transaction has been fully recorded
+        // Gather the current write state, which we will use to publish after
+        // the transaction is written.
+        let mut tree_states = Vec::with_capacity(trees.len());
         for tree in trees {
-            tree.state().publish();
+            tree_states.push((tree.state().begin_commit(), tree));
         }
 
-        // Release the locks for the trees, allowing a new transaction to begin.
-        drop(tree_locks);
+        // Push the transaction to the log. This releases other writers to this
+        // tree. This is safe to do because we have a copy of the
+        // currently-being-written tree state.
+        let transaction = self.transaction.take().unwrap();
+        transaction.commit()?;
+
+        // Publish the tree states, now that the transaction has been fully
+        // recorded. finish_commit handles the edge case where we receive our
+        // commit notification after another transaction that was batched
+        // together but happened after this state in sequence.
+        for (guard, tree) in tree_states {
+            tree.state().finish_commit(guard);
+        }
 
         Ok(())
     }
@@ -1900,7 +1909,7 @@ mod tests {
         const WORKER_COUNT: usize = 4;
         let tempdir = tempdir().unwrap();
 
-        let roots = Config::new(tempdir.path())
+        let roots = Config::new(dbg!(tempdir.path()))
             .file_manager(file_manager)
             .open()
             .unwrap();

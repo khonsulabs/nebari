@@ -61,7 +61,7 @@ use std::{
 
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use crc::{Crc, CRC_32_BZIP2};
-use parking_lot::MutexGuard;
+use parking_lot::{MutexGuard, RwLockWriteGuard};
 
 use crate::{
     chunk_cache::CacheEntry,
@@ -1275,15 +1275,13 @@ where
             true,
         )?;
 
-        // Close any existing handles to the file. This ensures that once we
-        // save the tree, new requests to the file manager will point to the new
-        // file.
+        let read_state = self.state.lock_read();
 
         Ok((
             new_file,
             TreeCompactionFinisher {
                 write_state,
-                state: self.state,
+                read_state,
                 _transaction: transaction,
             },
         ))
@@ -1291,15 +1289,15 @@ where
 }
 
 struct TreeCompactionFinisher<'a, Root: root::Root, Manager: FileManager> {
-    state: &'a State<Root>,
     write_state: MutexGuard<'a, ActiveState<Root>>,
+    read_state: RwLockWriteGuard<'a, Arc<ActiveState<Root>>>,
     _transaction: Option<ManagedTransaction<Manager>>,
 }
 
 impl<'a, Root: root::Root, Manager: FileManager> TreeCompactionFinisher<'a, Root, Manager> {
     fn finish(mut self, new_file_id: u64) {
         self.write_state.file_id = Some(new_file_id);
-        self.write_state.publish(self.state);
+        *self.read_state = Arc::new(self.write_state.clone());
         drop(self);
     }
 }
@@ -2785,22 +2783,22 @@ mod tests {
 
     #[test]
     fn std_compact_versioned() {
-        compact::<Versioned, _>("versioned", StdFileManager::default());
+        compact::<Versioned, _>("std-versioned", StdFileManager::default());
     }
 
     #[test]
     fn std_compact_unversioned() {
-        compact::<Unversioned, _>("unversioned", StdFileManager::default());
+        compact::<Unversioned, _>("std-unversioned", StdFileManager::default());
     }
 
     #[test]
     fn memory_compact_versioned() {
-        compact::<Versioned, _>("versioned", MemoryFileManager::default());
+        compact::<Versioned, _>("memory-versioned", MemoryFileManager::default());
     }
 
     #[test]
     fn memory_compact_unversioned() {
-        compact::<Unversioned, _>("unversioned", MemoryFileManager::default());
+        compact::<Unversioned, _>("memory-unversioned", MemoryFileManager::default());
     }
 
     #[test]

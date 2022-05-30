@@ -1,6 +1,6 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{any::Any, fmt::Debug, sync::Arc};
 
-use parking_lot::{Mutex, MutexGuard, RwLock};
+use parking_lot::{Mutex, MutexGuard, RwLock, RwLockWriteGuard};
 
 use crate::chunk_cache::AnySendSync;
 
@@ -53,11 +53,21 @@ where
         self.writer.lock()
     }
 
+    /// Locks the read state for writing.
+    pub(crate) fn lock_read(&self) -> RwLockWriteGuard<'_, Arc<ActiveState<Root>>> {
+        self.reader.write()
+    }
+
     /// Reads the current state.
     #[must_use]
     pub fn read(&self) -> Arc<ActiveState<Root>> {
         let reader = self.reader.read();
         reader.clone()
+    }
+
+    pub(crate) fn begin_commit(&self) -> ActiveState<Root> {
+        let writer = self.writer.lock();
+        writer.clone()
     }
 }
 
@@ -72,7 +82,8 @@ where
 
 pub trait AnyTreeState: AnySendSync + Debug {
     fn cloned(&self) -> Box<dyn AnyTreeState>;
-    fn publish(&self);
+    fn finish_commit(&self, guard: CommitStateGuard);
+    fn begin_commit(&self) -> CommitStateGuard;
 }
 
 impl<Root: super::Root> AnyTreeState for State<Root> {
@@ -80,11 +91,20 @@ impl<Root: super::Root> AnyTreeState for State<Root> {
         Box::new(self.clone())
     }
 
-    fn publish(&self) {
-        let state = self.lock();
+    fn finish_commit(&self, guard: CommitStateGuard) {
+        let state = guard
+            .0
+            .downcast_ref::<ActiveState<Root>>()
+            .expect("wrong type");
         state.publish(self);
     }
+
+    fn begin_commit(&self) -> CommitStateGuard {
+        CommitStateGuard(Box::new(self.begin_commit()))
+    }
 }
+
+pub struct CommitStateGuard(Box<dyn Any>);
 
 /// An active state for a tree file.
 #[derive(Clone, Debug, Default)]
@@ -113,7 +133,15 @@ where
 
     pub(crate) fn publish(&self, state: &State<Root>) {
         let mut reader = state.reader.write();
-        *reader = Arc::new(self.clone());
+        // Multiple transactions may be batched together, and the threads may
+        // wake up in different orders than the transactions were applied. So,
+        // we must check that the state being published isn't outdated by an
+        // already published state.
+        if !reader.root.transaction_id().valid()
+            || reader.root.transaction_id() < self.root.transaction_id()
+        {
+            *reader = Arc::new(self.clone());
+        }
     }
 
     pub(crate) fn rollback(&mut self, state: &State<Root>) {

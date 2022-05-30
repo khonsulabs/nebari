@@ -70,8 +70,15 @@ where
 
     /// Push `transaction` to the log. Once this function returns, the
     /// transaction log entry has been fully flushed to disk.
-    fn push(&self, transaction: TransactionHandle) -> Result<TreeLocks, Error> {
+    fn push(&self, transaction: TransactionHandle) -> Result<(), Error> {
         let (completion_sender, completion_receiver) = flume::bounded(1);
+        let TransactionHandle {
+            transaction,
+            locked_trees,
+        } = transaction;
+        // This allows the trees to begin being modified while the commit
+        // happens.
+        drop(locked_trees);
         self.transaction_sender
             .send(ThreadCommand::Commit {
                 transaction,
@@ -165,8 +172,8 @@ impl<Manager: FileManager> Deref for TransactionManager<Manager> {
 
 enum ThreadCommand {
     Commit {
-        transaction: TransactionHandle,
-        completion_sender: flume::Sender<TreeLocks>,
+        transaction: LogEntry<'static>,
+        completion_sender: flume::Sender<()>,
     },
     Drop(TransactionId),
 }
@@ -178,7 +185,7 @@ struct ManagerThread<Manager: FileManager> {
     pending_transaction_ids: IdSequence,
     last_processed_id: TransactionId,
     transaction_batch: Vec<LogEntry<'static>>,
-    completion_senders: Vec<(flume::Sender<Vec<TreeLockHandle>>, Vec<TreeLockHandle>)>,
+    completion_senders: Vec<flume::Sender<()>>,
 }
 
 enum ThreadState {
@@ -239,11 +246,7 @@ impl<Manager: FileManager> ManagerThread<Manager> {
             Ok(command) => {
                 match command {
                     ThreadCommand::Commit {
-                        transaction:
-                            TransactionHandle {
-                                transaction,
-                                locked_trees,
-                            },
+                        transaction,
                         completion_sender,
                     } => {
                         self.pending_transaction_ids.note(transaction.id);
@@ -257,8 +260,7 @@ impl<Manager: FileManager> ManagerThread<Manager> {
                         }
 
                         self.transaction_batch.push(transaction);
-                        self.completion_senders
-                            .push((completion_sender, locked_trees));
+                        self.completion_senders.push(completion_sender);
                     }
                     ThreadCommand::Drop(id) => {
                         self.mark_transaction_handled(id);
@@ -282,19 +284,14 @@ impl<Manager: FileManager> ManagerThread<Manager> {
             Ok(command) => {
                 match command {
                     ThreadCommand::Commit {
-                        transaction:
-                            TransactionHandle {
-                                transaction,
-                                locked_trees,
-                            },
+                        transaction,
                         completion_sender,
                     } => {
                         // Ensure this transaction can be batched. If not,
                         // commit and enqueue it.
                         self.note_potentially_sequntial_id(transaction.id);
                         self.transaction_batch.push(transaction);
-                        self.completion_senders
-                            .push((completion_sender, locked_trees));
+                        self.completion_senders.push(completion_sender);
                     }
                     ThreadCommand::Drop(id) => {
                         self.note_potentially_sequntial_id(id);
@@ -330,17 +327,12 @@ impl<Manager: FileManager> ManagerThread<Manager> {
             Ok(command) => {
                 match command {
                     ThreadCommand::Commit {
-                        transaction:
-                            TransactionHandle {
-                                transaction,
-                                locked_trees,
-                            },
+                        transaction,
                         completion_sender,
                     } => {
                         let transaction_id = transaction.id;
                         self.transaction_batch.push(transaction);
-                        self.completion_senders
-                            .push((completion_sender, locked_trees));
+                        self.completion_senders.push(completion_sender);
                         self.mark_transaction_handled(transaction_id);
                     }
                     ThreadCommand::Drop(id) => {
@@ -360,8 +352,8 @@ impl<Manager: FileManager> ManagerThread<Manager> {
         self.last_processed_id = transaction_batch.last().unwrap().id;
         self.state = ThreadState::Fresh;
         self.log.push(transaction_batch).unwrap();
-        for (completion_sender, tree_locks) in self.completion_senders.drain(..) {
-            drop(completion_sender.send(tree_locks));
+        for completion_sender in self.completion_senders.drain(..) {
+            let _ = completion_sender.send(());
         }
     }
 }
@@ -383,7 +375,7 @@ impl<Manager: FileManager> ManagedTransaction<Manager> {
     /// Commits the transaction to the transaction manager that created this
     /// transaction.
     #[allow(clippy::missing_panics_doc)] // Should be unreachable
-    pub fn commit(mut self) -> Result<TreeLocks, Error> {
+    pub fn commit(mut self) -> Result<(), Error> {
         let transaction = self.transaction.take().unwrap();
         self.manager.push(transaction)
     }

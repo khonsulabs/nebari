@@ -1,4 +1,4 @@
-use std::{any::Any, fmt::Debug, sync::Arc};
+use std::{fmt::Debug, sync::Arc};
 
 use parking_lot::{Mutex, MutexGuard, RwLock, RwLockWriteGuard};
 
@@ -64,11 +64,6 @@ where
         let reader = self.reader.read();
         reader.clone()
     }
-
-    pub(crate) fn begin_commit(&self) -> ActiveState<Root> {
-        let writer = self.writer.lock();
-        writer.clone()
-    }
 }
 
 impl<Root> Default for State<Root>
@@ -83,7 +78,6 @@ where
 pub trait AnyTreeState: AnySendSync + Debug {
     fn cloned(&self) -> Box<dyn AnyTreeState>;
     fn finish_commit(&self, guard: CommitStateGuard);
-    fn begin_commit(&self) -> CommitStateGuard;
 }
 
 impl<Root: super::Root> AnyTreeState for State<Root> {
@@ -94,17 +88,15 @@ impl<Root: super::Root> AnyTreeState for State<Root> {
     fn finish_commit(&self, guard: CommitStateGuard) {
         let state = guard
             .0
+            .as_ref()
+            .as_any()
             .downcast_ref::<ActiveState<Root>>()
             .expect("wrong type");
         state.publish(self);
     }
-
-    fn begin_commit(&self) -> CommitStateGuard {
-        CommitStateGuard(Box::new(self.begin_commit()))
-    }
 }
 
-pub struct CommitStateGuard(Box<dyn Any>);
+pub struct CommitStateGuard(pub Box<dyn AnySendSync>);
 
 /// An active state for a tree file.
 #[derive(Clone, Debug, Default)]

@@ -53,7 +53,7 @@ where
     fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_>,
+        _paged_writer: &mut PagedWriter<'_, '_>,
     ) -> Result<usize, Error> {
         writer.write_u64::<BigEndian>(self.sequence_id.0)?;
         writer.write_u32::<BigEndian>(self.value_length)?;
@@ -122,7 +122,7 @@ where
     fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_>,
+        _paged_writer: &mut PagedWriter<'_, '_>,
     ) -> Result<usize, Error> {
         writer.write_u32::<BigEndian>(self.value_length)?;
         writer.write_u64::<BigEndian>(self.position)?;
@@ -180,7 +180,7 @@ where
     fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_>,
+        _paged_writer: &mut PagedWriter<'_, '_>,
     ) -> Result<usize, Error> {
         writer.write_u64::<BigEndian>(self.alive_keys)?;
         writer.write_u64::<BigEndian>(self.deleted_keys)?;

@@ -8,7 +8,7 @@ pub trait BinarySerialization: Send + Sync + Sized {
     fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        paged_writer: &mut PagedWriter<'_>,
+        paged_writer: &mut PagedWriter<'_, '_>,
     ) -> Result<usize, Error>;
 
     /// Deserialize an instance from `reader`. If an allocation of nodes is
@@ -24,7 +24,7 @@ impl BinarySerialization for () {
     fn serialize_to(
         &mut self,
         _writer: &mut Vec<u8>,
-        _paged_writer: &mut PagedWriter<'_>,
+        _paged_writer: &mut PagedWriter<'_, '_>,
     ) -> Result<usize, Error> {
         Ok(0)
     }

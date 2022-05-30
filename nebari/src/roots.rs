@@ -21,7 +21,9 @@ use crate::{
     context::Context,
     error::Error,
     io::{fs::StdFileManager, FileManager, ManagedFile, PathId},
-    transaction::{LogEntry, ManagedTransaction, TransactionId, TransactionManager},
+    transaction::{
+        CommittedTreeState, LogEntry, ManagedTransaction, TransactionId, TransactionManager,
+    },
     tree::{
         self,
         root::{AnyReducer, AnyTreeRoot},
@@ -66,7 +68,8 @@ impl<File: ManagedFile> Roots<File> {
             )));
         }
 
-        let transactions = TransactionManager::spawn(&path, context.clone())?;
+        let transactions =
+            TransactionManager::spawn(&path, context.clone(), Some(thread_pool.clone()))?;
         Ok(Self {
             data: Arc::new(Data {
                 context,
@@ -339,28 +342,13 @@ impl<File: ManagedFile> ExecutingTransaction<File> {
     pub fn commit(mut self) -> Result<(), Error> {
         let trees = std::mem::take(&mut self.trees);
         // Write the trees to disk
-        let trees = self.roots.data.thread_pool.commit_trees(trees)?;
-
-        // Gather the current write state, which we will use to publish after
-        // the transaction is written.
-        let mut tree_states = Vec::with_capacity(trees.len());
-        for tree in trees {
-            tree_states.push((tree.state().begin_commit(), tree));
-        }
+        let commit_states = self.roots.data.thread_pool.commit_trees(trees)?;
 
         // Push the transaction to the log. This releases other writers to this
-        // tree. This is safe to do because we have a copy of the
-        // currently-being-written tree state.
+        // tree. The transaction manager will publish the new state of each tree
+        // once the transaction is confirmed.
         let transaction = self.transaction.take().unwrap();
-        transaction.commit()?;
-
-        // Publish the tree states, now that the transaction has been fully
-        // recorded. finish_commit handles the edge case where we receive our
-        // commit notification after another transaction that was batched
-        // together but happened after this state in sequence.
-        for (guard, tree) in tree_states {
-            tree.state().finish_commit(guard);
-        }
+        transaction.commit(commit_states)?;
 
         Ok(())
     }
@@ -418,7 +406,7 @@ pub trait AnyTransactionTree<File: ManagedFile>: Any + Send + Sync {
 
     fn state(&self) -> Box<dyn AnyTreeState>;
 
-    fn commit(&mut self) -> Result<(), Error>;
+    fn commit(&mut self) -> Result<Option<CommittedTreeState>, Error>;
     fn rollback(&self);
 }
 
@@ -434,8 +422,8 @@ impl<Root: tree::Root, File: ManagedFile> AnyTransactionTree<File> for Transacti
         Box::new(self.tree.state.clone())
     }
 
-    fn commit(&mut self) -> Result<(), Error> {
-        self.tree.commit()
+    fn commit(&mut self) -> Result<Option<CommittedTreeState>, Error> {
+        self.tree.begin_commit()
     }
 
     fn rollback(&self) {
@@ -1597,8 +1585,8 @@ pub struct ThreadPool<File>
 where
     File: ManagedFile,
 {
-    sender: flume::Sender<ThreadCommit<File>>,
-    receiver: flume::Receiver<ThreadCommit<File>>,
+    sender: flume::Sender<ThreadCommand<File>>,
+    receiver: flume::Receiver<ThreadCommand<File>>,
     thread_count: Arc<AtomicU16>,
     maximum_threads: usize,
 }
@@ -1620,60 +1608,99 @@ impl<File: ManagedFile> ThreadPool<File> {
     fn commit_trees(
         &self,
         trees: Vec<UnlockedTransactionTree<File>>,
-    ) -> Result<Vec<Box<dyn AnyTransactionTree<File>>>, Error> {
+    ) -> Result<Vec<CommittedTreeState>, Error> {
         // If we only have one tree, there's no reason to split IO across
         // threads. If we have multiple trees, we should split even with one
         // cpu: if one thread blocks, the other can continue executing.
+        let mut committed_trees = Vec::default();
         if trees.len() == 1 {
-            let mut tree = trees.into_iter().next().unwrap().0.into_inner();
-            tree.commit()?;
-            Ok(vec![tree])
+            let mut tree = trees[0].0.lock();
+            if let Some(committed) = tree.commit()? {
+                committed_trees.push(committed);
+            }
         } else {
             // Push the trees so that any existing threads can begin processing the queue.
             let (completion_sender, completion_receiver) = flume::unbounded();
             let tree_count = trees.len();
             for tree in trees {
-                self.sender.send(ThreadCommit {
-                    tree: tree.0.into_inner(),
+                self.sender.send(ThreadCommand::Commit(ThreadCommit {
+                    tree,
                     completion_sender: completion_sender.clone(),
-                })?;
+                }))?;
             }
 
-            // Scale the queue if needed.
-            let desired_threads = tree_count.min(self.maximum_threads);
-            loop {
-                let thread_count = self.thread_count.load(Ordering::SeqCst);
-                if (thread_count as usize) >= desired_threads {
-                    break;
-                }
-
-                // Spawn a thread, but ensure that we don't spin up too many threads if another thread is committing at the same time.
-                if self
-                    .thread_count
-                    .compare_exchange(
-                        thread_count,
-                        thread_count + 1,
-                        Ordering::SeqCst,
-                        Ordering::SeqCst,
-                    )
-                    .is_ok()
-                {
-                    let commit_receiver = self.receiver.clone();
-                    std::thread::Builder::new()
-                        .name(String::from("roots-txwriter"))
-                        .spawn(move || transaction_commit_thread(commit_receiver))
-                        .unwrap();
-                }
-            }
+            self.spawn_threads_if_needed(tree_count);
 
             // Wait for our results
-            let mut results = Vec::with_capacity(tree_count);
             for _ in 0..tree_count {
-                results.push(completion_receiver.recv()??);
+                if let Some(committed_state) = completion_receiver.recv()?? {
+                    committed_trees.push(committed_state);
+                }
+            }
+        }
+
+        Ok(committed_trees)
+    }
+
+    fn spawn_threads_if_needed(&self, new_count: usize) {
+        let desired_threads = new_count.min(self.maximum_threads);
+        loop {
+            let thread_count = self.thread_count.load(Ordering::SeqCst);
+            if (thread_count as usize) >= desired_threads {
+                break;
             }
 
-            Ok(results)
+            // Spawn a thread, but ensure that we don't spin up too many threads
+            // if another thread is committing at the same time.
+            if self
+                .thread_count
+                .compare_exchange(
+                    thread_count,
+                    thread_count + 1,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_ok()
+            {
+                let commit_receiver = self.receiver.clone();
+                std::thread::Builder::new()
+                    .name(String::from("roots-txwriter"))
+                    .spawn(move || thread_pool_worker(commit_receiver))
+                    .unwrap();
+            }
         }
+    }
+
+    pub(crate) fn synchronize_paths<Paths: Iterator<Item = PathId>>(
+        &self,
+        paths: Paths,
+        manager: &File::Manager,
+    ) -> Result<(), Error> {
+        let (completion_sender, completion_receiver) = flume::unbounded();
+        let mut sync_count = 0;
+        for path in paths {
+            sync_count += 1;
+            self.sender.send(ThreadCommand::Sync(ThreadSync {
+                path,
+                manager: manager.clone(),
+                completion_sender: completion_sender.clone(),
+            }))?;
+        }
+
+        self.spawn_threads_if_needed(sync_count);
+
+        for _ in 0..sync_count {
+            completion_receiver.recv()??;
+        }
+
+        Ok(())
+    }
+}
+
+impl<File: ManagedFile> Default for ThreadPool<File> {
+    fn default() -> Self {
+        static CPU_COUNT: Lazy<usize> = Lazy::new(num_cpus::get);
+        Self::new(*CPU_COUNT)
     }
 }
 
@@ -1688,32 +1715,50 @@ impl<File: ManagedFile> Clone for ThreadPool<File> {
     }
 }
 
-impl<File: ManagedFile> Default for ThreadPool<File> {
-    fn default() -> Self {
-        static CPU_COUNT: Lazy<usize> = Lazy::new(num_cpus::get);
-        Self::new(*CPU_COUNT)
+#[allow(clippy::needless_pass_by_value)]
+fn thread_pool_worker<File: ManagedFile>(receiver: flume::Receiver<ThreadCommand<File>>) {
+    while let Ok(command) = receiver.recv() {
+        match command {
+            ThreadCommand::Commit(ThreadCommit {
+                tree,
+                completion_sender,
+            }) => {
+                let mut locked = tree.0.lock();
+                let result = locked.commit();
+                drop(completion_sender.send(result));
+            }
+            ThreadCommand::Sync(ThreadSync {
+                path,
+                manager,
+                completion_sender,
+            }) => drop(completion_sender.send(manager.synchronize(path))),
+        }
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
-fn transaction_commit_thread<File: ManagedFile>(receiver: flume::Receiver<ThreadCommit<File>>) {
-    while let Ok(ThreadCommit {
-        mut tree,
-        completion_sender,
-    }) = receiver.recv()
-    {
-        let result = tree.commit();
-        let result = result.map(move |_| tree);
-        drop(completion_sender.send(result));
-    }
+enum ThreadCommand<File>
+where
+    File: ManagedFile,
+{
+    Commit(ThreadCommit<File>),
+    Sync(ThreadSync<File>),
 }
 
 struct ThreadCommit<File>
 where
     File: ManagedFile,
 {
-    tree: Box<dyn AnyTransactionTree<File>>,
-    completion_sender: Sender<Result<Box<dyn AnyTransactionTree<File>>, Error>>,
+    tree: UnlockedTransactionTree<File>,
+    completion_sender: Sender<Result<Option<CommittedTreeState>, Error>>,
+}
+
+struct ThreadSync<File>
+where
+    File: ManagedFile,
+{
+    path: PathId,
+    manager: File::Manager,
+    completion_sender: Sender<Result<(), Error>>,
 }
 
 fn catch_compaction_and_retry<R, F: Fn() -> Result<R, Error>>(func: F) -> Result<R, Error> {

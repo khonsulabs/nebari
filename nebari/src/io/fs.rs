@@ -221,6 +221,12 @@ impl FileManager for StdFileManager {
         Ok(path.path().exists())
     }
 
+    fn synchronize(&self, path: impl AsRef<Path>) -> Result<(), crate::Error> {
+        let file = File::open(path)?;
+        file.sync_all()?;
+        Ok(())
+    }
+
     fn close_handles<F: FnOnce(PathId)>(&self, path: impl IntoPathId, publish_callback: F) {
         if let Some(result) = self.file_ids.recreate_file_id_for_path(path) {
             let mut open_files = self.open_files.lock();

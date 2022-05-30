@@ -120,10 +120,10 @@ where
         &ArcBytes<'_>,
         Option<&Value>,
         Option<&Index>,
-        &mut PagedWriter<'_>,
+        &mut PagedWriter<'_, '_>,
     ) -> Result<KeyOperation<Index>, Error>,
     IndexReducer: Reducer<Index, ReducedIndex>,
-    Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<Value>, Error>,
+    Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<Value>, Error>,
 {
     /// The maximum number of children allowed per node.
     pub current_order: usize,
@@ -158,10 +158,10 @@ where
         &ArcBytes<'_>,
         Option<&Value>,
         Option<&Index>,
-        &mut PagedWriter<'_>,
+        &mut PagedWriter<'_, '_>,
     ) -> Result<KeyOperation<Index>, Error>,
     IndexReducer: Reducer<Index, ReducedIndex>,
-    Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<Value>, Error>,
+    Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<Value>, Error>,
 {
     /// Returns a new context.
     pub fn new(
@@ -223,17 +223,17 @@ where
             IndexReducer,
         >,
         max_key: Option<&ArcBytes<'_>>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<ChangeResult, Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         match &mut self.node {
             BTreeNode::Leaf(children) => {
@@ -316,17 +316,17 @@ where
             IndexReducer,
         >,
         max_key: Option<&ArcBytes<'_>>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<bool, Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut last_index = 0;
         let mut any_changes = false;
@@ -461,17 +461,17 @@ where
             IndexReducer,
         >,
         max_key: Option<&ArcBytes<'_>>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<ChangeResult, Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut last_index = 0;
         let mut any_changes = false;
@@ -562,17 +562,17 @@ where
             Loader,
             IndexReducer,
         >,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         let can_absorb = children.len() > 1;
         match (result, can_absorb) {
@@ -609,17 +609,17 @@ where
             Loader,
             IndexReducer,
         >,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         let (insert_on_top, sponge_index) = if child_index > 0 {
             (true, child_index - 1)
@@ -681,17 +681,17 @@ where
             Loader,
             IndexReducer,
         >,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut should_backup = false;
         // Before adding a new node, we want to first try to use neighboring
@@ -758,17 +758,17 @@ where
             Loader,
             IndexReducer,
         >,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut should_backup = false;
         // Check the previous child to see if it can accept any of this child.
@@ -858,17 +858,17 @@ where
             Loader,
             IndexReducer,
         >,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<ChangeResult, Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         // Check the previous child to see if it can accept any of this child.
         children[child_index + 1].position.load(
@@ -959,7 +959,7 @@ where
         insert_at_top: bool,
         current_order: usize,
         minimum_children: usize,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<ChangeResult, Error> {
         self.dirty = true;
         match (&mut self.node, children) {
@@ -1398,7 +1398,7 @@ where
         include_nodes: NodeInclusion,
         file: &mut dyn File,
         copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
         scratch: &mut Vec<u8>,
         index_callback: &mut Callback,
@@ -1409,7 +1409,7 @@ where
             &mut Index,
             &mut dyn File,
             &mut HashMap<u64, u64>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
             Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,
     {
@@ -1476,7 +1476,7 @@ impl<
     fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        paged_writer: &mut PagedWriter<'_>,
+        paged_writer: &mut PagedWriter<'_, '_>,
     ) -> Result<usize, Error> {
         self.dirty = false;
         let mut bytes_written = 0;

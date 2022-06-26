@@ -572,14 +572,6 @@ impl DerefMut for TransactionHandle {
     }
 }
 
-/// The state of an updated tree that has been written to disk but has not been
-/// synchronized with the transaction log yet.
-pub struct CommittedTreeState {
-    pub(crate) path_id: PathId,
-    pub(crate) state: Box<dyn AnyTreeState>,
-    pub(crate) committed: CommitStateGuard,
-}
-
 struct IdSequence {
     start: u64,
     length: u64,

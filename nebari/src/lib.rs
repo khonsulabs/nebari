@@ -19,25 +19,28 @@
 #[macro_use]
 pub mod io;
 mod error;
-mod roots;
+// mod roots;
 pub mod transaction;
 pub mod tree;
 mod vault;
 
 mod chunk_cache;
 mod context;
+pub mod storage;
 #[cfg(test)]
 mod test_util;
 
 pub use arc_bytes::ArcBytes;
+pub use sediment;
 
 pub use self::{
     chunk_cache::{CacheEntry, ChunkCache},
     context::Context,
-    error::{Error, ErrorKind, InternalError},
-    roots::{
-        AbortError, CompareAndSwapError, Config, ExecutingTransaction, LockedTransactionTree,
-        Roots, ThreadPool, TransactionTree, Tree, UnlockedTransactionTree,
-    },
+    error::{AbortError, CompareAndSwapError, Error, ErrorKind, InternalError},
     vault::{AnyVault, Vault},
 };
+
+// roots::{
+//     AbortError, CompareAndSwapError, Config, ExecutingTransaction, LockedTransactionTree,
+//     Roots, ThreadPool, TransactionTree, Tree, UnlockedTransactionTree,
+// },

@@ -18,7 +18,7 @@ use super::{
 use crate::{
     chunk_cache::CacheEntry,
     error::Error,
-    io::File,
+    storage::BlobStorage,
     tree::{key_entry::PositionIndex, read_chunk, versioned::Children, ScanEvaluation},
     vault::AnyVault,
     AbortError, ArcBytes, ChunkCache, ErrorKind,
@@ -182,18 +182,18 @@ where
     }
 }
 
-#[cfg(any(debug_assertions, feature = "paranoid"))]
-macro_rules! assert_children_order {
-    ($children:expr) => {
-        assert_eq!(
-            $children
-                .windows(2)
-                .find_map(|w| (w[0].key > w[1].key).then(|| (&w[0].key, &w[1].key))),
-            None
-        );
-    };
-}
-#[cfg(not(any(debug_assertions, feature = "paranoid")))]
+// #[cfg(any(debug_assertions, feature = "paranoid"))]
+// macro_rules! assert_children_order {
+//     ($children:expr) => {
+//         assert_eq!(
+//             $children
+//                 .windows(2)
+//                 .find_map(|w| (w[0].key > w[1].key).then(|| (&w[0].key, &w[1].key))),
+//             None
+//         );
+//     };
+// }
+// #[cfg(not(any(debug_assertions, feature = "paranoid")))]
 macro_rules! assert_children_order {
     ($children:expr) => {};
 }
@@ -1121,7 +1121,7 @@ where
             KeyEvaluator,
             ScanDataCallback,
         >,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
         current_depth: usize,
@@ -1246,7 +1246,7 @@ where
         keys: &mut Keys,
         mut key_evaluator: KeyEvaluator,
         mut key_reader: KeyReader,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
@@ -1307,7 +1307,7 @@ where
         keys: &mut KeyRange<Keys, Bytes>,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, Error>
@@ -1396,7 +1396,7 @@ where
     pub fn copy_data_to<Callback>(
         &mut self,
         include_nodes: NodeInclusion,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
@@ -1407,7 +1407,7 @@ where
         Callback: FnMut(
             &ArcBytes<'static>,
             &mut Index,
-            &mut dyn File,
+            &mut dyn BlobStorage,
             &mut HashMap<u64, u64>,
             &mut PagedWriter<'_, '_>,
             Option<&dyn AnyVault>,

@@ -22,7 +22,6 @@ where
         let state = ActiveState {
             file_id,
             max_order,
-            current_position: 0,
             root,
         };
 
@@ -37,9 +36,8 @@ where
         root.initialize_default();
         let state = ActiveState {
             file_id,
-            max_order,
-            current_position: 0,
             root,
+            max_order,
         };
 
         Self {
@@ -104,8 +102,6 @@ pub struct ActiveState<Root: super::Root> {
     /// The current file id associated with this tree file. Database compaction
     /// will cause the file_id to be changed once the operation succeeds.
     pub file_id: Option<u64>,
-    /// The current location within the file for data to be written.
-    pub current_position: u64,
     /// The root of the B-Tree.
     pub root: Root,
     /// The maximum "order" of the B-Tree. This controls the maximum number of

@@ -35,10 +35,6 @@ impl SimpleBench for InsertBlobs {
         // better to compare roots against sqlite's WAL performance.
         let tempfile = NamedTempFile::new_in(".")?;
         let sqlite = Connection::open(tempfile.path())?;
-        // Sets the journal to what seems to be the most optimal, safe setting
-        // for @ecton. See:
-        // https://www.sqlite.org/pragma.html#pragma_journal_mode
-        sqlite.pragma_update(None, "journal_mode", &"TRUNCATE")?;
         // Sets synchronous to NORMAL, which "should" be safe and provides
         // better performance. See:
         // https://www.sqlite.org/pragma.html#pragma_synchronous

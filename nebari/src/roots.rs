@@ -20,7 +20,7 @@ use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 use crate::{
     context::Context,
     error::Error,
-    io::{fs::StdFileManager, FileManager, ManagedFile, PathId},
+    storage::Storage,
     transaction::{
         CommittedTreeState, LogEntry, ManagedTransaction, TransactionId, TransactionManager,
     },
@@ -38,21 +38,21 @@ use crate::{
 
 /// A multi-tree transactional B-Tree database.
 #[derive(Debug)]
-pub struct Roots<File: ManagedFile> {
+pub struct Roots<File: Storage> {
     data: Arc<Data<File>>,
 }
 
 #[derive(Debug)]
-struct Data<File: ManagedFile> {
+struct Data<File: Storage> {
     context: Context<File::Manager>,
     transactions: TransactionManager<File::Manager>,
     thread_pool: ThreadPool<File>,
     path: PathBuf,
     tree_states: Mutex<HashMap<String, Box<dyn AnyTreeState>>>,
-    tree_paths: Mutex<HashMap<String, PathId>>,
+    // tree_paths: Mutex<HashMap<String, PathId>>,
 }
 
-impl<File: ManagedFile> Roots<File> {
+impl<File: Storage> Roots<File> {
     fn open<P: Into<PathBuf> + Send>(
         path: P,
         context: Context<File::Manager>,
@@ -292,11 +292,11 @@ impl<File: ManagedFile> UnlockedTransactionTree<File> {
 /// A locked transaction tree. This transactional tree is exclusively available
 /// for writing and reading to the thread that locks it.
 #[must_use]
-pub struct LockedTransactionTree<'transaction, Root: tree::Root, File: ManagedFile>(
+pub struct LockedTransactionTree<'transaction, Root: tree::Root, File: Storage>(
     MappedMutexGuard<'transaction, TransactionTree<Root, File>>,
 );
 
-impl<'transaction, Root: tree::Root, File: ManagedFile> Deref
+impl<'transaction, Root: tree::Root, File: Storage> Deref
     for LockedTransactionTree<'transaction, Root, File>
 {
     type Target = TransactionTree<Root, File>;
@@ -394,7 +394,7 @@ impl<File: ManagedFile> Drop for ExecutingTransaction<File> {
 }
 
 /// A tree that is modifiable during a transaction.
-pub struct TransactionTree<Root: tree::Root, File: ManagedFile> {
+pub struct TransactionTree<Root: tree::Root, File: Storage> {
     pub(crate) transaction_id: TransactionId,
     /// The underlying tree file.
     pub tree: TreeFile<Root, File>,
@@ -761,17 +761,6 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
     pub fn last(&mut self) -> Result<Option<(ArcBytes<'static>, Root::Value)>, Error> {
         self.tree.last(true)
     }
-}
-
-/// An error returned from `compare_and_swap()`.
-#[derive(Debug, thiserror::Error)]
-pub enum CompareAndSwapError<Value: Debug> {
-    /// The stored value did not match the conditional value.
-    #[error("value did not match. existing value: {0:?}")]
-    Conflict(Option<Value>),
-    /// Another error occurred while executing the operation.
-    #[error("error during compare_and_swap: {0}")]
-    Error(#[from] Error),
 }
 
 /// A database configuration used to open a database.
@@ -1554,28 +1543,6 @@ where
 
             tree.get_multiple_with_indexes_by_sequence(sequences.clone(), false)
         })
-    }
-}
-
-/// An error that could come from user code or Nebari.
-#[derive(thiserror::Error, Debug)]
-pub enum AbortError<CallerError: Display + Debug = Infallible> {
-    /// An error unrelated to Nebari occurred.
-    #[error("other error: {0}")]
-    Other(CallerError),
-    /// An error from Roots occurred.
-    #[error("database error: {0}")]
-    Nebari(#[from] Error),
-}
-
-impl AbortError<Infallible> {
-    /// Unwraps the error contained within an infallible abort error.
-    #[must_use]
-    pub fn infallible(self) -> Error {
-        match self {
-            AbortError::Other(_) => unreachable!(),
-            AbortError::Nebari(error) => error,
-        }
     }
 }
 

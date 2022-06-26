@@ -17,7 +17,7 @@ use crate::{
     chunk_cache::CacheEntry,
     error::{Error, InternalError},
     io::File,
-    roots::AbortError,
+    storage::BlobStorage,
     transaction::TransactionId,
     tree::{
         btree::{Indexer, KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
@@ -25,7 +25,7 @@ use crate::{
         dynamic_order, BTreeNode, ChangeResult, ModificationResult, PageHeader, Root,
     },
     vault::AnyVault,
-    ArcBytes, ChunkCache, ErrorKind,
+    AbortError, ArcBytes, ChunkCache, ErrorKind,
 };
 
 /// An unversioned tree with no additional indexed data.
@@ -257,7 +257,7 @@ where
         keys: &mut Keys,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
@@ -289,7 +289,7 @@ where
             KeyEvaluator,
             DataCallback,
         >,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
@@ -310,7 +310,7 @@ where
     fn copy_data_to(
         &mut self,
         include_nodes: bool,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,

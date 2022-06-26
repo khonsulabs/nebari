@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::{serialization::BinarySerialization, PagedWriter};
-use crate::{error::Error, io::File, vault::AnyVault, ArcBytes, ErrorKind};
+use crate::{error::Error, storage::BlobStorage, vault::AnyVault, ArcBytes, ErrorKind};
 
 /// An entry for a key. Stores a single index value for a single key.
 #[derive(Debug, Clone)]
@@ -23,7 +23,7 @@ pub trait PositionIndex {
 impl<Index: PositionIndex + BinarySerialization> KeyEntry<Index> {
     pub(crate) fn copy_data_to<Callback>(
         &mut self,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
@@ -33,7 +33,7 @@ impl<Index: PositionIndex + BinarySerialization> KeyEntry<Index> {
         Callback: FnMut(
             &ArcBytes<'static>,
             &mut Index,
-            &mut dyn File,
+            &mut dyn BlobStorage,
             &mut HashMap<u64, u64>,
             &mut PagedWriter<'_, '_>,
             Option<&dyn AnyVault>,

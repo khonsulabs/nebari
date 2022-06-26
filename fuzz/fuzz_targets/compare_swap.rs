@@ -4,20 +4,24 @@ use std::collections::{BTreeMap, BTreeSet};
 use libfuzzer_sys::fuzz_target;
 use nebari::{
     io::{fs::StdFile, FileManager},
+    sediment::io::fs::StdFileManager,
     tree::{
         btree::KeyOperation, CompareSwap, Modification, Operation, PersistenceMode, State,
         TreeFile, Unversioned,
     },
-    ArcBytes, Context,
+    ArcBytes, ChunkCache, Context,
 };
 use tempfile::NamedTempFile;
 
 fuzz_target!(|batches: Vec<BTreeSet<u16>>| {
-    let context = Context::default();
     let file = NamedTempFile::new().unwrap();
-    let mut tree =
-        TreeFile::<Unversioned, StdFile>::write(file.as_ref(), State::default(), &context, None)
-            .unwrap();
+    let mut tree = TreeFile::<Unversioned, _>::open(
+        file.as_ref(),
+        State::default(),
+        &StdFileManager::default(),
+        Some(ChunkCache::new(2000, 4096)),
+    )
+    .unwrap();
 
     let mut oracle = BTreeMap::new();
     let ops = batches.iter().map(|b| b.len()).sum::<usize>();

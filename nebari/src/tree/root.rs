@@ -10,16 +10,20 @@ use std::{
 
 use crate::{
     error::Error,
-    io::{File, ManagedFile, PathId},
-    roots::AnyTransactionTree,
-    transaction::{TransactionId, TransactionManager},
+    io::{ManagedFile, PathId},
+    storage::BlobStorage,
+    transaction::TransactionId,
     tree::{
         btree::ScanArgs, state::AnyTreeState, Modification, ModificationResult, PageHeader,
         PagedWriter, Reducer, ScanEvaluation, State, TreeFile,
     },
     vault::AnyVault,
-    AbortError, ArcBytes, ChunkCache, Context, TransactionTree, Vault,
+    AbortError, ArcBytes, ChunkCache, Context, Vault,
 };
+
+// roots::AnyTransactionTree,
+// transaction::{TransactionId, TransactionManager},
+// TransactionTree
 
 /// A B-Tree root implementation.
 pub trait Root: Debug + Send + Sync + Clone + 'static {
@@ -114,7 +118,7 @@ pub trait Root: Debug + Send + Sync + Clone + 'static {
         keys: &mut Keys,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
@@ -146,7 +150,7 @@ pub trait Root: Debug + Send + Sync + Clone + 'static {
             KeyEvaluator,
             ScanDataCallback,
         >,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
@@ -165,7 +169,7 @@ pub trait Root: Debug + Send + Sync + Clone + 'static {
     fn copy_data_to(
         &mut self,
         include_nodes: bool,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
@@ -223,15 +227,15 @@ pub trait AnyTreeRoot<File: ManagedFile> {
     fn name(&self) -> &str;
     /// The default state for the underlying root type.
     fn default_state(&self) -> Box<dyn AnyTreeState>;
-    /// Begins a transaction on this tree.
-    fn begin_transaction(
-        &self,
-        transaction_id: TransactionId,
-        file_path: &PathId,
-        state: &dyn AnyTreeState,
-        context: &Context<File::Manager>,
-        transactions: Option<&TransactionManager<File::Manager>>,
-    ) -> Result<Box<dyn AnyTransactionTree<File>>, Error>;
+    // /// Begins a transaction on this tree.
+    // fn begin_transaction(
+    //     &self,
+    //     transaction_id: TransactionId,
+    //     file_path: &PathId,
+    //     state: &dyn AnyTreeState,
+    //     context: &Context<File::Manager>,
+    //     transactions: Option<&TransactionManager<File::Manager>>,
+    // ) -> Result<Box<dyn AnyTransactionTree<File>>, Error>;
 }
 
 impl<R: Root, File: ManagedFile> AnyTreeRoot<File> for TreeRoot<R, File> {
@@ -254,28 +258,28 @@ impl<R: Root, File: ManagedFile> AnyTreeRoot<File> for TreeRoot<R, File> {
         ))
     }
 
-    fn begin_transaction(
-        &self,
-        transaction_id: TransactionId,
-        file_path: &PathId,
-        state: &dyn AnyTreeState,
-        context: &Context<File::Manager>,
-        transactions: Option<&TransactionManager<File::Manager>>,
-    ) -> Result<Box<dyn AnyTransactionTree<File>>, Error> {
-        let context = self.vault.as_ref().map_or_else(
-            || Cow::Borrowed(context),
-            |vault| Cow::Owned(context.clone().with_any_vault(vault.clone())),
-        );
-        let tree = TreeFile::write(
-            file_path,
-            state.as_any().downcast_ref::<State<R>>().unwrap().clone(),
-            &context,
-            transactions,
-        )?;
+    // fn begin_transaction(
+    //     &self,
+    //     transaction_id: TransactionId,
+    //     file_path: &PathId,
+    //     state: &dyn AnyTreeState,
+    //     context: &Context<File::Manager>,
+    //     transactions: Option<&TransactionManager<File::Manager>>,
+    // ) -> Result<Box<dyn AnyTransactionTree<File>>, Error> {
+    //     let context = self.vault.as_ref().map_or_else(
+    //         || Cow::Borrowed(context),
+    //         |vault| Cow::Owned(context.clone().with_any_vault(vault.clone())),
+    //     );
+    //     let tree = TreeFile::write(
+    //         file_path,
+    //         state.as_any().downcast_ref::<State<R>>().unwrap().clone(),
+    //         &context,
+    //         transactions,
+    //     )?;
 
-        Ok(Box::new(TransactionTree {
-            transaction_id,
-            tree,
-        }))
-    }
+    //     Ok(Box::new(TransactionTree {
+    //         transaction_id,
+    //         tree,
+    //     }))
+    // }
 }

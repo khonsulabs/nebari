@@ -8,8 +8,6 @@ use backtrace::Backtrace;
 use parking_lot::{Mutex, MutexGuard};
 use thiserror::Error;
 
-use crate::AbortError;
-
 /// An error from Nebari as well as an associated backtrace.
 pub struct Error {
     /// The error that occurred.
@@ -292,4 +290,37 @@ pub enum InternalError {
     /// An unexpected byte length was encountered.
     #[error("an unexpected byte length was encountered")]
     IncorrectByteLength,
+}
+
+/// An error that could come from user code or Nebari.
+#[derive(thiserror::Error, Debug)]
+pub enum AbortError<CallerError: Display + Debug = Infallible> {
+    /// An error unrelated to Nebari occurred.
+    #[error("other error: {0}")]
+    Other(CallerError),
+    /// An error from Roots occurred.
+    #[error("database error: {0}")]
+    Nebari(#[from] Error),
+}
+
+impl AbortError<Infallible> {
+    /// Unwraps the error contained within an infallible abort error.
+    #[must_use]
+    pub fn infallible(self) -> Error {
+        match self {
+            AbortError::Other(_) => unreachable!(),
+            AbortError::Nebari(error) => error,
+        }
+    }
+}
+
+/// An error returned from `compare_and_swap()`.
+#[derive(Debug, thiserror::Error)]
+pub enum CompareAndSwapError<Value: Debug> {
+    /// The stored value did not match the conditional value.
+    #[error("value did not match. existing value: {0:?}")]
+    Conflict(Option<Value>),
+    /// Another error occurred while executing the operation.
+    #[error("error during compare_and_swap: {0}")]
+    Error(#[from] Error),
 }

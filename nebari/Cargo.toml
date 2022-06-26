@@ -17,6 +17,7 @@ default = []
 # detect algorithmic problems, and do not help in any way against bit rot or
 # drive related failures.
 paranoid = []
+fbarrier-fsync = ["sediment/fbarrier-fsync"]
 
 [dependencies]
 thiserror = "1.0.30"
@@ -30,8 +31,10 @@ tracing = { version = "0.1.30", optional = true }
 num_cpus = "1.13.1"
 backtrace = "0.3.64"
 arc-bytes = "0.3.5"
+sediment = { path = "../../sediment/sediment" }
 
 [dev-dependencies]
 nanorand = "0.7.0"
 anyhow = "1.0.53"
 tempfile = "3.3.0"
+sediment = { path = "../../sediment/sediment", features = ["fbarrier-fsync"] }

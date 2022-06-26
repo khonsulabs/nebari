@@ -4,12 +4,13 @@ use std::{
 };
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use sediment::format::GrainId;
 
 use super::{btree::BTreeEntry, read_chunk, BinarySerialization, PagedWriter};
 use crate::{
     chunk_cache::CacheEntry,
     error::Error,
-    io::File,
+    storage::BlobStorage,
     tree::{btree::NodeInclusion, key_entry::PositionIndex},
     vault::AnyVault,
     AbortError, ArcBytes, ChunkCache, ErrorKind,
@@ -51,7 +52,7 @@ impl<
     #[allow(clippy::missing_panics_doc)] // Currently the only panic is if the types don't match, which shouldn't happen due to these nodes always being accessed through a root.
     pub fn load(
         &mut self,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         validate_crc: bool,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
@@ -119,11 +120,11 @@ impl<
         CallerError: Display + Debug,
         Cb: FnOnce(
             &BTreeEntry<Index, ReducedIndex>,
-            &mut dyn File,
+            &mut dyn BlobStorage,
         ) -> Result<Output, AbortError<CallerError>>,
     >(
         &self,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
         current_order: Option<usize>,
@@ -135,8 +136,8 @@ impl<
                     let decoded = BTreeEntry::deserialize_from(&mut buffer, current_order)?;
 
                     let result = callback(&decoded, file);
-                    if let (Some(cache), Some(file_id)) = (cache, file.id().id()) {
-                        cache.replace_with_decoded(file_id, *position, Box::new(decoded));
+                    if let Some(cache) = cache {
+                        cache.replace_with_decoded(file.unique_id(), *position, Box::new(decoded));
                     }
                     result
                 }
@@ -180,7 +181,7 @@ impl<
     pub(crate) fn copy_data_to<Callback>(
         &mut self,
         include_nodes: NodeInclusion,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         copied_chunks: &mut HashMap<u64, u64>,
         writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
@@ -191,7 +192,7 @@ impl<
         Callback: FnMut(
             &ArcBytes<'static>,
             &mut Index,
-            &mut dyn File,
+            &mut dyn BlobStorage,
             &mut HashMap<u64, u64>,
             &mut PagedWriter<'_, '_>,
             Option<&dyn AnyVault>,
@@ -254,11 +255,14 @@ impl<
                     let position =
                         paged_writer.write_chunk(&writer[old_writer_length..writer.len()])?;
                     writer.truncate(old_writer_length);
-                    if let (Some(cache), Some(file_id)) =
-                        (paged_writer.cache, paged_writer.id().id())
-                    {
-                        cache.replace_with_decoded(file_id, position, entry);
+                    if let Some(cache) = paged_writer.cache {
+                        cache.replace_with_decoded(paged_writer.unique_id(), position, entry);
                     }
+
+                    if let Some(previous_location) = previous_location {
+                        paged_writer.free(previous_location)?;
+                    }
+
                     position
                 }
                 (false, Some(position)) => position,

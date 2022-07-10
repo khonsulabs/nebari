@@ -21,8 +21,8 @@ where
     pub fn new(file_id: Option<u64>, max_order: Option<usize>, root: Root) -> Self {
         let state = ActiveState {
             file_id,
-            max_order,
             root,
+            max_order,
         };
 
         Self {

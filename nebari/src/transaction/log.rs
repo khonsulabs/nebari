@@ -1,10 +1,5 @@
 use std::{
-    borrow::Cow,
-    cmp::Ordering,
-    fs::OpenOptions,
-    io::{SeekFrom, Write},
-    ops::{Bound, RangeBounds},
-    path::Path,
+    borrow::Cow, cmp::Ordering, collections::BTreeMap, io::Write, ops::RangeBounds, path::Path,
     sync::Arc,
 };
 
@@ -13,93 +8,79 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use super::{State, TransactionHandle};
 use crate::{
     error::Error,
-    io::{File, FileManager, FileOp, ManagedFile, OpenableFile, OperableFile},
+    storage::{sediment::SedimentFile, BlobStorage},
     transaction::TransactionId,
     vault::AnyVault,
-    ArcBytes, Context, ErrorKind,
+    Context, ErrorKind,
 };
 
-const PAGE_SIZE: usize = 1024;
+use sediment::{
+    format::{BatchId, GrainId},
+    io::{self},
+};
 
 /// A transaction log that records changes for one or more trees.
-pub struct TransactionLog<File: ManagedFile> {
+#[derive(Debug, Clone)]
+pub struct TransactionLog<File: io::FileManager> {
     vault: Option<Arc<dyn AnyVault>>,
     state: State,
-    log: <File::Manager as FileManager>::FileHandle,
+    log: SedimentFile<File>,
 }
 
-impl<File: ManagedFile> TransactionLog<File> {
-    /// Opens a transaction log for reading.
-    pub fn read(
-        log_path: &Path,
-        state: State,
-        context: Context<File::Manager>,
-    ) -> Result<Self, Error> {
-        let log = context.file_manager.read(log_path)?;
+impl<File: io::FileManager> TransactionLog<File> {
+    /// Opens a transaction log
+    pub fn open(log_path: &Path, state: State, context: Context<File>) -> Result<Self, Error> {
+        let mut log = SedimentFile::open(log_path, false, context.file_manager.clone())?;
+        if !state.is_initialized() {
+            Self::initialize_state(&state, &mut log, context.vault())?;
+        }
         Ok(Self {
             vault: context.vault,
             state,
             log,
         })
-    }
-
-    /// Opens a transaction log for writing.
-    pub fn open(
-        log_path: &Path,
-        state: State,
-        context: Context<File::Manager>,
-    ) -> Result<Self, Error> {
-        let log = context.file_manager.append(log_path)?;
-        Ok(Self {
-            vault: context.vault,
-            state,
-            log,
-        })
-    }
-
-    /// Returns the total size of the transaction log file.
-    pub fn total_size(&self) -> u64 {
-        self.state.len()
     }
 
     /// Initializes `state` to contain the information about the transaction log
     /// located at `log_path`.
-    pub fn initialize_state(state: &State, context: &Context<File::Manager>) -> Result<(), Error> {
-        let mut log_length = match context.file_manager.file_length(state.path()) {
-            Ok(length) => length,
-            Err(Error {
-                kind: ErrorKind::Io(err),
-                ..
-            }) if err.kind() == std::io::ErrorKind::NotFound => 0,
-            Err(other) => return Err(other),
-        };
-        if log_length == 0 {
-            state.initialize(TransactionId(0), 0);
-            return Ok(());
+    fn initialize_state(
+        state: &State,
+        db: &mut SedimentFile<File>,
+        vault: Option<&dyn AnyVault>,
+    ) -> Result<(), Error> {
+        let commit_log = db.db.commit_log();
+        if let Some(latest_entry) = commit_log.last() {
+            let latest_batch = match latest_entry
+                .embedded_header
+                .map(|grain| db.db.get(grain))
+                .transpose()?
+                .flatten()
+            {
+                Some(entry) => {
+                    let data = match vault {
+                        Some(vault) => Cow::Owned(vault.decrypt(&entry)?),
+                        None => Cow::Borrowed(entry.as_bytes()),
+                    };
+                    LogEntryBatch::deserialize(&data)?
+                }
+                None => return Err(Error::data_integrity("commit log entry missing header")),
+            };
+            let latest_transaction_id = match latest_batch.entries.iter().map(|(key, _)| *key).max()
+            {
+                Some(id) => id,
+                None => {
+                    return Err(Error::data_integrity(
+                        "commit log batch had no transactions",
+                    ))
+                }
+            };
+            state.initialize(latest_transaction_id);
+        } else {
+            // Empty database, no commit log entries.
+            state.initialize(TransactionId(0));
         }
 
-        let excess_length = log_length % PAGE_SIZE as u64;
-        if excess_length > 0 {
-            // Truncate the file to the proper page size. This should only happen in a recovery situation.
-            eprintln!(
-                "Transaction log has {} extra bytes. Truncating.",
-                excess_length
-            );
-            let file = OpenOptions::new()
-                .append(true)
-                .write(true)
-                .open(state.path())?;
-            log_length -= excess_length;
-            file.set_len(log_length)?;
-            file.sync_all()?;
-        }
-
-        let mut file = context.file_manager.read(state.path())?;
-        file.execute(StateInitializer {
-            state,
-            log_length,
-            vault: context.vault(),
-        })
+        Ok(())
     }
 
     /// Logs one or more transactions. After this call returns, the transaction
@@ -110,44 +91,176 @@ impl<File: ManagedFile> TransactionLog<File> {
     /// Returns [`ErrorKind::TransactionPushedOutOfOrder`] if `handles` is out of
     /// order, or if any handle contains an id older than one already written to
     /// the log.
-    pub fn push(&mut self, handles: Vec<LogEntry<'static>>) -> Result<(), Error> {
-        self.log.execute(LogWriter {
-            state: self.state.clone(),
-            vault: self.vault.clone(),
-            transactions: handles,
-        })
+    pub fn push<'a>(
+        &mut self,
+        handles: impl IntoIterator<Item = &'a LogEntry<'static>>,
+    ) -> Result<(), Error> {
+        let mut log_position = self.state.lock_for_write();
+        let mut batch = LogEntryBatch::default();
+        let mut completed_transactions = Vec::new();
+        for handle in handles {
+            if handle.id > log_position.last_written_transaction {
+                log_position.last_written_transaction = handle.id;
+            } else {
+                return Err(Error::from(ErrorKind::TransactionPushedOutOfOrder));
+            }
+            let mut serialized = handle.serialize()?;
+            if let Some(vault) = self.vault.as_ref() {
+                serialized = vault.encrypt(&serialized)?;
+            }
+
+            let grain_id = self.log.write_async(serialized)?;
+            batch.entries.insert(handle.id, grain_id);
+            completed_transactions.push((handle.id, Some(grain_id)));
+        }
+        drop(log_position);
+
+        let mut serialized = batch.serialize()?;
+        if let Some(vault) = self.vault.as_ref() {
+            serialized = vault.encrypt(&serialized)?;
+        }
+        self.log.write_header_async(serialized)?;
+        let commit = self.log.sync()?;
+
+        self.state.note_log_entry_batch(commit, &batch);
+        self.state
+            .note_transaction_ids_completed(&completed_transactions);
+
+        Ok(())
     }
 
     /// Returns the executed transaction with the id provided. Returns None if not found.
     pub fn get(&mut self, id: TransactionId) -> Result<Option<LogEntry<'static>>, Error> {
-        match self.log.execute(EntryFetcher {
-            id,
-            state: &self.state,
-            vault: self.vault.as_deref(),
-        })? {
-            ScanResult::Found { entry, .. } => Ok(Some(entry)),
-            ScanResult::NotFound { .. } => Ok(None),
+        if let Some(entry_grain) = self.scan_for(id)? {
+            if let Some(data) = self.log.db.get(entry_grain)? {
+                let entry = self.deserialize_entry(&data)?;
+                return Ok(Some(entry.into_owned()));
+            }
         }
+
+        Ok(None)
     }
 
-    /// Logs one or more transactions. After this call returns, the transaction
-    /// log is guaranteed to be fully written to disk.
+    fn deserialize_entry(&self, data: &[u8]) -> Result<LogEntry<'static>, Error> {
+        let data = match self.vault.as_ref() {
+            Some(vault) => Cow::Owned(vault.decrypt(data)?),
+            None => Cow::Borrowed(data),
+        };
+        LogEntry::deserialize(&data).map(LogEntry::into_owned)
+    }
+
     pub fn scan<Callback: FnMut(LogEntry<'static>) -> bool>(
         &mut self,
         ids: impl RangeBounds<TransactionId>,
-        callback: Callback,
+        mut callback: Callback,
     ) -> Result<(), Error> {
-        self.log.execute(EntryScanner {
-            ids,
-            callback,
-            state: &self.state,
-            vault: self.vault.as_deref(),
-        })
+        let commit_log = self.log.db.commit_log();
+        'outer: for (batch_id, entry_index) in &commit_log {
+            let transaction_ids = self.batch_id_transactions(
+                batch_id,
+                entry_index
+                    .embedded_header
+                    .ok_or_else(|| Error::data_integrity("transaction entry missing header"))?,
+            )?;
+            for (_, grain_id) in transaction_ids.iter().filter(|(id, _)| ids.contains(id)) {
+                let entry =
+                    self.log.db.get(*grain_id)?.ok_or_else(|| {
+                        Error::data_integrity("transaction entry grain data missing")
+                    })?;
+                let entry = self.deserialize_entry(&entry)?;
+                if !callback(entry) {
+                    break 'outer;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn scan_for(
+        &mut self,
+        transaction: TransactionId,
+    ) -> Result<Option<GrainId>, Error> {
+        if let Some(known_status) = self.state.grain_id_for_transaction(transaction) {
+            return Ok(known_status);
+        }
+
+        let commit_entries = self.log.db.commit_log().into_iter().collect::<Vec<_>>();
+        if commit_entries.is_empty() {
+            return Ok(None);
+        }
+
+        let mut lower_limit = 0;
+        let mut lower_transaction_ids = self.batch_id_transactions(
+            commit_entries[0].0,
+            commit_entries[0].1.embedded_header.unwrap(),
+        )?;
+        let mut upper_limit = commit_entries.len() - 1;
+        let mut upper_transaction_ids = self.batch_id_transactions(
+            commit_entries.last().unwrap().0,
+            commit_entries.last().unwrap().1.embedded_header.unwrap(),
+        )?;
+
+        loop {
+            let delta = upper_limit - lower_limit;
+            if transaction > lower_transaction_ids.last().unwrap().0
+                && transaction < upper_transaction_ids.first().unwrap().0
+                && delta > 1
+            {
+                let midpoint = lower_limit + delta / 2;
+                let transaction_ids = self.batch_id_transactions(
+                    commit_entries[midpoint].0,
+                    commit_entries[midpoint].1.embedded_header.unwrap(),
+                )?;
+
+                match (
+                    transaction_ids.first().unwrap().0.cmp(&transaction),
+                    transaction_ids.last().unwrap().0.cmp(&transaction),
+                ) {
+                    (Ordering::Less | Ordering::Equal, Ordering::Greater | Ordering::Equal) => {
+                        // Transaction id was within the range of this batch
+                        break;
+                    }
+                    (Ordering::Greater, _) => {
+                        upper_limit = midpoint;
+                        upper_transaction_ids = transaction_ids;
+                    }
+                    (_, Ordering::Less) => {
+                        lower_limit = midpoint;
+                        lower_transaction_ids = transaction_ids;
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+
+        Ok(self.state.grain_id_for_transaction(transaction).flatten())
+    }
+
+    fn batch_id_transactions(
+        &mut self,
+        batch_id: BatchId,
+        embedded_header: GrainId,
+    ) -> Result<Vec<(TransactionId, GrainId)>, Error> {
+        let ids = if let Some(ids) = self.state.batch_id_transactions(batch_id) {
+            ids
+        } else {
+            let data = self.log.db.get(embedded_header)?.unwrap();
+            let data = match self.vault.as_ref() {
+                Some(vault) => Cow::Owned(vault.decrypt(&data)?),
+                None => Cow::Borrowed(data.as_bytes()),
+            };
+            let batch = LogEntryBatch::deserialize(&data)?;
+            self.state.note_log_entry_batch(batch_id, &batch)
+        };
+
+        Ok(ids)
     }
 
     /// Closes the transaction log.
-    pub fn close(self) -> Result<(), Error> {
-        self.log.close()
+    pub fn close(self) {
+        drop(self);
     }
 
     /// Begins a new transaction, exclusively locking `trees`.
@@ -168,356 +281,32 @@ impl<File: ManagedFile> TransactionLog<File> {
     }
 }
 
-struct StateInitializer<'a> {
-    state: &'a State,
-    log_length: u64,
-    vault: Option<&'a dyn AnyVault>,
+#[derive(Default, Debug)]
+pub(crate) struct LogEntryBatch {
+    pub entries: BTreeMap<TransactionId, GrainId>,
 }
 
-impl<'a> FileOp<Result<(), Error>> for StateInitializer<'a> {
-    fn execute(self, log: &mut dyn File) -> Result<(), Error> {
-        // Scan back block by block until we find a page header with a value of 1.
-        let block_start = self.log_length - PAGE_SIZE as u64;
-        let mut scratch_buffer = Vec::new();
-        scratch_buffer.reserve(PAGE_SIZE);
-        scratch_buffer.resize(4, 0);
+impl LogEntryBatch {
+    pub(crate) fn serialize(&self) -> Result<Vec<u8>, Error> {
+        let mut buffer = Vec::with_capacity(16 * self.entries.len());
 
-        let last_transaction =
-            match scan_for_transaction(log, &mut scratch_buffer, block_start, false, self.vault)? {
-                ScanResult::Found { entry, .. } => entry,
-                ScanResult::NotFound { .. } => {
-                    return Err(Error::data_integrity(
-                        "No entries found in an existing transaction log",
-                    ))
-                }
-            };
-
-        self.state.initialize(last_transaction.id, self.log_length);
-        Ok(())
-    }
-}
-
-pub enum ScanResult {
-    Found {
-        entry: LogEntry<'static>,
-        position: u64,
-        length: u64,
-    },
-    NotFound {
-        nearest_position: u64,
-    },
-}
-
-fn scan_for_transaction(
-    log: &mut dyn File,
-    scratch_buffer: &mut Vec<u8>,
-    mut block_start: u64,
-    scan_forward: bool,
-    vault: Option<&dyn AnyVault>,
-) -> Result<ScanResult, Error> {
-    if scratch_buffer.len() < 4 {
-        scratch_buffer.resize(4, 0);
-    }
-    let file_length = log.length()?;
-    Ok(loop {
-        if block_start >= file_length {
-            return Ok(ScanResult::NotFound {
-                nearest_position: block_start,
-            });
-        }
-        log.seek(SeekFrom::Start(block_start))?;
-        // Read the page header
-        log.read_exact(&mut scratch_buffer[0..4])?;
-        #[allow(clippy::match_on_vec_items)]
-        match scratch_buffer[0] {
-            0 => {
-                if block_start == 0 {
-                    break ScanResult::NotFound {
-                        nearest_position: 0,
-                    };
-                }
-                if scan_forward {
-                    block_start += PAGE_SIZE as u64;
-                } else {
-                    block_start -= PAGE_SIZE as u64;
-                }
-                continue;
-            }
-            1 => {
-                // The length is the next 3 bytes.
-                let length = (scratch_buffer[1] as usize) << 16
-                    | (scratch_buffer[2] as usize) << 8
-                    | scratch_buffer[3] as usize;
-                scratch_buffer.resize(length, 0);
-                let mut initial_page = true;
-                let mut bytes_to_read = length;
-                let mut offset = 0;
-                while bytes_to_read > 0 {
-                    let page_header_length = if initial_page {
-                        // The initial page has 4 bytes at the start, which we've already read.
-                        initial_page = false;
-                        4
-                    } else {
-                        // Subsequent pages have a 0 byte at the start of the
-                        // page, denoting that it's not a valid page header. We
-                        // need to skip that byte, so that the read call reads
-                        // the stored data, not the header byte.
-                        log.seek(SeekFrom::Current(1))?;
-                        1
-                    };
-
-                    let page_length = (PAGE_SIZE - page_header_length).min(length - offset);
-                    log.read_exact(&mut scratch_buffer[offset..offset + page_length])?;
-                    offset += page_length;
-                    bytes_to_read -= page_length;
-                }
-
-                let payload = &scratch_buffer[0..length];
-                let decrypted = match &vault {
-                    Some(vault) => Cow::Owned(vault.decrypt(payload)?),
-                    None => Cow::Borrowed(payload),
-                };
-                let entry = LogEntry::deserialize(&decrypted)
-                    .map_err(Error::data_integrity)?
-                    .into_owned();
-                break ScanResult::Found {
-                    entry,
-                    position: block_start,
-                    length: length as u64,
-                };
-            }
-            _ => unreachable!("corrupt transaction log"),
-        }
-    })
-}
-
-#[allow(clippy::redundant_pub_crate)]
-pub(crate) struct EntryFetcher<'a> {
-    pub state: &'a State,
-    pub id: TransactionId,
-    pub vault: Option<&'a dyn AnyVault>,
-}
-
-impl<'a> FileOp<Result<ScanResult, Error>> for EntryFetcher<'a> {
-    fn execute(self, log: &mut dyn File) -> Result<ScanResult, Error> {
-        let mut scratch = Vec::with_capacity(PAGE_SIZE);
-        fetch_entry(log, &mut scratch, self.state, self.id, self.vault)
-    }
-}
-
-fn fetch_entry(
-    log: &mut dyn File,
-    scratch_buffer: &mut Vec<u8>,
-    state: &State,
-    id: TransactionId,
-    vault: Option<&dyn AnyVault>,
-) -> Result<ScanResult, Error> {
-    if !id.valid() {
-        return Ok(ScanResult::NotFound {
-            nearest_position: 0,
-        });
-    }
-
-    let mut upper_id = state.next_transaction_id();
-    let mut upper_location = state.len();
-    if upper_id <= id {
-        return Ok(ScanResult::NotFound {
-            nearest_position: upper_location,
-        });
-    }
-    let mut lower_id = None;
-    let mut lower_location = None;
-    loop {
-        let guessed_location = if let Some(page) =
-            guess_page(id, lower_location, lower_id, upper_location, upper_id)
-        {
-            page
-        } else {
-            return Ok(ScanResult::NotFound {
-                nearest_position: upper_location,
-            });
-        };
-        if guessed_location == upper_location {
-            return Ok(ScanResult::NotFound {
-                nearest_position: upper_location,
-            });
+        for (transaction_id, grain_id) in &self.entries {
+            buffer.write_u64::<BigEndian>(transaction_id.0)?;
+            buffer.write_u64::<BigEndian>(grain_id.as_u64())?;
         }
 
-        // load the transaction at this location
-        #[allow(clippy::cast_possible_wrap)]
-        let scan_forward = guessed_location >= upper_location;
-        match scan_for_transaction(log, scratch_buffer, guessed_location, scan_forward, vault)? {
-            ScanResult::Found {
-                entry,
-                position,
-                length,
-            } => {
-                state.note_transaction_id_status(entry.id, Some(position));
-                match entry.id.cmp(&id) {
-                    Ordering::Less => {
-                        if lower_id.is_none() || entry.id > lower_id.unwrap() {
-                            lower_id = Some(entry.id);
-                            lower_location = Some(position);
-                        } else {
-                            return Ok(ScanResult::NotFound {
-                                nearest_position: position,
-                            });
-                        }
-                    }
-                    Ordering::Equal => {
-                        return Ok(ScanResult::Found {
-                            entry,
-                            position,
-                            length,
-                        });
-                    }
-                    Ordering::Greater => {
-                        if entry.id < upper_id {
-                            upper_id = entry.id;
-                            upper_location = position;
-                        } else {
-                            return Ok(ScanResult::NotFound {
-                                nearest_position: position,
-                            });
-                        }
-                    }
-                }
-            }
-            ScanResult::NotFound { nearest_position } => {
-                return Ok(ScanResult::NotFound { nearest_position });
-            }
-        }
+        Ok(buffer)
     }
-}
 
-pub struct EntryScanner<
-    'a,
-    Range: RangeBounds<TransactionId>,
-    Callback: FnMut(LogEntry<'static>) -> bool,
-> {
-    pub state: &'a State,
-    pub ids: Range,
-    pub vault: Option<&'a dyn AnyVault>,
-    pub callback: Callback,
-}
-
-impl<'a, Range, Callback> FileOp<Result<(), Error>> for EntryScanner<'a, Range, Callback>
-where
-    Range: RangeBounds<TransactionId>,
-    Callback: FnMut(LogEntry<'static>) -> bool,
-{
-    fn execute(mut self, log: &mut dyn File) -> Result<(), Error> {
-        let mut scratch = Vec::with_capacity(PAGE_SIZE);
-        let (start_location, start_transaction, start_length) = match self.ids.start_bound() {
-            Bound::Included(start_key) | Bound::Excluded(start_key) => {
-                match fetch_entry(log, &mut scratch, self.state, *start_key, self.vault)? {
-                    ScanResult::Found {
-                        entry,
-                        position,
-                        length,
-                    } => (position, Some(entry), length),
-                    ScanResult::NotFound { nearest_position } => (nearest_position, None, 0),
-                }
-            }
-            Bound::Unbounded => (0, None, 0),
-        };
-
-        if let Some(entry) = start_transaction {
-            if self.ids.contains(&entry.id) && !(self.callback)(entry) {
-                return Ok(());
-            }
+    pub(crate) fn deserialize(mut buffer: &[u8]) -> Result<Self, Error> {
+        let mut entries = BTreeMap::new();
+        while !buffer.is_empty() {
+            let transaction_id = TransactionId(buffer.read_u64::<BigEndian>()?);
+            let grain_id = GrainId::from(buffer.read_u64::<BigEndian>()?);
+            entries.insert(transaction_id, grain_id);
         }
 
-        // Continue scanning from this location forward, starting at the next page boundary after the starting transaction
-        let mut next_scan_start = next_page_start(start_location + start_length);
-        while let ScanResult::Found {
-            entry,
-            position,
-            length,
-        } = scan_for_transaction(log, &mut scratch, next_scan_start, true, self.vault)?
-        {
-            if self.ids.contains(&entry.id) && !(self.callback)(entry) {
-                break;
-            }
-            next_scan_start = next_page_start(position + length);
-        }
-
-        Ok(())
-    }
-}
-
-const fn next_page_start(position: u64) -> u64 {
-    let page_size = PAGE_SIZE as u64;
-    (position + page_size - 1) / page_size * page_size
-}
-
-struct LogWriter {
-    state: State,
-    transactions: Vec<LogEntry<'static>>,
-    vault: Option<Arc<dyn AnyVault>>,
-}
-
-impl FileOp<Result<(), Error>> for LogWriter {
-    fn execute(mut self, log: &mut dyn File) -> Result<(), Error> {
-        let mut log_position = self.state.lock_for_write();
-        let mut scratch = [0_u8; PAGE_SIZE];
-        let mut completed_transactions = Vec::with_capacity(self.transactions.len());
-        for transaction in self.transactions.drain(..) {
-            if transaction.id > log_position.last_written_transaction {
-                log_position.last_written_transaction = transaction.id;
-            } else {
-                return Err(Error::from(ErrorKind::TransactionPushedOutOfOrder));
-            }
-            completed_transactions.push((transaction.id, Some(log_position.file_offset)));
-            let mut bytes = transaction.serialize()?;
-            if let Some(vault) = &self.vault {
-                bytes = vault.encrypt(&bytes)?;
-            }
-            // Write out the transaction in pages.
-            let total_length = bytes.len() + 3;
-            let mut offset = 0;
-            while offset < bytes.len() {
-                // Write the page header
-                let header_len = if offset == 0 {
-                    // The first page has the length of the payload as the next 3 bytes.
-                    let length = u32::try_from(bytes.len())
-                        .map_err(|_| Error::from("transaction too large"))?;
-                    if length & 0xFF00_0000 != 0 {
-                        return Err(Error::from("transaction too large"));
-                    }
-                    scratch[0] = 1;
-                    #[allow(clippy::cast_possible_truncation)]
-                    {
-                        scratch[1] = (length >> 16) as u8;
-                        scratch[2] = (length >> 8) as u8;
-                        scratch[3] = (length & 0xFF) as u8;
-                    }
-                    4
-                } else {
-                    // Set page_header to have a 0 byte for future pages written.
-                    scratch[0] = 0;
-                    1
-                };
-
-                // Write up to PAGE_SIZE - header_len bytes
-                let total_bytes_left = total_length - (offset + 3);
-                let bytes_to_write = total_bytes_left.min(PAGE_SIZE - header_len as usize);
-                scratch[header_len..bytes_to_write + header_len]
-                    .copy_from_slice(&bytes[offset..offset + bytes_to_write]);
-                log.write_all(&scratch)?;
-                offset += bytes_to_write;
-                log_position.file_offset += PAGE_SIZE as u64;
-            }
-        }
-
-        drop(log_position);
-
-        log.synchronize()?;
-
-        self.state
-            .note_transaction_ids_completed(&completed_transactions);
-
-        Ok(())
+        Ok(Self { entries })
     }
 }
 
@@ -526,7 +315,8 @@ impl FileOp<Result<(), Error>> for LogWriter {
 pub struct LogEntry<'a> {
     /// The unique id of this entry.
     pub id: TransactionId,
-    pub(crate) data: Option<ArcBytes<'a>>,
+    pub trees_changed: Vec<Cow<'a, [u8]>>,
+    pub(crate) data: Option<Cow<'a, [u8]>>,
 }
 
 impl<'a> LogEntry<'a> {
@@ -535,7 +325,12 @@ impl<'a> LogEntry<'a> {
     pub fn into_owned(self) -> LogEntry<'static> {
         LogEntry {
             id: self.id,
-            data: self.data.map(ArcBytes::into_owned),
+            trees_changed: self
+                .trees_changed
+                .into_iter()
+                .map(|tree| Cow::Owned(tree.into_owned()))
+                .collect(),
+            data: self.data.map(|data| Cow::Owned(data.into_owned())),
         }
     }
 }
@@ -543,15 +338,15 @@ impl<'a> LogEntry<'a> {
 impl<'a> LogEntry<'a> {
     /// Returns the associated data, if any.
     #[must_use]
-    pub const fn data(&self) -> Option<&ArcBytes<'a>> {
-        self.data.as_ref()
+    pub fn data(&self) -> Option<&[u8]> {
+        self.data.as_deref()
     }
 
     /// Sets the associated data that will be stored in the transaction log.
-    /// Limited to a length 16,777,208 (2^24 - 8) bytes -- just shy of 16MB.
-    pub fn set_data(&mut self, data: impl Into<ArcBytes<'a>>) -> Result<(), Error> {
+    /// Limited to a length 16,777,216 bytes (16MB).
+    pub fn set_data(&mut self, data: impl Into<Cow<'a, [u8]>>) -> Result<(), Error> {
         let data = data.into();
-        if data.len() <= 2_usize.pow(24) - 8 {
+        if data.len() <= 2_usize.pow(24) {
             self.data = Some(data);
             Ok(())
         } else {
@@ -560,9 +355,23 @@ impl<'a> LogEntry<'a> {
     }
 
     pub(crate) fn serialize(&self) -> Result<Vec<u8>, Error> {
-        let mut buffer = Vec::with_capacity(8 + self.data.as_ref().map_or(0, |data| data.len()));
+        let mut buffer = Vec::with_capacity(
+            10 + self
+                .trees_changed
+                .iter()
+                .map(|name| name.len() + 2)
+                .sum::<usize>()
+                + self.data.as_ref().map_or(0, |data| data.len()),
+        );
         // Transaction ID
         buffer.write_u64::<BigEndian>(self.id.0)?;
+        buffer.write_u16::<BigEndian>(u16::try_from(self.trees_changed.len())?)?;
+
+        for tree in &self.trees_changed {
+            buffer.write_u16::<BigEndian>(u16::try_from(tree.len())?)?;
+            buffer.write_all(tree)?;
+        }
+
         if let Some(data) = &self.data {
             // The rest of the entry is the data. Since the header of the log entry
             // contains the length, we don't need to waste space encoding it again.
@@ -574,12 +383,28 @@ impl<'a> LogEntry<'a> {
 
     pub(crate) fn deserialize(mut buffer: &'a [u8]) -> Result<Self, Error> {
         let id = TransactionId(buffer.read_u64::<BigEndian>()?);
+        let number_of_trees = buffer.read_u16::<BigEndian>()?;
+        let mut trees_changed = Vec::new();
+        for _ in 0..number_of_trees {
+            let name_length = usize::from(buffer.read_u16::<BigEndian>()?);
+            if name_length > buffer.len() {
+                return Err(Error::data_integrity("invalid tree name length"));
+            }
+            trees_changed.push(Cow::Borrowed(&buffer[..name_length]));
+            buffer = &buffer[name_length..];
+        }
+
         let data = if buffer.is_empty() {
             None
         } else {
-            Some(ArcBytes::from(buffer))
+            Some(Cow::Borrowed(buffer))
         };
-        Ok(Self { id, data })
+
+        Ok(Self {
+            id,
+            trees_changed,
+            data,
+        })
     }
 }
 
@@ -587,7 +412,8 @@ impl<'a> LogEntry<'a> {
 fn serialization_tests() {
     let transaction = LogEntry {
         id: TransactionId(1),
-        data: Some(ArcBytes::from(b"hello")),
+        trees_changed: vec![Cow::Borrowed(b"a-tree")],
+        data: Some(Cow::Borrowed(b"hello")),
     };
     let serialized = transaction.serialize().unwrap();
     let deserialized = LogEntry::deserialize(&serialized).unwrap();
@@ -595,6 +421,7 @@ fn serialization_tests() {
 
     let transaction = LogEntry {
         id: TransactionId(u64::MAX),
+        trees_changed: vec![Cow::Borrowed(b"a-tree"), Cow::Borrowed(b"another-tree")],
         data: None,
     };
     let serialized = transaction.serialize().unwrap();
@@ -604,11 +431,11 @@ fn serialization_tests() {
     // Test the data length limits
     let mut transaction = LogEntry {
         id: TransactionId(0),
+        trees_changed: vec![Cow::Borrowed(b"a-tree")],
         data: None,
     };
     let mut big_data = Vec::new();
-    big_data.resize(2_usize.pow(24), 0);
-    let mut big_data = ArcBytes::from(big_data);
+    big_data.resize(2_usize.pow(24) + 1, 0);
     assert!(matches!(
         transaction.set_data(big_data.clone()),
         Err(Error {
@@ -617,61 +444,12 @@ fn serialization_tests() {
         })
     ));
 
-    // Remove 8 bytes (the transaction id length) and try again.
-    let big_data = big_data.read_bytes(big_data.len() - 8).unwrap();
+    // Remove one byte and try again.
+    big_data.truncate(big_data.len() - 1);
     transaction.set_data(big_data).unwrap();
     let serialized = transaction.serialize().unwrap();
     let deserialized = LogEntry::deserialize(&serialized).unwrap();
     assert_eq!(transaction, deserialized);
-}
-
-#[allow(
-    clippy::cast_precision_loss,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
-)]
-fn guess_page(
-    looking_for: TransactionId,
-    lower_location: Option<u64>,
-    lower_id: Option<TransactionId>,
-    upper_location: u64,
-    upper_id: TransactionId,
-) -> Option<u64> {
-    debug_assert_ne!(looking_for, upper_id);
-    let total_pages = upper_location / PAGE_SIZE as u64;
-
-    if let (Some(lower_location), Some(lower_id)) = (lower_location, lower_id) {
-        // Estimate inbetween lower and upper
-        let current_page = lower_location / PAGE_SIZE as u64;
-        let delta_from_current = looking_for.0 - lower_id.0;
-        let local_avg_per_page =
-            (upper_id.0 - lower_id.0) as f64 / (total_pages - current_page) as f64;
-        let delta_estimated_pages = (delta_from_current as f64 * local_avg_per_page).floor() as u64;
-        let guess = lower_location + delta_estimated_pages.max(1) * PAGE_SIZE as u64;
-        // If our estimate is that the location is beyond or equal to the upper,
-        // we'll guess the page before it.
-        if guess >= upper_location {
-            let capped_guess = upper_location - PAGE_SIZE as u64;
-            // If the page before the upper is the lower, we can't find the
-            // transaction in question.
-            if capped_guess > lower_location {
-                Some(capped_guess)
-            } else {
-                None
-            }
-        } else {
-            Some(guess)
-        }
-    } else if upper_id > looking_for {
-        // Go backwards from upper
-        let avg_per_page = upper_id.0 as f64 / total_pages as f64;
-        let id_delta = upper_id.0 - looking_for.0;
-        let delta_estimated_pages = (id_delta as f64 * avg_per_page).ceil() as u64;
-        let delta_bytes = delta_estimated_pages.saturating_mul(PAGE_SIZE as u64);
-        Some(upper_location.saturating_sub(delta_bytes))
-    } else {
-        None
-    }
 }
 
 #[cfg(test)]
@@ -681,19 +459,13 @@ mod tests {
     use std::collections::{BTreeSet, HashSet};
 
     use nanorand::{Pcg64, Rng};
+    use sediment::io::{
+        any::AnyFileManager, fs::StdFileManager, memory::MemoryFileManager, FileManager,
+    };
     use tempfile::tempdir;
 
     use super::*;
-    use crate::{
-        io::{
-            any::AnyFileManager,
-            fs::{StdFile, StdFileManager},
-            memory::MemoryFileManager,
-        },
-        test_util::RotatorVault,
-        transaction::TransactionManager,
-        ChunkCache,
-    };
+    use crate::{test_util::RotatorVault, transaction::TransactionManager, ChunkCache};
 
     #[test]
     fn file_log_file_tests() {
@@ -719,17 +491,23 @@ mod tests {
 
     #[test]
     fn any_log_file_tests() {
-        log_file_tests("any_file_log_file", AnyFileManager::std(), None, None);
-        log_file_tests("any_memory_log_file", AnyFileManager::memory(), None, None);
+        log_file_tests("any_file_log_file", AnyFileManager::new_file(), None, None);
+        log_file_tests(
+            "any_memory_log_file",
+            AnyFileManager::new_memory(),
+            None,
+            None,
+        );
     }
 
     #[allow(clippy::too_many_lines)]
-    fn log_file_tests<Manager: FileManager>(
+    fn log_file_tests<Manager: io::FileManager>(
         file_name: &str,
         file_manager: Manager,
         vault: Option<Arc<dyn AnyVault>>,
         cache: Option<ChunkCache>,
     ) {
+        const ITERS: u64 = 10;
         let temp_dir = crate::test_util::TestDirectory::new(file_name);
         let context = Context {
             file_manager,
@@ -743,41 +521,28 @@ mod tests {
         };
 
         let mut rng = Pcg64::new_seed(1);
-        let data = (0..PAGE_SIZE * 10)
-            .map(|_| rng.generate())
-            .collect::<Vec<u8>>();
+        let data = (0..4096 * 10).map(|_| rng.generate()).collect::<Vec<u8>>();
 
-        for id in 1..=1_000 {
+        for id in 1..=ITERS {
+            println!("{id}");
             let state = State::from_path(&log_path);
-            TransactionLog::<Manager::File>::initialize_state(&state, &context).unwrap();
             let mut transactions =
-                TransactionLog::<Manager::File>::open(&log_path, state, context.clone()).unwrap();
+                TransactionLog::<Manager>::open(&log_path, state, context.clone()).unwrap();
             assert_eq!(
                 transactions.state().next_transaction_id(),
                 TransactionId(id)
             );
             let mut tx = transactions.new_transaction([&b"hello"[..]]);
 
-            tx.transaction.data = Some(ArcBytes::from(id.to_be_bytes()));
+            tx.transaction.data = Some(Cow::Owned(id.to_be_bytes().to_vec()));
             // We want to have varying sizes to try to test the scan algorithm thoroughly.
             #[allow(clippy::cast_possible_truncation)]
-            if id % 2 == 0 {
-                // Larger than PAGE_SIZE
-                if id % 3 == 0 {
-                    tx.set_data(data[0..PAGE_SIZE * (id as usize % 10).max(3)].to_vec())
-                        .unwrap();
-                } else {
-                    tx.set_data(data[0..PAGE_SIZE * (id as usize % 10).max(2)].to_vec())
-                        .unwrap();
-                }
-            } else {
-                tx.set_data(data[0..id as usize].to_vec()).unwrap();
-            }
+            tx.set_data(data[0..id as usize].to_vec()).unwrap();
 
             assert!(tx.data.as_ref().unwrap().len() > 0);
 
-            transactions.push(vec![tx.transaction]).unwrap();
-            transactions.close().unwrap();
+            transactions.push(&vec![tx.transaction]).unwrap();
+            transactions.close();
         }
 
         let state = State::from_path(&log_path);
@@ -785,9 +550,10 @@ mod tests {
             // Test that we can't open it with encryption. Without
             // https://github.com/khonsulabs/nebari/issues/35, the inverse isn't
             // able to be tested.
-            assert!(TransactionLog::<Manager::File>::initialize_state(
-                &state,
-                &Context {
+            assert!(TransactionLog::<Manager>::open(
+                &log_path,
+                state.clone(),
+                Context {
                     file_manager: context.file_manager.clone(),
                     vault: Some(Arc::new(RotatorVault::new(13))),
                     cache: None
@@ -796,33 +562,31 @@ mod tests {
             .is_err());
         }
 
-        TransactionLog::<Manager::File>::initialize_state(&state, &context).unwrap();
-        let mut transactions =
-            TransactionLog::<Manager::File>::open(&log_path, state, context).unwrap();
+        let mut transactions = TransactionLog::<Manager>::open(&log_path, state, context).unwrap();
 
         let out_of_order = transactions.new_transaction([&b"test"[..]]);
         transactions
-            .push(vec![
+            .push(&vec![
                 transactions.new_transaction([&b"test2"[..]]).transaction,
             ])
             .unwrap();
         assert!(matches!(
             transactions
-                .push(vec![out_of_order.transaction])
+                .push(&vec![out_of_order.transaction])
                 .unwrap_err()
                 .kind,
             ErrorKind::TransactionPushedOutOfOrder
         ));
 
         assert!(transactions.get(TransactionId(0)).unwrap().is_none());
-        for id in 1..=1_000 {
+        for id in 1..=ITERS {
             let transaction = transactions.get(TransactionId(id)).unwrap();
             match transaction {
                 Some(transaction) => {
                     assert_eq!(transaction.id, TransactionId(id));
                     assert_eq!(
                         &data[..transaction.data().unwrap().len()],
-                        transaction.data().unwrap().as_slice()
+                        transaction.data().unwrap()
                     );
                 }
                 None => {
@@ -864,8 +628,8 @@ mod tests {
         let mut rng = Pcg64::new_seed(1);
 
         let state = State::from_path(&log_path);
-        TransactionLog::<StdFile>::initialize_state(&state, &context).unwrap();
-        let mut transactions = TransactionLog::<StdFile>::open(&log_path, state, context).unwrap();
+        let mut transactions =
+            TransactionLog::<StdFileManager>::open(&log_path, state, context).unwrap();
 
         let mut valid_ids = HashSet::new();
         for id in 1..=10_000 {
@@ -880,7 +644,7 @@ mod tests {
             }
             valid_ids.insert(tx.id);
 
-            transactions.push(vec![tx.transaction]).unwrap();
+            transactions.push(&vec![tx.transaction]).unwrap();
         }
 
         for id in 1..=10_000 {
@@ -888,7 +652,10 @@ mod tests {
             match transaction {
                 Some(transaction) => assert_eq!(transaction.id, TransactionId(id)),
                 None => {
-                    assert!(!valid_ids.contains(&TransactionId(id)));
+                    assert!(
+                        !valid_ids.contains(&TransactionId(id)),
+                        "failed to find {id}"
+                    );
                 }
             }
         }
@@ -911,8 +678,8 @@ mod tests {
 
     #[test]
     fn any_log_manager_tests() {
-        log_manager_tests("any_log_manager", AnyFileManager::std(), None, None);
-        log_manager_tests("any_log_manager", AnyFileManager::memory(), None, None);
+        log_manager_tests("any_log_manager", AnyFileManager::new_file(), None, None);
+        log_manager_tests("any_log_manager", AnyFileManager::new_memory(), None, None);
     }
 
     #[test]
@@ -940,8 +707,6 @@ mod tests {
         };
         let manager = TransactionManager::spawn(&temp_dir, context, None).unwrap();
         assert_eq!(manager.current_transaction_id(), None);
-        assert_eq!(manager.len(), 0);
-        assert!(manager.is_empty());
 
         let mut handles = Vec::new();
         for _ in 0..10 {
@@ -1006,13 +771,13 @@ mod tests {
     fn any_out_of_order_log_manager_tests() {
         out_of_order_log_manager_tests(
             "any_out_of_order_log_manager",
-            AnyFileManager::std(),
+            AnyFileManager::new_file(),
             None,
             None,
         );
         out_of_order_log_manager_tests(
             "any_out_of_order_log_manager",
-            AnyFileManager::memory(),
+            AnyFileManager::new_memory(),
             None,
             None,
         );

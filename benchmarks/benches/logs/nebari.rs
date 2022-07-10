@@ -4,9 +4,7 @@ use std::{
 };
 
 use nebari::{
-    io::fs::StdFile,
     sediment::io::fs::StdFileManager,
-    storage::sediment::SedimentFile,
     tree::{Modification, Operation, PersistenceMode, State, TreeFile},
     ArcBytes, ChunkCache, Context,
 };
@@ -20,7 +18,7 @@ use crate::{
 
 pub struct InsertLogs<B: NebariBenchmark> {
     _tempfile: TempDir,
-    tree: TreeFile<B::Root, SedimentFile<StdFileManager>>,
+    tree: TreeFile<B::Root, StdFileManager>,
     state: LogEntryBatchGenerator,
     _bench: PhantomData<B>,
 }
@@ -44,8 +42,8 @@ impl<B: NebariBenchmark> SimpleBench for InsertLogs<B> {
         let tree = TreeFile::open(
             &tempfile.path().join("tree"),
             State::default(),
-            &StdFileManager::default(),
-            Some(ChunkCache::new(2000, 4096)),
+            &Context::default().with_cache(ChunkCache::new(2000, 4096)),
+            None,
         )?;
 
         Ok(Self {
@@ -91,7 +89,7 @@ impl<B: NebariBenchmark> SimpleBench for InsertLogs<B> {
 }
 
 pub struct ReadLogs<B: NebariBenchmark> {
-    tree: TreeFile<B::Root, SedimentFile<StdFileManager>>,
+    tree: TreeFile<B::Root, StdFileManager>,
     state: ReadState,
 }
 
@@ -105,11 +103,11 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
         _group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Self::GroupState {
         let tempfile = TempDir::new_in(".").unwrap();
-        let mut tree = TreeFile::<B::Root, _>::open(
+        let mut tree = TreeFile::<B::Root, StdFileManager>::open(
             &tempfile.path().join("tree"),
             State::default(),
-            &StdFileManager::default(),
-            Some(ChunkCache::new(2000, 4096)),
+            &Context::default().with_cache(ChunkCache::new(2000, 4096)),
+            None,
         )
         .unwrap();
 
@@ -138,11 +136,11 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
         let file_path = group_state.path().join("tree");
-        let tree = TreeFile::<B::Root, _>::open(
+        let tree = TreeFile::<B::Root, StdFileManager>::open(
             &file_path,
             State::default(),
-            &StdFileManager::default(),
-            Some(ChunkCache::new(2000, 4096)),
+            &Context::default().with_cache(ChunkCache::new(2000, 4096)),
+            None,
         )
         .unwrap();
         let state = config.initialize(config_group_state);
@@ -184,7 +182,7 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
 }
 
 pub struct ScanLogs<B: NebariBenchmark> {
-    tree: TreeFile<B::Root, SedimentFile<StdFileManager>>,
+    tree: TreeFile<B::Root, StdFileManager>,
     state: ScanState,
 }
 
@@ -198,11 +196,11 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
         _group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Self::GroupState {
         let tempfile = TempDir::new_in(".").unwrap();
-        let mut tree = TreeFile::<B::Root, _>::open(
+        let mut tree = TreeFile::<B::Root, StdFileManager>::open(
             &tempfile.path().join("tree"),
             State::default(),
-            &StdFileManager::default(),
-            Some(ChunkCache::new(2000, 4096)),
+            &Context::default().with_cache(ChunkCache::new(2000, 4096)),
+            None,
         )
         .unwrap();
         config.for_each_database_chunk(1_000_000, |chunk| {
@@ -230,11 +228,11 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
         config_group_state: &<Self::Config as BenchConfig>::GroupState,
     ) -> Result<Self, anyhow::Error> {
         let file_path = group_state.path().join("tree");
-        let tree = TreeFile::<B::Root, _>::open(
+        let tree = TreeFile::<B::Root, StdFileManager>::open(
             &file_path,
             State::default(),
-            &StdFileManager::default(),
-            Some(ChunkCache::new(2000, 4096)),
+            &Context::default().with_cache(ChunkCache::new(2000, 4096)),
+            None,
         )
         .unwrap();
         let state = config.initialize(config_group_state);

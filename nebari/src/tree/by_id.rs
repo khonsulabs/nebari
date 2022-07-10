@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use sediment::format::GrainId;
 
 use super::{btree::Reducer, BinarySerialization, PagedWriter};
 use crate::{
@@ -17,7 +18,7 @@ pub struct VersionedByIdIndex<EmbeddedIndex: super::EmbeddedIndex<Value>, Value>
     /// The size of the value stored on disk.
     pub value_length: u32,
     /// The position of the value on disk.
-    pub position: u64,
+    pub position: GrainId,
     /// The embedded index.
     pub embedded: EmbeddedIndex,
 
@@ -32,7 +33,7 @@ where
     pub fn new(
         sequence_id: SequenceId,
         value_length: u32,
-        position: u64,
+        position: GrainId,
         embedded: EmbeddedIndex,
     ) -> Self {
         Self {
@@ -57,7 +58,7 @@ where
     ) -> Result<usize, Error> {
         writer.write_u64::<BigEndian>(self.sequence_id.0)?;
         writer.write_u32::<BigEndian>(self.value_length)?;
-        writer.write_u64::<BigEndian>(self.position)?;
+        writer.write_u64::<BigEndian>(self.position.as_u64())?;
         Ok(20 + self.embedded.serialize_to(writer)?)
     }
 
@@ -67,7 +68,7 @@ where
     ) -> Result<Self, Error> {
         let sequence_id = SequenceId(reader.read_u64::<BigEndian>()?);
         let value_length = reader.read_u32::<BigEndian>()?;
-        let position = reader.read_u64::<BigEndian>()?;
+        let position = GrainId::from(reader.read_u64::<BigEndian>()?);
         Ok(Self::new(
             sequence_id,
             value_length,
@@ -81,7 +82,7 @@ impl<EmbeddedIndex, Value> PositionIndex for VersionedByIdIndex<EmbeddedIndex, V
 where
     EmbeddedIndex: super::EmbeddedIndex<Value>,
 {
-    fn position(&self) -> u64 {
+    fn position(&self) -> GrainId {
         self.position
     }
 }
@@ -92,7 +93,7 @@ pub struct UnversionedByIdIndex<EmbeddedIndex: super::EmbeddedIndex<Value>, Valu
     /// The size of the value stored on disk.
     pub value_length: u32,
     /// The position of the value on disk.
-    pub position: u64,
+    pub position: GrainId,
     /// The embedded index.
     pub embedded: EmbeddedIndex,
 
@@ -104,7 +105,7 @@ where
     EmbeddedIndex: super::EmbeddedIndex<Value>,
 {
     /// Retruns a new index instance.
-    pub fn new(value_length: u32, position: u64, embedded: EmbeddedIndex) -> Self {
+    pub fn new(value_length: u32, position: GrainId, embedded: EmbeddedIndex) -> Self {
         Self {
             value_length,
             position,
@@ -125,7 +126,7 @@ where
         _paged_writer: &mut PagedWriter<'_, '_>,
     ) -> Result<usize, Error> {
         writer.write_u32::<BigEndian>(self.value_length)?;
-        writer.write_u64::<BigEndian>(self.position)?;
+        writer.write_u64::<BigEndian>(self.position.as_u64())?;
         Ok(12 + self.embedded.serialize_to(writer)?)
     }
 
@@ -134,7 +135,7 @@ where
         _current_order: Option<usize>,
     ) -> Result<Self, Error> {
         let value_length = reader.read_u32::<BigEndian>()?;
-        let position = reader.read_u64::<BigEndian>()?;
+        let position = GrainId::from(reader.read_u64::<BigEndian>()?);
         Ok(Self::new(
             value_length,
             position,
@@ -147,7 +148,7 @@ impl<EmbeddedIndex, Value> PositionIndex for UnversionedByIdIndex<EmbeddedIndex,
 where
     EmbeddedIndex: super::EmbeddedIndex<Value>,
 {
-    fn position(&self) -> u64 {
+    fn position(&self) -> GrainId {
         self.position
     }
 }
@@ -303,7 +304,7 @@ impl<EmbeddedIndexer> ByIdIndexer<EmbeddedIndexer> {
         let (alive_keys, deleted_keys, total_indexed_bytes) = values
             .clone()
             .map(|index| {
-                if index.position() > 0 {
+                if index.position().as_u64() > 0 {
                     // Alive key
                     (1, 0, u64::from(index.value_size()))
                 } else {
@@ -354,7 +355,7 @@ impl<EmbeddedIndexer> ByIdIndexer<EmbeddedIndexer> {
 
 pub trait IdIndex<EmbeddedIndex> {
     fn value_size(&self) -> u32;
-    fn position(&self) -> u64;
+    fn position(&self) -> GrainId;
     fn embedded(&self) -> &EmbeddedIndex;
 }
 
@@ -366,7 +367,7 @@ where
         self.value_length
     }
 
-    fn position(&self) -> u64 {
+    fn position(&self) -> GrainId {
         self.position
     }
 
@@ -383,7 +384,7 @@ where
         self.value_length
     }
 
-    fn position(&self) -> u64 {
+    fn position(&self) -> GrainId {
         self.position
     }
 

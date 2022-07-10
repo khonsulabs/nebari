@@ -2,6 +2,7 @@ use std::{any::Any, sync::Arc};
 
 use lru::LruCache;
 use parking_lot::Mutex;
+use sediment::format::GrainId;
 
 use crate::ArcBytes;
 
@@ -41,7 +42,7 @@ where
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct ChunkKey {
-    position: u64,
+    position: GrainId,
     file_id: u64,
 }
 
@@ -65,7 +66,7 @@ impl ChunkCache {
     }
 
     /// Adds a new cached chunk for `file_path` at `position`.
-    pub fn insert(&self, file_id: u64, position: u64, buffer: ArcBytes<'static>) {
+    pub fn insert(&self, file_id: u64, position: GrainId, buffer: ArcBytes<'static>) {
         if buffer.len() <= self.max_block_length {
             let mut cache = self.cache.lock();
             cache.put(ChunkKey { position, file_id }, CacheEntry::ArcBytes(buffer));
@@ -76,7 +77,7 @@ impl ChunkCache {
     pub fn replace_with_decoded<T: AnySendSync + 'static>(
         &self,
         file_id: u64,
-        position: u64,
+        position: GrainId,
         value: T,
     ) {
         let mut cache = self.cache.lock();
@@ -88,7 +89,7 @@ impl ChunkCache {
 
     /// Looks up a previously read chunk for `file_path` at `position`,
     #[must_use]
-    pub fn get(&self, file_id: u64, position: u64) -> Option<CacheEntry> {
+    pub fn get(&self, file_id: u64, position: GrainId) -> Option<CacheEntry> {
         let mut cache = self.cache.lock();
         cache.get(&ChunkKey { position, file_id }).cloned()
     }

@@ -5,6 +5,7 @@ use std::{
 };
 
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
+use sediment::format::GrainId;
 
 use super::{
     btree::BTreeEntry,
@@ -16,7 +17,6 @@ use super::{
 use crate::{
     chunk_cache::CacheEntry,
     error::{Error, InternalError},
-    io::File,
     storage::BlobStorage,
     transaction::TransactionId,
     tree::{
@@ -311,7 +311,7 @@ where
         &mut self,
         include_nodes: bool,
         file: &mut dyn BlobStorage,
-        copied_chunks: &mut HashMap<u64, u64>,
+        copied_chunks: &mut HashMap<GrainId, GrainId>,
         writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error> {

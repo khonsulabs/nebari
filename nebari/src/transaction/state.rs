@@ -8,11 +8,11 @@ use std::{
     },
 };
 
-use lru::LruCache;
 use parking_lot::{Mutex, MutexGuard};
+use sediment::format::{BatchId, GrainId};
 
 use super::{LogEntry, TransactionHandle, TreeLock, TreeLocks};
-use crate::transaction::TransactionId;
+use crate::transaction::{log::LogEntryBatch, TransactionId};
 
 const UNINITIALIZED_ID: u64 = 0;
 
@@ -24,18 +24,17 @@ pub struct State {
 
 #[derive(Debug)]
 struct ActiveState {
-    path: PathBuf,
+    pub(crate) path: PathBuf,
     current_transaction_id: AtomicU64,
     tree_locks: Mutex<HashMap<Cow<'static, [u8]>, TreeLock>>,
     log_position: Mutex<LogPosition>,
-    known_completed_transactions: Mutex<LruCache<TransactionId, Option<u64>>>,
+    batch_id_transactions: Mutex<HashMap<BatchId, Vec<(TransactionId, GrainId)>>>,
+    known_completed_transactions: Mutex<HashMap<TransactionId, Option<GrainId>>>,
 }
 
 /// The active log position information.
 #[derive(Debug)]
 pub struct LogPosition {
-    /// The offset of the writer within the file.
-    pub file_offset: u64,
     /// The last successfully written transaction id.
     pub last_written_transaction: TransactionId,
 }
@@ -43,7 +42,6 @@ pub struct LogPosition {
 impl Default for LogPosition {
     fn default() -> Self {
         Self {
-            file_offset: 0,
             last_written_transaction: TransactionId(UNINITIALIZED_ID),
         }
     }
@@ -54,16 +52,17 @@ impl State {
     pub fn from_path(path: impl AsRef<Path>) -> Self {
         Self {
             state: Arc::new(ActiveState {
-                path: path.as_ref().to_path_buf(),
+                path: path.as_ref().to_owned(),
                 tree_locks: Mutex::default(),
                 current_transaction_id: AtomicU64::new(UNINITIALIZED_ID),
-                log_position: Mutex::new(LogPosition::default()),
-                known_completed_transactions: Mutex::new(LruCache::new(1024)),
+                log_position: Mutex::default(),
+                batch_id_transactions: Mutex::default(),
+                known_completed_transactions: Mutex::default(),
             }),
         }
     }
 
-    pub(crate) fn initialize(&self, last_written_transaction: TransactionId, log_position: u64) {
+    pub(crate) fn initialize(&self, last_written_transaction: TransactionId) {
         let mut state_position = self.state.log_position.lock();
         self.state
             .current_transaction_id
@@ -74,8 +73,15 @@ impl State {
                 Ordering::SeqCst,
             )
             .expect("state already initialized");
-        state_position.file_offset = log_position;
         state_position.last_written_transaction = last_written_transaction;
+    }
+
+    pub(crate) fn is_initialized(&self) -> bool {
+        let position = self.state.log_position.lock();
+        !matches!(
+            position.last_written_transaction,
+            TransactionId(UNINITIALIZED_ID)
+        )
     }
 
     /// Returns the last successfully written transaction id, or None if no
@@ -99,19 +105,6 @@ impl State {
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.state.path
-    }
-
-    /// Returns the current length of the log.
-    #[must_use]
-    pub fn len(&self) -> u64 {
-        let position = self.state.log_position.lock();
-        position.file_offset
-    }
-
-    /// Returns if the log is empty.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 
     fn fetch_tree_locks<'a>(&self, trees: impl Iterator<Item = &'a [u8]>, locks: &mut TreeLocks) {
@@ -147,7 +140,11 @@ impl State {
     ) -> TransactionHandle {
         let trees = trees.into_iter();
         let mut locked_trees = Vec::with_capacity(trees.len());
-        self.fetch_tree_locks(trees, &mut locked_trees);
+        let trees_changed = trees
+            .into_iter()
+            .map(|buf| Cow::Owned(buf.to_vec()))
+            .collect::<Vec<_>>();
+        self.fetch_tree_locks(trees_changed.iter().map(|cow| &**cow), &mut locked_trees);
 
         TransactionHandle {
             locked_trees,
@@ -157,6 +154,7 @@ impl State {
                         .current_transaction_id
                         .fetch_add(1, Ordering::SeqCst),
                 ),
+                trees_changed,
                 data: None,
             },
         }
@@ -165,19 +163,19 @@ impl State {
     pub(crate) fn note_transaction_id_status(
         &self,
         transaction_id: TransactionId,
-        position: Option<u64>,
+        position: Option<GrainId>,
     ) {
         let mut cache = self.state.known_completed_transactions.lock();
-        cache.put(transaction_id, position);
+        cache.insert(transaction_id, position);
     }
 
     pub(crate) fn note_transaction_ids_completed(
         &self,
-        transaction_ids: &[(TransactionId, Option<u64>)],
+        transaction_ids: &[(TransactionId, Option<GrainId>)],
     ) {
         let mut cache = self.state.known_completed_transactions.lock();
         for (id, position) in transaction_ids {
-            cache.put(*id, *position);
+            cache.insert(*id, *position);
         }
     }
 
@@ -186,12 +184,42 @@ impl State {
     /// contents: either a valid position, or None if the transaction ID
     /// couldn't be found when it was last searched for.
     #[allow(clippy::option_option)]
-    pub(crate) fn transaction_id_position(
+    pub(crate) fn grain_id_for_transaction(
         &self,
         transaction_id: TransactionId,
-    ) -> Option<Option<u64>> {
-        let mut cache = self.state.known_completed_transactions.lock();
+    ) -> Option<Option<GrainId>> {
+        let cache = self.state.known_completed_transactions.lock();
         cache.get(&transaction_id).copied()
+    }
+
+    /// Returns an option representing whether the transaction id has
+    /// information cached about it. The inner option contains the cache
+    /// contents: either a valid position, or None if the transaction ID
+    /// couldn't be found when it was last searched for.
+    #[allow(clippy::option_option)]
+    pub(crate) fn batch_id_transactions(
+        &self,
+        batch: BatchId,
+    ) -> Option<Vec<(TransactionId, GrainId)>> {
+        let mut cache = self.state.batch_id_transactions.lock();
+        cache.get(&batch).cloned()
+    }
+
+    pub(crate) fn note_log_entry_batch(
+        &self,
+        batch: BatchId,
+        entries: &LogEntryBatch,
+    ) -> Vec<(TransactionId, GrainId)> {
+        let mut transaction_grains = Vec::new();
+        let mut known_completed_transactions = self.state.known_completed_transactions.lock();
+        for (transaction_id, grain_id) in &entries.entries {
+            known_completed_transactions.insert(*transaction_id, Some(*grain_id));
+            transaction_grains.push((*transaction_id, *grain_id));
+        }
+
+        let mut batch_id_transactions = self.state.batch_id_transactions.lock();
+        batch_id_transactions.insert(batch, transaction_grains.clone());
+        transaction_grains
     }
 }
 

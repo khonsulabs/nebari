@@ -5,7 +5,6 @@ use std::{
 
 use nebari::{
     sediment::io::fs::StdFileManager,
-    storage::sediment::SedimentFile,
     tree::{State, TreeFile},
     ArcBytes, ChunkCache, Context,
 };
@@ -16,7 +15,7 @@ use crate::{blobs::BlobGenerator, BenchConfig, NebariBenchmark, SimpleBench};
 
 pub struct InsertBlobs<B: NebariBenchmark> {
     _tempfile: TempDir,
-    tree: TreeFile<B::Root, SedimentFile<StdFileManager>>,
+    tree: TreeFile<B::Root, StdFileManager>,
     blob: BlobGenerator,
     _bench: PhantomData<B>,
 }
@@ -41,8 +40,8 @@ impl<B: NebariBenchmark> SimpleBench for InsertBlobs<B> {
         let tree = TreeFile::open(
             &tempfile.path().join("tree"),
             State::default(),
-            &StdFileManager::default(),
-            Some(ChunkCache::new(2000, 4096)),
+            &Context::default().with_cache(ChunkCache::new(2000, 4096)),
+            None,
         )?;
 
         Ok(Self {

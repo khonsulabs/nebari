@@ -2,10 +2,10 @@
 //! layer. For most users, the `nebari::Roots` type should be preferred.
 
 use nebari::{
-    io::{fs::StdFile, memory::MemoryFile, ManagedFile},
     tree::{ScanEvaluation, State, TreeFile, Unversioned, Versioned},
     ArcBytes, Context, Error,
 };
+use sediment::io::{fs::StdFileManager, memory::MemoryFileManager, FileManager};
 
 fn main() -> Result<(), Error> {
     // At its core, Nebari operates on TreeFiles. Each TreeFile is defined by
@@ -14,7 +14,7 @@ fn main() -> Result<(), Error> {
     // tree roots control whether full revision information is stored.
     //
     // To begin, let's open up a file without versioning on the filesystem:
-    let mut unversioned_tree = TreeFile::<Unversioned, StdFile>::write(
+    let mut unversioned_tree = TreeFile::<Unversioned, StdFileManager>::open(
         "unversioned-tree.nebari",
         State::default(),
         &Context::default(),
@@ -27,7 +27,7 @@ fn main() -> Result<(), Error> {
     // Or we could do the same thing, but this time using a memory-backed file.
     // Note: this isn't recommended to be used in production, but it can be
     // helpful in CI environments.
-    let mut unversioned_memory_tree = TreeFile::<Unversioned, MemoryFile>::write(
+    let mut unversioned_memory_tree = TreeFile::<Unversioned, MemoryFileManager>::open(
         "unversioned-tree.nebari",
         State::default(),
         &Context::default(),
@@ -36,7 +36,7 @@ fn main() -> Result<(), Error> {
     tree_basics(&mut unversioned_memory_tree)?;
 
     // We can also use the VersionedTreeRoot to be able to view full revision history in a tree.
-    let mut versioned_tree = TreeFile::<Versioned, StdFile>::write(
+    let mut versioned_tree = TreeFile::<Versioned, StdFileManager>::open(
         "versioned-tree.nebari",
         State::default(),
         &Context::default(),
@@ -61,7 +61,7 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn tree_basics<Root: nebari::tree::Root<Value = ArcBytes<'static>>, File: ManagedFile>(
+fn tree_basics<Root: nebari::tree::Root<Value = ArcBytes<'static>>, File: FileManager>(
     tree: &mut TreeFile<Root, File>,
 ) -> Result<(), Error> {
     // Insert a few key-value pairs.

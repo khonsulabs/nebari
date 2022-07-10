@@ -7,6 +7,7 @@ use std::{
 };
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use sediment::format::GrainId;
 
 use super::{
     interior::Interior,
@@ -1142,7 +1143,7 @@ where
                     if range.contains(&child.key.as_slice()) {
                         match (args.key_evaluator)(&child.key, &child.index) {
                             ScanEvaluation::ReadData => {
-                                if child.index.position() > 0 {
+                                if child.index.position().as_u64() > 0 {
                                     let data = match read_chunk(
                                         child.index.position(),
                                         false,
@@ -1262,7 +1263,7 @@ where
             &mut |key, index| key_evaluator(key, index),
             &mut |key, index| {
                 // Deleted keys are stored with a 0 position.
-                if index.position() > 0 {
+                if index.position().as_u64() > 0 {
                     positions_to_read.push((key, index.clone()));
                 }
                 Ok(())
@@ -1276,7 +1277,7 @@ where
         positions_to_read.sort_by(|a, b| a.1.position().cmp(&b.1.position()));
 
         for (key, index) in positions_to_read {
-            if index.position() > 0 {
+            if index.position().as_u64() > 0 {
                 match read_chunk(index.position(), false, file, vault, cache)? {
                     CacheEntry::ArcBytes(contents) => {
                         key_reader(key, contents, index)?;
@@ -1397,7 +1398,7 @@ where
         &mut self,
         include_nodes: NodeInclusion,
         file: &mut dyn BlobStorage,
-        copied_chunks: &mut HashMap<u64, u64>,
+        copied_chunks: &mut HashMap<GrainId, GrainId>,
         writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
         scratch: &mut Vec<u8>,
@@ -1408,7 +1409,7 @@ where
             &ArcBytes<'static>,
             &mut Index,
             &mut dyn BlobStorage,
-            &mut HashMap<u64, u64>,
+            &mut HashMap<GrainId, GrainId>,
             &mut PagedWriter<'_, '_>,
             Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,

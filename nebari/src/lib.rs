@@ -4,7 +4,6 @@
     clippy::cargo,
     missing_docs,
     // clippy::missing_docs_in_private_items,
-    clippy::nursery,
     clippy::pedantic,
     future_incompatible,
     rust_2018_idioms,
@@ -16,10 +15,8 @@
     clippy::module_name_repetitions,
 )]
 
-#[macro_use]
-pub mod io;
 mod error;
-// mod roots;
+mod roots;
 pub mod transaction;
 pub mod tree;
 mod vault;
@@ -37,10 +34,10 @@ pub use self::{
     chunk_cache::{CacheEntry, ChunkCache},
     context::Context,
     error::{AbortError, CompareAndSwapError, Error, ErrorKind, InternalError},
+    roots::{
+        Config, ExecutingTransaction, LockedTransactionTree, Roots, ThreadPool, TransactionTree,
+        Tree, UnlockedTransactionTree,
+    },
+    transaction::TransactionId,
     vault::{AnyVault, Vault},
 };
-
-// roots::{
-//     AbortError, CompareAndSwapError, Config, ExecutingTransaction, LockedTransactionTree,
-//     Roots, ThreadPool, TransactionTree, Tree, UnlockedTransactionTree,
-// },

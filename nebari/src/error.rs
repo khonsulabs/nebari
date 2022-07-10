@@ -1,7 +1,8 @@
 use std::{
     array::TryFromSliceError,
     convert::Infallible,
-    fmt::{Debug, Display},
+    fmt::{Debug, Display, Write},
+    num::TryFromIntError,
 };
 
 use backtrace::Backtrace;
@@ -45,11 +46,10 @@ impl Error {
                     line.push_str(&name.to_string());
                     line.push(' ');
                 } else if let Some(addr) = symbol.addr() {
-                    line.push_str(&format!("{:x}", addr as usize));
-                    line.push(' ');
+                    write!(line, "{:x} ", addr as usize).unwrap();
                 } else {
                     // Give up on formatting this one.
-                    line.push_str(&format!("{symbol:?}"));
+                    write!(line, "{symbol:?}").unwrap();
                     return line;
                 }
 
@@ -58,7 +58,7 @@ impl Error {
                         line.push_str("at ");
                         line.push_str(file);
                     } else {
-                        line.push_str(&format!("at {file:?}"));
+                        write!(line, "at {file:?}").unwrap();
                     }
 
                     if let Some(lineno) = symbol.lineno() {
@@ -115,6 +115,12 @@ impl From<ErrorKind> for Error {
             kind,
             backtrace: Mutex::new(Backtrace::new_unresolved()),
         }
+    }
+}
+
+impl From<TryFromIntError> for Error {
+    fn from(_: TryFromIntError) -> Self {
+        Self::data_integrity("value too large")
     }
 }
 

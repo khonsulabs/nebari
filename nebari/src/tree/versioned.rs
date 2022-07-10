@@ -6,6 +6,7 @@ use std::{
 };
 
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
+use sediment::format::GrainId;
 
 use super::{
     btree::BTreeEntry,
@@ -13,12 +14,11 @@ use super::{
     by_sequence::{BySequenceIndex, BySequenceStats},
     modify::Modification,
     serialization::BinarySerialization,
-    ChangeResult, PagedWriter, ScanEvaluation, PAGE_SIZE,
+    ChangeResult, PagedWriter, ScanEvaluation,
 };
 use crate::{
     chunk_cache::CacheEntry,
     error::{Error, InternalError},
-    io::File,
     storage::BlobStorage,
     transaction::TransactionId,
     tree::{
@@ -190,7 +190,7 @@ where
                             let value_length = value.len() as u32;
                             (new_position, value_length)
                         } else {
-                            (0, 0)
+                            (GrainId::from(0), 0)
                         };
                         let embedded = reducer.0.index(key, value);
                         changes.current_sequence = changes
@@ -221,7 +221,7 @@ where
                         Ok(KeyOperation::Set(new_index))
                     },
                     |index, writer| {
-                        if index.position > 0 {
+                        if index.position.as_u64() > 0 {
                             match writer.read_chunk(index.position) {
                                 Ok(CacheEntry::ArcBytes(buffer)) => Ok(Some(buffer)),
                                 Ok(CacheEntry::Decoded(_)) => unreachable!(),
@@ -298,7 +298,7 @@ where
         paged_writer: &mut PagedWriter<'_, '_>,
         output: &mut Vec<u8>,
     ) -> Result<(), Error> {
-        output.reserve(PAGE_SIZE);
+        output.reserve(4096);
         output.write_u64::<BigEndian>(self.transaction_id.0)?;
         output.write_u64::<BigEndian>(self.sequence.0)?;
         // Reserve space for by_sequence and by_id sizes (2xu32).
@@ -459,7 +459,7 @@ where
         &mut self,
         include_nodes: bool,
         file: &mut dyn BlobStorage,
-        copied_chunks: &mut HashMap<u64, u64>,
+        copied_chunks: &mut HashMap<GrainId, GrainId>,
         writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error> {
@@ -564,7 +564,7 @@ impl<Embedded> Default for EntryChanges<Embedded> {
 
 pub struct EntryChange<Embedded> {
     pub key_sequence: KeySequence<Embedded>,
-    pub value_position: u64,
+    pub value_position: GrainId,
     pub value_size: u32,
 }
 

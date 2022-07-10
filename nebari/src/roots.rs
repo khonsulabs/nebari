@@ -2,7 +2,6 @@ use std::{
     any::Any,
     borrow::{Borrow, Cow},
     collections::HashMap,
-    convert::Infallible,
     fmt::{Debug, Display},
     fs,
     ops::{Deref, DerefMut, RangeBounds},
@@ -16,46 +15,49 @@ use std::{
 use flume::Sender;
 use once_cell::sync::Lazy;
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
+use sediment::{
+    database::PendingCommit,
+    format::BatchId,
+    io::{self, fs::StdFileManager, paths::PathId},
+};
 
 use crate::{
     context::Context,
     error::Error,
-    storage::Storage,
-    transaction::{
-        CommittedTreeState, LogEntry, ManagedTransaction, TransactionId, TransactionManager,
-    },
+    storage::sediment::SedimentFile,
+    transaction::{LogEntry, ManagedTransaction, TransactionId, TransactionManager},
     tree::{
         self,
         root::{AnyReducer, AnyTreeRoot},
         state::AnyTreeState,
-        EmbeddedIndex, KeySequence, Modification, ModificationResult, Operation, PersistenceMode,
-        ScanEvaluation, SequenceEntry, SequenceId, SequenceIndex, State, TransactableCompaction,
-        TreeEntry, TreeFile, TreeRoot, TreeValueIndex, VersionedTreeRoot,
+        CommittedTreeState, EmbeddedIndex, KeySequence, Modification, ModificationResult,
+        Operation, PersistenceMode, ScanEvaluation, SequenceEntry, SequenceId, SequenceIndex,
+        State, TreeEntry, TreeFile, TreeRoot, TreeValueIndex, VersionedTreeRoot,
     },
     vault::AnyVault,
-    ArcBytes, ChunkCache, ErrorKind,
+    AbortError, ArcBytes, ChunkCache, CompareAndSwapError, ErrorKind,
 };
 
 /// A multi-tree transactional B-Tree database.
 #[derive(Debug)]
-pub struct Roots<File: Storage> {
+pub struct Roots<File: io::FileManager> {
     data: Arc<Data<File>>,
 }
 
 #[derive(Debug)]
-struct Data<File: Storage> {
-    context: Context<File::Manager>,
-    transactions: TransactionManager<File::Manager>,
+struct Data<File: io::FileManager> {
+    context: Context<File>,
+    transactions: TransactionManager<File>,
     thread_pool: ThreadPool<File>,
     path: PathBuf,
     tree_states: Mutex<HashMap<String, Box<dyn AnyTreeState>>>,
-    // tree_paths: Mutex<HashMap<String, PathId>>,
+    trees: Mutex<HashMap<String, SedimentFile<File>>>,
 }
 
-impl<File: Storage> Roots<File> {
+impl<File: io::FileManager> Roots<File> {
     fn open<P: Into<PathBuf> + Send>(
         path: P,
-        context: Context<File::Manager>,
+        context: Context<File>,
         thread_pool: ThreadPool<File>,
     ) -> Result<Self, Error> {
         let path = path.into();
@@ -77,7 +79,7 @@ impl<File: Storage> Roots<File> {
                 transactions,
                 thread_pool,
                 tree_states: Mutex::default(),
-                tree_paths: Mutex::default(),
+                trees: Mutex::default(),
             }),
         })
     }
@@ -89,13 +91,13 @@ impl<File: Storage> Roots<File> {
     }
 
     /// Returns the vault used to encrypt this database.
-    pub fn context(&self) -> &Context<File::Manager> {
+    pub fn context(&self) -> &Context<File> {
         &self.data.context
     }
 
     /// Returns the transaction manager for this database.
     #[must_use]
-    pub fn transactions(&self) -> &TransactionManager<File::Manager> {
+    pub fn transactions(&self) -> &TransactionManager<File> {
         &self.data.transactions
     }
 
@@ -111,14 +113,11 @@ impl<File: Storage> Roots<File> {
         root: TreeRoot<Root, File>,
     ) -> Result<Tree<Root, File>, Error> {
         check_name(&root.name)?;
-        let path = self.tree_path(&root.name);
-        if !self.context().file_manager.exists(&path)? {
-            self.context().file_manager.append(&path)?;
-        }
+        let database = self.tree_file(&root.name)?;
         let state = self.tree_state(root.clone());
         Ok(Tree {
             roots: self.clone(),
-            path,
+            database,
             state,
             vault: root.vault,
             reducer: root.reducer,
@@ -126,28 +125,32 @@ impl<File: Storage> Roots<File> {
         })
     }
 
-    fn tree_path(&self, name: &str) -> PathId {
-        let mut paths = self.data.tree_paths.lock();
-        if let Some(id) = paths.get(name) {
-            id.clone()
+    fn tree_file(&self, name: &str) -> Result<SedimentFile<File>, Error> {
+        let mut trees = self.data.trees.lock();
+        if let Some(db) = trees.get(name) {
+            Ok(db.clone())
         } else {
-            let id = self
-                .context()
-                .file_manager
-                .resolve_path(self.path().join(format!("{}.nebari", name)), true)
-                .unwrap();
-            paths.insert(name.to_owned(), id.clone());
-            id
+            let path = self.tree_path(name);
+            let db = SedimentFile::open(&path, true, self.data.context.file_manager.clone())?;
+            trees.insert(name.to_string(), db.clone());
+            Ok(db)
         }
+    }
+
+    fn tree_path(&self, name: &str) -> PathId {
+        self.context()
+            .file_manager
+            .resolve_path(self.path().join(format!("{}.nebari", name)))
     }
 
     /// Removes a tree. Returns true if a tree was deleted.
     pub fn delete_tree(&self, name: impl Into<Cow<'static, str>>) -> Result<bool, Error> {
         let name = name.into();
         let mut tree_states = self.data.tree_states.lock();
-        self.context()
-            .file_manager
-            .delete(self.tree_path(name.as_ref()))?;
+        todo!();
+        // self.context()
+        //     .file_manager
+        //     .delete(self.tree_path(name.as_ref()))?;
         Ok(tree_states.remove(name.as_ref()).is_some())
     }
 
@@ -207,8 +210,10 @@ impl<File: Storage> Roots<File> {
         &self,
         trees: &[R],
     ) -> Result<ExecutingTransaction<File>, Error> {
+        let mut files = Vec::with_capacity(trees.len());
         for tree in trees {
             check_name(tree.borrow().name()).map(|_| tree.borrow().name().as_bytes())?;
+            files.push(self.tree_file(tree.borrow().name())?);
         }
         let transaction = self
             .data
@@ -217,12 +222,13 @@ impl<File: Storage> Roots<File> {
         let states = self.tree_states(trees);
         let trees = trees
             .iter()
-            .zip(states.into_iter())
-            .map(|(tree, state)| {
+            .zip(states)
+            .zip(files)
+            .map(|((tree, state), file)| {
                 tree.borrow()
                     .begin_transaction(
                         transaction.id,
-                        &self.tree_path(tree.borrow().name()),
+                        file,
                         state.as_ref(),
                         self.context(),
                         Some(&self.data.transactions),
@@ -250,7 +256,7 @@ fn check_name(name: &str) -> Result<(), Error> {
     }
 }
 
-impl<File: ManagedFile> Clone for Roots<File> {
+impl<File: io::FileManager> Clone for Roots<File> {
     fn clone(&self) -> Self {
         Self {
             data: self.data.clone(),
@@ -261,17 +267,17 @@ impl<File: ManagedFile> Clone for Roots<File> {
 /// An executing transaction. While this exists, no other transactions can
 /// execute across the same trees as this transaction holds.
 #[must_use]
-pub struct ExecutingTransaction<File: ManagedFile> {
+pub struct ExecutingTransaction<File: io::FileManager> {
     roots: Roots<File>,
     trees: Vec<UnlockedTransactionTree<File>>,
-    transaction: Option<ManagedTransaction<File::Manager>>,
+    transaction: Option<ManagedTransaction<File>>,
 }
 
 /// A tree that belongs to an [`ExecutingTransaction`].
 #[must_use]
-pub struct UnlockedTransactionTree<File: ManagedFile>(Mutex<Box<dyn AnyTransactionTree<File>>>);
+pub struct UnlockedTransactionTree<File: io::FileManager>(Mutex<Box<dyn AnyTransactionTree<File>>>);
 
-impl<File: ManagedFile> UnlockedTransactionTree<File> {
+impl<File: io::FileManager> UnlockedTransactionTree<File> {
     fn new(file: Box<dyn AnyTransactionTree<File>>) -> Self {
         Self(Mutex::new(file))
     }
@@ -292,11 +298,11 @@ impl<File: ManagedFile> UnlockedTransactionTree<File> {
 /// A locked transaction tree. This transactional tree is exclusively available
 /// for writing and reading to the thread that locks it.
 #[must_use]
-pub struct LockedTransactionTree<'transaction, Root: tree::Root, File: Storage>(
+pub struct LockedTransactionTree<'transaction, Root: tree::Root, File: io::FileManager>(
     MappedMutexGuard<'transaction, TransactionTree<Root, File>>,
 );
 
-impl<'transaction, Root: tree::Root, File: Storage> Deref
+impl<'transaction, Root: tree::Root, File: io::FileManager> Deref
     for LockedTransactionTree<'transaction, Root, File>
 {
     type Target = TransactionTree<Root, File>;
@@ -306,7 +312,7 @@ impl<'transaction, Root: tree::Root, File: Storage> Deref
     }
 }
 
-impl<'transaction, Root: tree::Root, File: ManagedFile> DerefMut
+impl<'transaction, Root: tree::Root, File: io::FileManager> DerefMut
     for LockedTransactionTree<'transaction, Root, File>
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -314,7 +320,7 @@ impl<'transaction, Root: tree::Root, File: ManagedFile> DerefMut
     }
 }
 
-impl<File: ManagedFile> ExecutingTransaction<File> {
+impl<File: io::FileManager> ExecutingTransaction<File> {
     /// Returns the [`LogEntry`] for this transaction.
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
@@ -371,6 +377,7 @@ impl<File: ManagedFile> ExecutingTransaction<File> {
     /// Accesses an unlocked tree. Note: If you clone an
     /// [`UnlockedTransactionTree`], you must make sure to drop all instances
     /// before calling commit.
+    #[must_use]
     pub fn unlocked_tree(&self, index: usize) -> Option<&UnlockedTransactionTree<File>> {
         self.trees.get(index)
     }
@@ -383,7 +390,7 @@ impl<File: ManagedFile> ExecutingTransaction<File> {
     }
 }
 
-impl<File: ManagedFile> Drop for ExecutingTransaction<File> {
+impl<File: io::FileManager> Drop for ExecutingTransaction<File> {
     fn drop(&mut self) {
         if let Some(transaction) = self.transaction.take() {
             self.rollback_tree_states();
@@ -394,23 +401,25 @@ impl<File: ManagedFile> Drop for ExecutingTransaction<File> {
 }
 
 /// A tree that is modifiable during a transaction.
-pub struct TransactionTree<Root: tree::Root, File: Storage> {
+pub struct TransactionTree<Root: tree::Root, File: io::FileManager> {
     pub(crate) transaction_id: TransactionId,
     /// The underlying tree file.
     pub tree: TreeFile<Root, File>,
 }
 
-pub trait AnyTransactionTree<File: ManagedFile>: Any + Send + Sync {
+pub trait AnyTransactionTree<File: io::FileManager>: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     fn state(&self) -> Box<dyn AnyTreeState>;
 
-    fn commit(&mut self) -> Result<Option<CommittedTreeState>, Error>;
+    fn commit(&mut self) -> Result<Option<CommittedTreeState<File>>, Error>;
     fn rollback(&self);
 }
 
-impl<Root: tree::Root, File: ManagedFile> AnyTransactionTree<File> for TransactionTree<Root, File> {
+impl<Root: tree::Root, File: io::FileManager> AnyTransactionTree<File>
+    for TransactionTree<Root, File>
+{
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -422,7 +431,7 @@ impl<Root: tree::Root, File: ManagedFile> AnyTransactionTree<File> for Transacti
         Box::new(self.tree.state.clone())
     }
 
-    fn commit(&mut self) -> Result<Option<CommittedTreeState>, Error> {
+    fn commit(&mut self) -> Result<Option<CommittedTreeState<File>>, Error> {
         self.tree.begin_commit()
     }
 
@@ -432,7 +441,7 @@ impl<Root: tree::Root, File: ManagedFile> AnyTransactionTree<File> for Transacti
     }
 }
 
-impl<File: ManagedFile, Index> TransactionTree<VersionedTreeRoot<Index>, File>
+impl<File: io::FileManager, Index> TransactionTree<VersionedTreeRoot<Index>, File>
 where
     Index: Clone + EmbeddedIndex<ArcBytes<'static>> + Debug + 'static,
 {
@@ -511,7 +520,7 @@ where
     }
 }
 
-impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
+impl<Root: tree::Root, File: io::FileManager> TransactionTree<Root, File> {
     /// Sets `key` to `value`. Returns the newly created index for this key.
     pub fn set(
         &mut self,
@@ -766,15 +775,15 @@ impl<Root: tree::Root, File: ManagedFile> TransactionTree<Root, File> {
 /// A database configuration used to open a database.
 #[derive(Debug)]
 #[must_use]
-pub struct Config<M: FileManager = StdFileManager> {
+pub struct Config<M: io::FileManager> {
     path: PathBuf,
     vault: Option<Arc<dyn AnyVault>>,
     cache: Option<ChunkCache>,
     file_manager: Option<M>,
-    thread_pool: Option<ThreadPool<M::File>>,
+    thread_pool: Option<ThreadPool<M>>,
 }
 
-impl<M: FileManager> Clone for Config<M> {
+impl<M: io::FileManager> Clone for Config<M> {
     fn clone(&self) -> Self {
         Self {
             path: self.path.clone(),
@@ -814,7 +823,7 @@ impl Config<StdFileManager> {
     /// ## Panics
     ///
     /// Panics if called after a shared thread pool has been set.
-    pub fn file_manager<M: FileManager>(self, file_manager: M) -> Config<M> {
+    pub fn file_manager<M: io::FileManager>(self, file_manager: M) -> Config<M> {
         assert!(self.thread_pool.is_none());
         Config {
             path: self.path,
@@ -826,7 +835,7 @@ impl Config<StdFileManager> {
     }
 }
 
-impl<M: FileManager> Config<M> {
+impl<M: io::FileManager> Config<M> {
     /// Sets the vault to use for this database.
     pub fn vault<V: AnyVault>(mut self, vault: V) -> Self {
         self.vault = Some(Arc::new(vault));
@@ -834,6 +843,7 @@ impl<M: FileManager> Config<M> {
     }
 
     /// Sets the chunk cache to use for this database.
+    #[allow(clippy::missing_const_for_fn)] // destructors
     pub fn cache(mut self, cache: ChunkCache) -> Self {
         self.cache = Some(cache);
         self
@@ -842,13 +852,13 @@ impl<M: FileManager> Config<M> {
     /// Uses the `thread_pool` provided instead of creating its own. This will
     /// allow a single thread pool to manage multiple [`Roots`] instances'
     /// transactions.
-    pub fn shared_thread_pool(mut self, thread_pool: &ThreadPool<M::File>) -> Self {
+    pub fn shared_thread_pool(mut self, thread_pool: &ThreadPool<M>) -> Self {
         self.thread_pool = Some(thread_pool.clone());
         self
     }
 
     /// Opens the database, or creates one if the target path doesn't exist.
-    pub fn open(self) -> Result<Roots<M::File>, Error> {
+    pub fn open(self) -> Result<Roots<M>, Error> {
         Roots::open(
             self.path,
             Context {
@@ -862,20 +872,20 @@ impl<M: FileManager> Config<M> {
 }
 
 /// A named collection of keys and values.
-pub struct Tree<Root: tree::Root, File: ManagedFile> {
+pub struct Tree<Root: tree::Root, File: io::FileManager> {
     roots: Roots<File>,
-    path: PathId,
+    database: SedimentFile<File>,
     state: State<Root>,
     reducer: Arc<dyn AnyReducer>,
     vault: Option<Arc<dyn AnyVault>>,
     name: Cow<'static, str>,
 }
 
-impl<Root: tree::Root, File: ManagedFile> Clone for Tree<Root, File> {
+impl<Root: tree::Root, File: io::FileManager> Clone for Tree<Root, File> {
     fn clone(&self) -> Self {
         Self {
             roots: self.roots.clone(),
-            path: self.path.clone(),
+            database: self.database.clone(),
             state: self.state.clone(),
             vault: self.vault.clone(),
             reducer: self.reducer.clone(),
@@ -884,7 +894,7 @@ impl<Root: tree::Root, File: ManagedFile> Clone for Tree<Root, File> {
     }
 }
 
-impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
+impl<Root: tree::Root, File: io::FileManager> Tree<Root, File> {
     /// Returns the name of the tree.
     #[must_use]
     pub fn name(&self) -> &str {
@@ -894,7 +904,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// Returns the path to the file for this tree.
     #[must_use]
     pub fn path(&self) -> &Path {
-        self.path.path()
+        self.database.db.path()
     }
 
     /// Returns the number of keys stored in the tree. Does not include deleted keys.
@@ -940,17 +950,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// implementing custom roots and wish to expose functionality through
     /// Roots.
     pub fn open_for_read(&self) -> Result<TreeFile<Root, File>, Error> {
-        let context = self.vault.as_ref().map_or_else(
-            || Cow::Borrowed(self.roots.context()),
-            |vault| Cow::Owned(self.roots.context().clone().with_any_vault(vault.clone())),
-        );
-
-        TreeFile::<Root, File>::read(
-            &self.path,
-            self.state.clone(),
-            &context,
-            Some(self.roots.transactions()),
-        )
+        self.open_for_write()
     }
 
     /// Returns a [`TreeFile`] for lower-level operations within the context of
@@ -967,8 +967,8 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
             |vault| Cow::Owned(self.roots.context().clone().with_any_vault(vault.clone())),
         );
 
-        TreeFile::<Root, File>::write(
-            &self.path,
+        TreeFile::<Root, File>::open_sediment_file(
+            self.database.clone(),
             self.state.clone(),
             &context,
             Some(self.roots.transactions()),
@@ -1351,30 +1351,30 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
         })
     }
 
-    /// Rewrites the database to remove data that is no longer current. Because
-    /// Nebari uses an append-only format, this is helpful in reducing disk
-    /// usage.
-    ///
-    /// See [`TreeFile::compact()`](crate::tree::TreeFile::compact) for more
-    /// information.
-    pub fn compact(&self) -> Result<(), Error> {
-        let tree = match self.open_for_read() {
-            Ok(tree) => tree,
-            Err(err) if err.kind.is_file_not_found() => return Ok(()),
-            Err(err) => return Err(err),
-        };
-        tree.compact(
-            &self.roots.context().file_manager,
-            Some(TransactableCompaction {
-                name: self.name.as_ref(),
-                manager: self.roots.transactions(),
-            }),
-        )?;
-        Ok(())
-    }
+    // /// Rewrites the database to remove data that is no longer current. Because
+    // /// Nebari uses an append-only format, this is helpful in reducing disk
+    // /// usage.
+    // ///
+    // /// See [`TreeFile::compact()`](crate::tree::TreeFile::compact) for more
+    // /// information.
+    // pub fn compact(&self) -> Result<(), Error> {
+    //     let tree = match self.open_for_read() {
+    //         Ok(tree) => tree,
+    //         Err(err) if err.kind.is_file_not_found() => return Ok(()),
+    //         Err(err) => return Err(err),
+    //     };
+    //     tree.compact(
+    //         &self.roots.context().file_manager,
+    //         Some(TransactableCompaction {
+    //             name: self.name.as_ref(),
+    //             manager: self.roots.transactions(),
+    //         }),
+    //     )?;
+    //     Ok(())
+    // }
 }
 
-impl<Root: tree::Root, File: ManagedFile> AnyTreeRoot<File> for Tree<Root, File> {
+impl<Root: tree::Root, File: io::FileManager> AnyTreeRoot<File> for Tree<Root, File> {
     fn name(&self) -> &str {
         &self.name
     }
@@ -1397,17 +1397,17 @@ impl<Root: tree::Root, File: ManagedFile> AnyTreeRoot<File> for Tree<Root, File>
     fn begin_transaction(
         &self,
         transaction_id: TransactionId,
-        file_path: &PathId,
+        file: SedimentFile<File>,
         state: &dyn AnyTreeState,
-        context: &Context<File::Manager>,
-        transactions: Option<&TransactionManager<File::Manager>>,
+        context: &Context<File>,
+        transactions: Option<&TransactionManager<File>>,
     ) -> Result<Box<dyn AnyTransactionTree<File>>, Error> {
         let context = self.vault.as_ref().map_or_else(
             || Cow::Borrowed(context),
             |vault| Cow::Owned(context.clone().with_any_vault(vault.clone())),
         );
-        let tree = TreeFile::write(
-            file_path,
+        let tree = TreeFile::open_sediment_file(
+            file,
             state
                 .as_any()
                 .downcast_ref::<State<Root>>()
@@ -1424,7 +1424,7 @@ impl<Root: tree::Root, File: ManagedFile> AnyTreeRoot<File> for Tree<Root, File>
     }
 }
 
-impl<File: ManagedFile, Index> Tree<VersionedTreeRoot<Index>, File>
+impl<File: io::FileManager, Index> Tree<VersionedTreeRoot<Index>, File>
 where
     Index: EmbeddedIndex<ArcBytes<'static>> + Clone + Debug + 'static,
 {
@@ -1457,8 +1457,8 @@ where
         CallerError: Display + Debug,
     {
         catch_compaction_and_retry_abortable(|| {
-            let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::read(
-                &self.path,
+            let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::open_sediment_file(
+                self.database.clone(),
                 self.state.clone(),
                 self.roots.context(),
                 Some(self.roots.transactions()),
@@ -1487,8 +1487,8 @@ where
         Sequences: Iterator<Item = SequenceId> + Clone,
     {
         catch_compaction_and_retry(|| {
-            let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::read(
-                &self.path,
+            let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::open_sediment_file(
+                self.database.clone(),
                 self.state.clone(),
                 self.roots.context(),
                 Some(self.roots.transactions()),
@@ -1510,8 +1510,8 @@ where
         Sequences: Iterator<Item = SequenceId> + Clone,
     {
         catch_compaction_and_retry(|| {
-            let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::read(
-                &self.path,
+            let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::open_sediment_file(
+                self.database.clone(),
                 self.state.clone(),
                 self.roots.context(),
                 Some(self.roots.transactions()),
@@ -1534,8 +1534,8 @@ where
         Sequences: Iterator<Item = SequenceId> + Clone,
     {
         catch_compaction_and_retry(|| {
-            let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::read(
-                &self.path,
+            let mut tree = TreeFile::<VersionedTreeRoot<Index>, File>::open_sediment_file(
+                self.database.clone(),
                 self.state.clone(),
                 self.roots.context(),
                 Some(self.roots.transactions()),
@@ -1550,7 +1550,7 @@ where
 #[derive(Debug)]
 pub struct ThreadPool<File>
 where
-    File: ManagedFile,
+    File: io::FileManager,
 {
     sender: flume::Sender<ThreadCommand<File>>,
     receiver: flume::Receiver<ThreadCommand<File>>,
@@ -1558,7 +1558,7 @@ where
     maximum_threads: usize,
 }
 
-impl<File: ManagedFile> ThreadPool<File> {
+impl<File: io::FileManager> ThreadPool<File> {
     /// Returns a thread pool that will spawn up to `maximum_threads` to process
     /// file operations.
     #[must_use]
@@ -1575,7 +1575,7 @@ impl<File: ManagedFile> ThreadPool<File> {
     fn commit_trees(
         &self,
         trees: Vec<UnlockedTransactionTree<File>>,
-    ) -> Result<Vec<CommittedTreeState>, Error> {
+    ) -> Result<Vec<CommittedTreeState<File>>, Error> {
         // If we only have one tree, there's no reason to split IO across
         // threads. If we have multiple trees, we should split even with one
         // cpu: if one thread blocks, the other can continue executing.
@@ -1638,40 +1638,53 @@ impl<File: ManagedFile> ThreadPool<File> {
         }
     }
 
-    pub(crate) fn synchronize_paths<Paths: Iterator<Item = PathId>>(
+    pub(crate) fn finish_all_commits_async<PendingCommits: Iterator<Item = PendingCommit<File>>>(
         &self,
-        paths: Paths,
-        manager: &File::Manager,
-    ) -> Result<(), Error> {
+        all_commits: PendingCommits,
+    ) -> Result<CommitAllHandle, Error> {
         let (completion_sender, completion_receiver) = flume::unbounded();
         let mut sync_count = 0;
-        for path in paths {
+        for pending_commit in all_commits {
             sync_count += 1;
-            self.sender.send(ThreadCommand::Sync(ThreadSync {
-                path,
-                manager: manager.clone(),
-                completion_sender: completion_sender.clone(),
-            }))?;
+            self.sender
+                .send(ThreadCommand::FinishCommit(ThreadFinishCommit {
+                    pending_commit,
+                    completion_sender: completion_sender.clone(),
+                }))?;
         }
 
         self.spawn_threads_if_needed(sync_count);
 
-        for _ in 0..sync_count {
-            completion_receiver.recv()??;
-        }
+        Ok(CommitAllHandle {
+            sync_count,
+            completion_receiver,
+        })
+    }
+}
 
+pub struct CommitAllHandle {
+    sync_count: usize,
+    completion_receiver: flume::Receiver<Result<BatchId, Error>>,
+}
+
+impl CommitAllHandle {
+    pub fn wait(&mut self) -> Result<(), Error> {
+        while self.sync_count > 0 {
+            self.completion_receiver.recv()??;
+            self.sync_count -= 1;
+        }
         Ok(())
     }
 }
 
-impl<File: ManagedFile> Default for ThreadPool<File> {
+impl<File: io::FileManager> Default for ThreadPool<File> {
     fn default() -> Self {
         static CPU_COUNT: Lazy<usize> = Lazy::new(num_cpus::get);
         Self::new(*CPU_COUNT)
     }
 }
 
-impl<File: ManagedFile> Clone for ThreadPool<File> {
+impl<File: io::FileManager> Clone for ThreadPool<File> {
     fn clone(&self) -> Self {
         Self {
             sender: self.sender.clone(),
@@ -1683,7 +1696,7 @@ impl<File: ManagedFile> Clone for ThreadPool<File> {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn thread_pool_worker<File: ManagedFile>(receiver: flume::Receiver<ThreadCommand<File>>) {
+fn thread_pool_worker<File: io::FileManager>(receiver: flume::Receiver<ThreadCommand<File>>) {
     while let Ok(command) = receiver.recv() {
         match command {
             ThreadCommand::Commit(ThreadCommit {
@@ -1694,38 +1707,36 @@ fn thread_pool_worker<File: ManagedFile>(receiver: flume::Receiver<ThreadCommand
                 let result = locked.commit();
                 drop(completion_sender.send(result));
             }
-            ThreadCommand::Sync(ThreadSync {
-                path,
-                manager,
+            ThreadCommand::FinishCommit(ThreadFinishCommit {
+                pending_commit,
                 completion_sender,
-            }) => drop(completion_sender.send(manager.synchronize(path))),
+            }) => drop(completion_sender.send(pending_commit.commit().map_err(Error::from))),
         }
     }
 }
 
 enum ThreadCommand<File>
 where
-    File: ManagedFile,
+    File: io::FileManager,
 {
     Commit(ThreadCommit<File>),
-    Sync(ThreadSync<File>),
+    FinishCommit(ThreadFinishCommit<File>),
 }
 
 struct ThreadCommit<File>
 where
-    File: ManagedFile,
+    File: io::FileManager,
 {
     tree: UnlockedTransactionTree<File>,
-    completion_sender: Sender<Result<Option<CommittedTreeState>, Error>>,
+    completion_sender: Sender<Result<Option<CommittedTreeState<File>>, Error>>,
 }
 
-struct ThreadSync<File>
+struct ThreadFinishCommit<File>
 where
-    File: ManagedFile,
+    File: io::FileManager,
 {
-    path: PathId,
-    manager: File::Manager,
-    completion_sender: Sender<Result<(), Error>>,
+    pending_commit: PendingCommit<File>,
+    completion_sender: Sender<Result<BatchId, Error>>,
 }
 
 fn catch_compaction_and_retry<R, F: Fn() -> Result<R, Error>>(func: F) -> Result<R, Error> {
@@ -1767,15 +1778,14 @@ fn catch_compaction_and_retry_abortable<
 
 #[cfg(test)]
 mod tests {
-    use byteorder::{BigEndian, ByteOrder};
     use tempfile::tempdir;
 
     use super::*;
     use crate::{
-        io::{any::AnyFileManager, fs::StdFileManager, memory::MemoryFileManager},
         test_util::RotatorVault,
-        tree::{Root, Unversioned, ValueIndex, Versioned},
+        tree::{Root, Versioned},
     };
+    use sediment::io::{fs::StdFileManager, memory::MemoryFileManager, FileManager};
 
     fn basic_get_set<M: FileManager>(file_manager: M) {
         let tempdir = tempdir().unwrap();
@@ -1881,91 +1891,91 @@ mod tests {
         assert_eq!(result, b"value");
     }
 
-    #[test]
-    fn std_compact_test_versioned() {
-        compact_test::<Versioned, _>(StdFileManager::default());
-    }
+    // #[test]
+    // fn std_compact_test_versioned() {
+    //     compact_test::<Versioned, _>(StdFileManager::default());
+    // }
 
-    #[test]
-    fn std_compact_test_unversioned() {
-        compact_test::<Unversioned, _>(StdFileManager::default());
-    }
+    // #[test]
+    // fn std_compact_test_unversioned() {
+    //     compact_test::<Unversioned, _>(StdFileManager::default());
+    // }
 
-    #[test]
-    fn memory_compact_test_versioned() {
-        compact_test::<Versioned, _>(MemoryFileManager::default());
-    }
+    // #[test]
+    // fn memory_compact_test_versioned() {
+    //     compact_test::<Versioned, _>(MemoryFileManager::default());
+    // }
 
-    #[test]
-    fn memory_compact_test_unversioned() {
-        compact_test::<Unversioned, _>(MemoryFileManager::default());
-    }
+    // #[test]
+    // fn memory_compact_test_unversioned() {
+    //     compact_test::<Unversioned, _>(MemoryFileManager::default());
+    // }
 
-    #[test]
-    fn any_compact_test_versioned() {
-        compact_test::<Versioned, _>(AnyFileManager::std());
-        compact_test::<Versioned, _>(AnyFileManager::memory());
-    }
+    // #[test]
+    // fn any_compact_test_versioned() {
+    //     compact_test::<Versioned, _>(AnyFileManager::std());
+    //     compact_test::<Versioned, _>(AnyFileManager::memory());
+    // }
 
-    #[test]
-    fn any_compact_test_unversioned() {
-        compact_test::<Unversioned, _>(AnyFileManager::std());
-        compact_test::<Unversioned, _>(AnyFileManager::memory());
-    }
+    // #[test]
+    // fn any_compact_test_unversioned() {
+    //     compact_test::<Unversioned, _>(AnyFileManager::std());
+    //     compact_test::<Unversioned, _>(AnyFileManager::memory());
+    // }
 
-    fn compact_test<R: Root<Value = ArcBytes<'static>>, M: FileManager>(file_manager: M)
-    where
-        R::Reducer: Default,
-    {
-        const OPERATION_COUNT: usize = 256;
-        const WORKER_COUNT: usize = 4;
-        let tempdir = tempdir().unwrap();
+    // fn compact_test<R: Root<Value = ArcBytes<'static>>, M: FileManager>(file_manager: M)
+    // where
+    //     R::Reducer: Default,
+    // {
+    //     const OPERATION_COUNT: usize = 256;
+    //     const WORKER_COUNT: usize = 4;
+    //     let tempdir = tempdir().unwrap();
 
-        let roots = Config::new(dbg!(tempdir.path()))
-            .file_manager(file_manager)
-            .open()
-            .unwrap();
-        let tree = roots.tree(R::tree("test")).unwrap();
-        tree.set("foo", b"bar").unwrap();
+    //     let roots = Config::new(dbg!(tempdir.path()))
+    //         .file_manager(file_manager)
+    //         .open()
+    //         .unwrap();
+    //     let tree = roots.tree(R::tree("test")).unwrap();
+    //     tree.set("foo", b"bar").unwrap();
 
-        // Spawn a pool of threads that will perform a series of operations
-        let mut threads = Vec::new();
-        for worker in 0..WORKER_COUNT {
-            let tree = tree.clone();
-            threads.push(std::thread::spawn(move || {
-                for relative_id in 0..OPERATION_COUNT {
-                    let absolute_id = (worker * OPERATION_COUNT + relative_id) as u64;
-                    tree.set(absolute_id.to_be_bytes(), absolute_id.to_be_bytes())
-                        .unwrap();
-                    let ValueIndex { value, .. } = tree
-                        .remove(&absolute_id.to_be_bytes())
-                        .unwrap()
-                        .ok_or_else(|| panic!("value not found: {:?}", absolute_id))
-                        .unwrap();
-                    assert_eq!(BigEndian::read_u64(&value), absolute_id);
-                    tree.set(absolute_id.to_be_bytes(), absolute_id.to_be_bytes())
-                        .unwrap();
-                    let newer_value = tree
-                        .get(&absolute_id.to_be_bytes())
-                        .unwrap()
-                        .expect("couldn't find found");
-                    assert_eq!(value, newer_value);
-                }
-            }));
-        }
+    //     // Spawn a pool of threads that will perform a series of operations
+    //     let mut threads = Vec::new();
+    //     for worker in 0..WORKER_COUNT {
+    //         let tree = tree.clone();
+    //         threads.push(std::thread::spawn(move || {
+    //             for relative_id in 0..OPERATION_COUNT {
+    //                 let absolute_id = (worker * OPERATION_COUNT + relative_id) as u64;
+    //                 tree.set(absolute_id.to_be_bytes(), absolute_id.to_be_bytes())
+    //                     .unwrap();
+    //                 let ValueIndex { value, .. } = tree
+    //                     .remove(&absolute_id.to_be_bytes())
+    //                     .unwrap()
+    //                     .ok_or_else(|| panic!("value not found: {:?}", absolute_id))
+    //                     .unwrap();
+    //                 assert_eq!(BigEndian::read_u64(&value), absolute_id);
+    //                 tree.set(absolute_id.to_be_bytes(), absolute_id.to_be_bytes())
+    //                     .unwrap();
+    //                 let newer_value = tree
+    //                     .get(&absolute_id.to_be_bytes())
+    //                     .unwrap()
+    //                     .expect("couldn't find found");
+    //                 assert_eq!(value, newer_value);
+    //             }
+    //         }));
+    //     }
 
-        threads.push(std::thread::spawn(move || {
-            // While those workers are running, this thread is going to continually
-            // execute compaction.
-            while tree.count() < (OPERATION_COUNT * WORKER_COUNT) as u64 {
-                tree.compact().unwrap();
-            }
-        }));
+    //     threads.push(std::thread::spawn(move || {
+    //         // While those workers are running, this thread is going to continually
+    //         // execute compaction.
+    //         while tree.count() < (OPERATION_COUNT * WORKER_COUNT) as u64 {
+    //             tree.compact().unwrap();
+    //         }
+    //     }));
 
-        for thread in threads {
-            thread.join().unwrap();
-        }
-    }
+    //     for thread in threads {
+    //         thread.join().unwrap();
+    //     }
+    // }
 
     #[test]
     fn name_tests() {
@@ -2013,18 +2023,16 @@ mod tests {
             assert_eq!(value.as_deref(), Some(&b"other"[..]));
         }
         {
+            assert!(Config::<StdFileManager>::new(tempdir.path())
+                .open()
+                .is_err());
             let roots = Config::<StdFileManager>::new(tempdir.path())
+                .vault(RotatorVault::new(13))
                 .open()
                 .unwrap();
-            // Try to access roots without the vault.
-            let bad_tree = roots.tree(Versioned::tree("test")).unwrap();
+            // Try to access the tree with an incorrect vault
+            let bad_tree = roots.tree(Versioned::tree("test-otherkey")).unwrap();
             assert!(bad_tree.get(b"test").is_err());
-
-            // Try to access roots with the vault specified. In this situation, the transaction log will be unreadable, causing itself to not consider any transactions valid.
-            let bad_tree = roots
-                .tree(Versioned::tree("test").with_vault(RotatorVault::new(13)))
-                .unwrap();
-            assert_eq!(bad_tree.get(b"test").unwrap(), None);
         }
     }
 
@@ -2049,7 +2057,7 @@ mod tests {
             assert!(matches!(
                 transaction
                     .entry_mut()
-                    .set_data(vec![0; 16 * 1024 * 1024 - 7])
+                    .set_data(vec![0; 16 * 1024 * 1024 + 1])
                     .unwrap_err()
                     .kind,
                 ErrorKind::ValueTooLarge

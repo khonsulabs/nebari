@@ -32,11 +32,11 @@ pub struct Interior<Index, ReducedIndex> {
 #[derive(Clone, Debug)]
 pub enum Pointer<Index, ReducedIndex> {
     /// The position on-disk of the node.
-    OnDisk(u64),
+    OnDisk(GrainId),
     /// An in-memory node that may have previously been saved on-disk.
     Loaded {
         /// The position on-disk of the node, if it was previously saved.
-        previous_location: Option<u64>,
+        previous_location: Option<GrainId>,
         /// The loaded B-Tree entry.
         entry: Box<BTreeEntry<Index, ReducedIndex>>,
     },
@@ -102,7 +102,7 @@ impl<
     /// Returns the position on-disk of the node being pointed at, if the node
     /// has been saved before.
     #[must_use]
-    pub fn position(&self) -> Option<u64> {
+    pub fn position(&self) -> Option<GrainId> {
         match self {
             Pointer::OnDisk(location) => Some(*location),
             Pointer::Loaded {
@@ -137,7 +137,11 @@ impl<
 
                     let result = callback(&decoded, file);
                     if let Some(cache) = cache {
-                        cache.replace_with_decoded(file.unique_id(), *position, Box::new(decoded));
+                        cache.replace_with_decoded(
+                            file.unique_id().id,
+                            *position,
+                            Box::new(decoded),
+                        );
                     }
                     result
                 }
@@ -182,7 +186,7 @@ impl<
         &mut self,
         include_nodes: NodeInclusion,
         file: &mut dyn BlobStorage,
-        copied_chunks: &mut HashMap<u64, u64>,
+        copied_chunks: &mut HashMap<GrainId, GrainId>,
         writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
         scratch: &mut Vec<u8>,
@@ -193,7 +197,7 @@ impl<
             &ArcBytes<'static>,
             &mut Index,
             &mut dyn BlobStorage,
-            &mut HashMap<u64, u64>,
+            &mut HashMap<GrainId, GrainId>,
             &mut PagedWriter<'_, '_>,
             Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,
@@ -239,7 +243,7 @@ impl<
         writer: &mut Vec<u8>,
         paged_writer: &mut PagedWriter<'_, '_>,
     ) -> Result<usize, Error> {
-        let mut pointer = Pointer::OnDisk(0);
+        let mut pointer = Pointer::OnDisk(GrainId::from(0));
         std::mem::swap(&mut pointer, &mut self.position);
         let location_on_disk = match pointer {
             Pointer::OnDisk(position) => position,
@@ -256,7 +260,7 @@ impl<
                         paged_writer.write_chunk(&writer[old_writer_length..writer.len()])?;
                     writer.truncate(old_writer_length);
                     if let Some(cache) = paged_writer.cache {
-                        cache.replace_with_decoded(paged_writer.unique_id(), position, entry);
+                        cache.replace_with_decoded(paged_writer.unique_id().id, position, entry);
                     }
 
                     if let Some(previous_location) = previous_location {
@@ -276,7 +280,7 @@ impl<
         writer.extend_from_slice(&self.key);
         bytes_written += 2 + key_len as usize;
 
-        writer.write_u64::<BigEndian>(location_on_disk)?;
+        writer.write_u64::<BigEndian>(location_on_disk.as_u64())?;
         bytes_written += 8;
 
         bytes_written += self.stats.serialize_to(writer, paged_writer)?;
@@ -298,7 +302,7 @@ impl<
         }
         let key = reader.read_bytes(key_len)?.into_owned();
 
-        let position = reader.read_u64::<BigEndian>()?;
+        let position = GrainId::from(reader.read_u64::<BigEndian>()?);
         let stats = ReducedIndex::deserialize_from(reader, current_order)?;
 
         Ok(Self {

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use sediment::format::GrainId;
 
 use super::{serialization::BinarySerialization, PagedWriter};
 use crate::{error::Error, storage::BlobStorage, vault::AnyVault, ArcBytes, ErrorKind};
@@ -17,14 +18,14 @@ pub struct KeyEntry<Index> {
 /// An index that serializes a value to the file.
 pub trait PositionIndex {
     /// The position on-disk of the stored value.
-    fn position(&self) -> u64;
+    fn position(&self) -> GrainId;
 }
 
 impl<Index: PositionIndex + BinarySerialization> KeyEntry<Index> {
     pub(crate) fn copy_data_to<Callback>(
         &mut self,
         file: &mut dyn BlobStorage,
-        copied_chunks: &mut HashMap<u64, u64>,
+        copied_chunks: &mut HashMap<GrainId, GrainId>,
         writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
         index_callback: &mut Callback,
@@ -34,7 +35,7 @@ impl<Index: PositionIndex + BinarySerialization> KeyEntry<Index> {
             &ArcBytes<'static>,
             &mut Index,
             &mut dyn BlobStorage,
-            &mut HashMap<u64, u64>,
+            &mut HashMap<GrainId, GrainId>,
             &mut PagedWriter<'_, '_>,
             Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,

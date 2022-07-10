@@ -147,10 +147,9 @@ impl<File: io::FileManager> Roots<File> {
     pub fn delete_tree(&self, name: impl Into<Cow<'static, str>>) -> Result<bool, Error> {
         let name = name.into();
         let mut tree_states = self.data.tree_states.lock();
-        todo!();
-        // self.context()
-        //     .file_manager
-        //     .delete(self.tree_path(name.as_ref()))?;
+        self.context()
+            .file_manager
+            .delete(&self.tree_path(name.as_ref()))?;
         Ok(tree_states.remove(name.as_ref()).is_some())
     }
 

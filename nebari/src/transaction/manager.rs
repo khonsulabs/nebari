@@ -384,6 +384,9 @@ impl<Manager: io::FileManager> ManagerThread<Manager> {
         std::mem::swap(&mut transaction_batch, &mut self.transaction_batch);
         transaction_batch.sort_unstable_by(|a, b| a.id.cmp(&b.id));
 
+        let mut tree_checkpoint_guards =
+            HashMap::with_capacity(self.transaction_batch_sessions.len());
+
         let thread_commits = if let Some(thread_pool) = self.thread_pool.as_ref() {
             Some(
                 thread_pool
@@ -396,9 +399,10 @@ impl<Manager: io::FileManager> ManagerThread<Manager> {
             )
         } else {
             // No thread pool, so we have to commit everything in this thread.
-            for (_, pending_commits) in self.transaction_batch_sessions.drain() {
+            for (path_id, pending_commits) in self.transaction_batch_sessions.drain() {
                 for pending_commit in pending_commits {
-                    pending_commit.commit().unwrap();
+                    let guard = pending_commit.commit().unwrap();
+                    tree_checkpoint_guards.insert(path_id.id, guard);
                 }
             }
             None
@@ -408,11 +412,14 @@ impl<Manager: io::FileManager> ManagerThread<Manager> {
         self.log.push(&transaction_batch).unwrap();
 
         if let Some(mut thread_commits) = thread_commits {
-            thread_commits.wait().unwrap();
+            thread_commits.wait(&mut tree_checkpoint_guards).unwrap();
         }
         for (completion_sender, trees) in self.completion_senders.drain(..) {
             for tree in trees {
-                tree.state.finish_commit(tree.committed);
+                tree.state.finish_commit(
+                    tree_checkpoint_guards.remove(&tree.path_id.id),
+                    tree.committed,
+                );
             }
             let _ = completion_sender.send(());
         }

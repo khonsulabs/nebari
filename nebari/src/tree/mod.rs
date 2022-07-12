@@ -214,7 +214,7 @@ impl<Root: root::Root, File: io::FileManager> TreeFile<Root, File> {
         let header_bytes = storage.read_header()?;
         if header_bytes.is_empty() {
             active_state.root.initialize_default();
-            active_state.publish(state);
+            active_state.publish(None, state);
             return Ok(());
         }
 
@@ -257,7 +257,7 @@ impl<Root: root::Root, File: io::FileManager> TreeFile<Root, File> {
                 }
                 active_state.root = root;
 
-                active_state.publish(state);
+                active_state.publish(None, state);
                 Ok(())
             }
             (_, Ok(_) | Err(_)) => Err(Error::data_integrity("invalid header encountered")),
@@ -1359,8 +1359,8 @@ where
             // Save the tree to disk immediately.
             self.scratch.clear();
             let file = save_tree(&mut *active_state, self.vault, data_block, self.scratch)?;
-            file.sync()?;
-            active_state.publish(self.state);
+            let guard = file.sync()?;
+            active_state.publish(guard, self.state);
         }
 
         Ok(results)

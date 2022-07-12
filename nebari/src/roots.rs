@@ -1,7 +1,7 @@
 use std::{
     any::Any,
     borrow::{Borrow, Cow},
-    collections::HashMap,
+    collections::{hash_map, HashMap},
     fmt::{Debug, Display},
     fs,
     ops::{Deref, DerefMut, RangeBounds},
@@ -16,8 +16,7 @@ use flume::Sender;
 use once_cell::sync::Lazy;
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 use sediment::{
-    database::PendingCommit,
-    format::BatchId,
+    database::{CheckpointGuard, PendingCommit},
     io::{self, fs::StdFileManager, paths::PathId},
 };
 
@@ -1656,13 +1655,31 @@ impl<File: io::FileManager> ThreadPool<File> {
 
 pub struct CommitAllHandle {
     sync_count: usize,
-    completion_receiver: flume::Receiver<Result<BatchId, Error>>,
+    completion_receiver: flume::Receiver<Result<(u64, CheckpointGuard), Error>>,
 }
 
 impl CommitAllHandle {
-    pub fn wait(&mut self) -> Result<(), Error> {
+    pub fn wait(
+        &mut self,
+        tree_checkpoint_guards: &mut HashMap<u64, CheckpointGuard>,
+    ) -> Result<(), Error> {
+        // let guard = pending_commit.commit().unwrap();
+        // let entry = tree_checkpoint_guards.entry(path_id.id);
+        // if let hash_map::Entry::Occupied(existing_guard) = entry {
+
+        // }
         while self.sync_count > 0 {
-            self.completion_receiver.recv()??;
+            let (path_id, guard) = self.completion_receiver.recv()??;
+            match tree_checkpoint_guards.entry(path_id) {
+                hash_map::Entry::Occupied(mut entry) => {
+                    if &guard > entry.get() {
+                        entry.insert(guard);
+                    }
+                }
+                hash_map::Entry::Vacant(entry) => {
+                    entry.insert(guard);
+                }
+            }
             self.sync_count -= 1;
         }
         Ok(())
@@ -1702,7 +1719,17 @@ fn thread_pool_worker<File: io::FileManager>(receiver: flume::Receiver<ThreadCom
             ThreadCommand::FinishCommit(ThreadFinishCommit {
                 pending_commit,
                 completion_sender,
-            }) => drop(completion_sender.send(pending_commit.commit().map_err(Error::from))),
+            }) => {
+                let path_id = pending_commit.path_id().id;
+                drop(
+                    completion_sender.send(
+                        pending_commit
+                            .commit()
+                            .map(|guard| (path_id, guard))
+                            .map_err(Error::from),
+                    ),
+                );
+            }
         }
     }
 }
@@ -1728,7 +1755,7 @@ where
     File: io::FileManager,
 {
     pending_commit: PendingCommit<File>,
-    completion_sender: Sender<Result<BatchId, Error>>,
+    completion_sender: Sender<Result<(u64, CheckpointGuard), Error>>,
 }
 
 fn catch_compaction_and_retry<R, F: Fn() -> Result<R, Error>>(func: F) -> Result<R, Error> {

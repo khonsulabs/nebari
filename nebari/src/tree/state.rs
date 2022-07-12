@@ -2,6 +2,8 @@ use std::{fmt::Debug, sync::Arc};
 
 use parking_lot::{Mutex, MutexGuard, RwLock, RwLockWriteGuard};
 
+use sediment::database::CheckpointGuard;
+
 use crate::chunk_cache::AnySendSync;
 
 /// The current state of a tree file. Must be initialized before passing to
@@ -23,6 +25,7 @@ where
             file_id,
             root,
             max_order,
+            checkpoint_guard: None,
         };
 
         Self {
@@ -38,6 +41,7 @@ where
             file_id,
             root,
             max_order,
+            checkpoint_guard: None,
         };
 
         Self {
@@ -75,7 +79,7 @@ where
 
 pub trait AnyTreeState: AnySendSync + Debug {
     fn cloned(&self) -> Box<dyn AnyTreeState>;
-    fn finish_commit(&self, guard: CommitStateGuard);
+    fn finish_commit(&self, checkpoint_guard: Option<CheckpointGuard>, guard: CommitStateGuard);
 }
 
 impl<Root: super::Root> AnyTreeState for State<Root> {
@@ -83,14 +87,14 @@ impl<Root: super::Root> AnyTreeState for State<Root> {
         Box::new(self.clone())
     }
 
-    fn finish_commit(&self, guard: CommitStateGuard) {
+    fn finish_commit(&self, checkpoint_guard: Option<CheckpointGuard>, guard: CommitStateGuard) {
         let state = guard
             .0
             .as_ref()
             .as_any()
             .downcast_ref::<ActiveState<Root>>()
             .expect("wrong type");
-        state.publish(self);
+        state.publish(checkpoint_guard, self);
     }
 }
 
@@ -102,6 +106,7 @@ pub struct ActiveState<Root: super::Root> {
     /// The current file id associated with this tree file. Database compaction
     /// will cause the file_id to be changed once the operation succeeds.
     pub file_id: Option<u64>,
+    pub checkpoint_guard: Option<CheckpointGuard>,
     /// The root of the B-Tree.
     pub root: Root,
     /// The maximum "order" of the B-Tree. This controls the maximum number of
@@ -119,7 +124,7 @@ where
         self.root.initialized()
     }
 
-    pub(crate) fn publish(&self, state: &State<Root>) {
+    pub(crate) fn publish(&self, checkpoint_guard: Option<CheckpointGuard>, state: &State<Root>) {
         let mut reader = state.reader.write();
         // Multiple transactions may be batched together, and the threads may
         // wake up in different orders than the transactions were applied. So,
@@ -128,7 +133,11 @@ where
         if !reader.root.transaction_id().valid()
             || reader.root.transaction_id() < self.root.transaction_id()
         {
-            *reader = Arc::new(self.clone());
+            let new_state = ActiveState {
+                checkpoint_guard,
+                ..self.clone()
+            };
+            *reader = Arc::new(new_state);
         }
     }
 

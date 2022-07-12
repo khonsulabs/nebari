@@ -2,8 +2,10 @@ use std::io::ErrorKind;
 
 use arc_bytes::ArcBytes;
 use sediment::{
-    database::{Database, GrainData, HeaderUpdateSession, PendingCommit, WriteSession},
-    format::{BatchId, GrainId},
+    database::{
+        CheckpointGuard, Database, GrainData, HeaderUpdateSession, PendingCommit, WriteSession,
+    },
+    format::GrainId,
     io::{self},
 };
 
@@ -13,7 +15,6 @@ use crate::storage::BlobStorage;
 pub struct SedimentFile<FileManager: io::FileManager> {
     pub db: Database<FileManager>,
     automatic_checkpointing: bool,
-    checkpoint_to: BatchId,
     session: Option<Session<FileManager>>,
 }
 
@@ -22,7 +23,6 @@ impl<FileManager: io::FileManager> Clone for SedimentFile<FileManager> {
         Self {
             db: self.db.clone(),
             automatic_checkpointing: self.automatic_checkpointing,
-            checkpoint_to: self.checkpoint_to,
             session: None,
         }
     }
@@ -119,26 +119,28 @@ where
         Ok(grain_id)
     }
 
-    fn sync(&mut self) -> Result<BatchId, crate::Error> {
-        self.checkpoint_to = match self.session.take() {
+    fn sync(&mut self) -> Result<Option<CheckpointGuard>, crate::Error> {
+        let checkpoint_guard = match self.session.take() {
             Some(Session::Exclusive(session)) => {
                 if self.automatic_checkpointing {
-                    session.commit_and_checkpoint(self.checkpoint_to)?
+                    let current_batch = session.database().current_batch();
+                    session.commit_and_checkpoint(current_batch)?
                 } else {
                     session.commit()?
                 }
             }
             Some(Session::Parallel(session)) => {
                 if self.automatic_checkpointing {
-                    session.commit_and_checkpoint(self.checkpoint_to)?
+                    let current_batch = session.database().current_batch();
+                    session.commit_and_checkpoint(current_batch)?
                 } else {
                     session.commit()?
                 }
             }
-            None => self.checkpoint_to,
+            None => return Ok(None),
         };
 
-        Ok(self.checkpoint_to)
+        Ok(Some(checkpoint_guard))
     }
 }
 
@@ -153,8 +155,7 @@ impl<FileManager: io::FileManager> SedimentFile<FileManager> {
 
         Ok(SedimentFile {
             db,
-            automatic_checkpointing: false,
-            checkpoint_to: BatchId::default(),
+            automatic_checkpointing,
             session: None,
         })
     }

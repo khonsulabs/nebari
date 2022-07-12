@@ -2,10 +2,7 @@ pub mod sediment;
 
 use std::fmt::Debug;
 
-use ::sediment::{
-    format::{BatchId, GrainId},
-    io::paths::PathId,
-};
+use ::sediment::{database::CheckpointGuard, format::GrainId, io::paths::PathId};
 use arc_bytes::ArcBytes;
 
 use crate::Error;
@@ -20,5 +17,5 @@ pub trait BlobStorage: Debug + Send + Sync {
     fn free(&mut self, id: GrainId) -> Result<(), Error>;
     fn write(&mut self, data: &[u8]) -> Result<GrainId, Error>;
     fn write_async(&mut self, data: Vec<u8>) -> Result<GrainId, Error>;
-    fn sync(&mut self) -> Result<BatchId, Error>;
+    fn sync(&mut self) -> Result<Option<CheckpointGuard>, Error>;
 }

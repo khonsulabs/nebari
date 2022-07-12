@@ -120,7 +120,7 @@ impl<File: io::FileManager> TransactionLog<File> {
             serialized = vault.encrypt(&serialized)?;
         }
         self.log.write_header_async(serialized)?;
-        let commit = self.log.sync()?;
+        let commit = self.log.sync()?.unwrap().batch_id();
 
         self.state.note_log_entry_batch(commit, &batch);
         self.state

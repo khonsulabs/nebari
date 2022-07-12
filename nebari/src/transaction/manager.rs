@@ -6,6 +6,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    time::{Duration, Instant},
 };
 
 use parking_lot::Mutex;
@@ -199,6 +200,7 @@ struct ManagerThread<Manager: io::FileManager> {
     transaction_batch_sessions: HashMap<PathId, Vec<PendingCommit<Manager>>>,
     completion_senders: Vec<(flume::Sender<()>, Vec<CommittedTreeState<Manager>>)>,
     thread_pool: Option<ThreadPool<Manager>>,
+    batching_deadline: Instant,
 }
 
 enum ThreadState {
@@ -226,6 +228,7 @@ impl<Manager: io::FileManager> ManagerThread<Manager> {
             completion_senders: Vec::with_capacity(Self::BATCH),
             transaction_batch_sessions: HashMap::with_capacity(Self::BATCH),
             thread_pool,
+            batching_deadline: Instant::now(),
         }
         .save_transactions();
     }
@@ -256,6 +259,7 @@ impl<Manager: io::FileManager> ManagerThread<Manager> {
                             // Safe to start a new batch
                             self.last_processed_id = transaction.id;
                             self.state = ThreadState::Batching;
+                            self.batching_deadline = Instant::now() + Duration::from_micros(100);
                         } else {
                             // Need to wait for IDs
                             self.state = ThreadState::EnsuringSequence;
@@ -290,7 +294,7 @@ impl<Manager: io::FileManager> ManagerThread<Manager> {
     }
 
     fn process_next_command_batching(&mut self) -> bool {
-        match self.commands.try_recv() {
+        match self.commands.recv_deadline(self.batching_deadline) {
             Ok(command) => {
                 match command {
                     ThreadCommand::Commit {
@@ -319,12 +323,12 @@ impl<Manager: io::FileManager> ManagerThread<Manager> {
                 }
                 true
             }
-            Err(flume::TryRecvError::Empty) => {
+            Err(flume::RecvTimeoutError::Timeout) => {
                 // No more pending transactions are ready.
                 self.commit_transaction_batch();
                 true
             }
-            Err(flume::TryRecvError::Disconnected) => false,
+            Err(flume::RecvTimeoutError::Disconnected) => false,
         }
     }
 
@@ -380,11 +384,8 @@ impl<Manager: io::FileManager> ManagerThread<Manager> {
         std::mem::swap(&mut transaction_batch, &mut self.transaction_batch);
         transaction_batch.sort_unstable_by(|a, b| a.id.cmp(&b.id));
 
-        let thread_commits = match (
-            self.thread_pool.as_ref(),
-            self.transaction_batch_sessions.len(),
-        ) {
-            (Some(thread_pool), file_count) if file_count > 1 => Some(
+        let thread_commits = if let Some(thread_pool) = self.thread_pool.as_ref() {
+            Some(
                 thread_pool
                     .finish_all_commits_async(
                         self.transaction_batch_sessions
@@ -392,21 +393,20 @@ impl<Manager: io::FileManager> ManagerThread<Manager> {
                             .flat_map(|(_, sessions)| sessions),
                     )
                     .unwrap(),
-            ),
-            _ => {
-                // Either no thread pool or just a single tree. Either way,
-                // perform the fsync operations on this thread.
-                for (_, pending_commits) in self.transaction_batch_sessions.drain() {
-                    for pending_commit in pending_commits {
-                        pending_commit.commit().unwrap();
-                    }
+            )
+        } else {
+            // No thread pool, so we have to commit everything in this thread.
+            for (_, pending_commits) in self.transaction_batch_sessions.drain() {
+                for pending_commit in pending_commits {
+                    pending_commit.commit().unwrap();
                 }
-                None
             }
+            None
         };
         self.last_processed_id = transaction_batch.last().unwrap().id;
         self.state = ThreadState::Fresh;
         self.log.push(&transaction_batch).unwrap();
+
         if let Some(mut thread_commits) = thread_commits {
             thread_commits.wait().unwrap();
         }

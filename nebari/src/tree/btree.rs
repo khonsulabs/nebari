@@ -1143,17 +1143,12 @@ where
                     if range.contains(&child.key.as_slice()) {
                         match (args.key_evaluator)(&child.key, &child.index) {
                             ScanEvaluation::ReadData => {
-                                if child.index.position().as_u64() > 0 {
-                                    let data = match read_chunk(
-                                        child.index.position(),
-                                        false,
-                                        file,
-                                        vault,
-                                        cache,
-                                    )? {
-                                        CacheEntry::ArcBytes(contents) => contents,
-                                        CacheEntry::Decoded(_) => unreachable!(),
-                                    };
+                                if let Some(position) = child.index.position() {
+                                    let data =
+                                        match read_chunk(position, false, file, vault, cache)? {
+                                            CacheEntry::ArcBytes(contents) => contents,
+                                            CacheEntry::Decoded(_) => unreachable!(),
+                                        };
                                     (args.data_callback)(child.key.clone(), &child.index, data)?;
                                 }
                             }
@@ -1262,8 +1257,7 @@ where
             &mut KeyRange::new(keys),
             &mut |key, index| key_evaluator(key, index),
             &mut |key, index| {
-                // Deleted keys are stored with a 0 position.
-                if index.position().as_u64() > 0 {
+                if index.position().is_some() {
                     positions_to_read.push((key, index.clone()));
                 }
                 Ok(())
@@ -1277,8 +1271,8 @@ where
         positions_to_read.sort_by(|a, b| a.1.position().cmp(&b.1.position()));
 
         for (key, index) in positions_to_read {
-            if index.position().as_u64() > 0 {
-                match read_chunk(index.position(), false, file, vault, cache)? {
+            if let Some(position) = index.position() {
+                match read_chunk(position, false, file, vault, cache)? {
                     CacheEntry::ArcBytes(contents) => {
                         key_reader(key, contents, index)?;
                     }

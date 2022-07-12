@@ -1,3 +1,5 @@
+use std::io::ErrorKind;
+
 use arc_bytes::ArcBytes;
 use sediment::{
     database::{Database, GrainData, HeaderUpdateSession, PendingCommit, WriteSession},
@@ -33,7 +35,6 @@ where
     fn unique_id(&self) -> io::paths::PathId {
         self.db.path_id().clone()
     }
-
     fn read_header(&mut self) -> Result<ArcBytes<'static>, crate::Error> {
         let data = self
             .db
@@ -81,7 +82,7 @@ where
                 .slice(GrainData::HEADER_BYTES..GrainData::HEADER_BYTES + len);
             Ok(data)
         } else {
-            Ok(ArcBytes::default())
+            Err(crate::Error::from(ErrorKind::NotFound))
         }
     }
 
@@ -152,7 +153,7 @@ impl<FileManager: io::FileManager> SedimentFile<FileManager> {
 
         Ok(SedimentFile {
             db,
-            automatic_checkpointing,
+            automatic_checkpointing: false,
             checkpoint_to: BatchId::default(),
             session: None,
         })

@@ -53,7 +53,7 @@ pub struct BySequenceIndex<Embedded> {
     /// The size of the value stored on disk.
     pub value_length: u32,
     /// The position of the value on disk.
-    pub position: GrainId,
+    pub position: Option<GrainId>,
     /// The embeded index at the time of the sequence being written. This value
     /// is always present on data written from v0.6.0 onwards. If the tree being
     /// used was created after v0.6.0 or has had compaction run on v0.6.0, it is
@@ -73,7 +73,7 @@ where
         let mut bytes_written = 0;
         writer.write_u32::<BigEndian>(self.value_length)?;
         bytes_written += 4;
-        writer.write_u64::<BigEndian>(self.position.as_u64())?;
+        writer.write_u64::<BigEndian>(self.position.map_or(0, |grain| grain.as_u64()))?;
         bytes_written += 8;
         writer.write_u64::<BigEndian>(self.last_sequence.unwrap_or(SequenceId(0)).0)?;
         bytes_written += 8;
@@ -96,7 +96,10 @@ where
         _current_order: Option<usize>,
     ) -> Result<Self, Error> {
         let value_length = reader.read_u32::<BigEndian>()?;
-        let position = GrainId::from(reader.read_u64::<BigEndian>()?);
+        let position = match reader.read_u64::<BigEndian>()? {
+            0 => None,
+            grain => Some(GrainId::from(grain)),
+        };
         let last_sequence = SequenceId(reader.read_u64::<BigEndian>()?);
         let key_length = reader.read_u16::<BigEndian>()? as usize;
         if key_length > reader.len() {
@@ -127,7 +130,7 @@ where
 }
 
 impl<Embedded> PositionIndex for BySequenceIndex<Embedded> {
-    fn position(&self) -> GrainId {
+    fn position(&self) -> Option<GrainId> {
         self.position
     }
 }

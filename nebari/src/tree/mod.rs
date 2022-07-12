@@ -48,7 +48,6 @@
 //! - `[u8]` - Contents
 
 use std::{
-    borrow::Cow,
     cell::RefCell,
     collections::HashMap,
     fmt::{Debug, Display},

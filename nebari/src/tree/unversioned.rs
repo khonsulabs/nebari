@@ -108,7 +108,7 @@ where
                             let value_length = value.len() as u32;
                             let new_index = UnversionedByIdIndex::new(
                                 value_length,
-                                position,
+                                Some(position),
                                 reducer.0.index(key, Some(value)),
                             );
                             results.push(ModificationResult {
@@ -124,9 +124,15 @@ where
                             Ok(KeyOperation::Remove)
                         }
                     },
-                    |index, writer| match writer.read_chunk(index.position)? {
-                        CacheEntry::ArcBytes(buffer) => Ok(Some(buffer.clone())),
-                        CacheEntry::Decoded(_) => unreachable!(),
+                    |index, writer| {
+                        if let Some(position) = index.position {
+                            match writer.read_chunk(position)? {
+                                CacheEntry::ArcBytes(buffer) => Ok(Some(buffer.clone())),
+                                CacheEntry::Decoded(_) => unreachable!(),
+                            }
+                        } else {
+                            Ok(None)
+                        }
                     },
                     self.reducer().clone(),
                 ),
@@ -333,8 +339,11 @@ where
                   copied_chunks,
                   to_file,
                   vault| {
-                let new_position =
-                    to_file.copy_chunk_from(index.position, from_file, copied_chunks, vault)?;
+                let new_position = if let Some(position) = index.position {
+                    Some(to_file.copy_chunk_from(position, from_file, copied_chunks, vault)?)
+                } else {
+                    None
+                };
 
                 if new_position == index.position {
                     // Data is already in the new file

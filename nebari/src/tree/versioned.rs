@@ -188,9 +188,9 @@ where
                             // write_chunk errors if it can't fit within a u32
                             #[allow(clippy::cast_possible_truncation)]
                             let value_length = value.len() as u32;
-                            (new_position, value_length)
+                            (Some(new_position), value_length)
                         } else {
-                            (GrainId::from(0), 0)
+                            (None, 0)
                         };
                         let embedded = reducer.0.index(key, value);
                         changes.current_sequence = changes
@@ -221,8 +221,8 @@ where
                         Ok(KeyOperation::Set(new_index))
                     },
                     |index, writer| {
-                        if index.position.as_u64() > 0 {
-                            match writer.read_chunk(index.position) {
+                        if let Some(position) = index.position {
+                            match writer.read_chunk(position) {
                                 Ok(CacheEntry::ArcBytes(buffer)) => Ok(Some(buffer)),
                                 Ok(CacheEntry::Decoded(_)) => unreachable!(),
                                 Err(err) => Err(err),
@@ -485,8 +485,11 @@ where
                   copied_chunks,
                   to_file,
                   vault| {
-                let new_position =
-                    to_file.copy_chunk_from(index.position, from_file, copied_chunks, vault)?;
+                let new_position = if let Some(position) = index.position {
+                    Some(to_file.copy_chunk_from(position, from_file, copied_chunks, vault)?)
+                } else {
+                    None
+                };
 
                 sequence_indexes.push((
                     key.clone(),
@@ -564,7 +567,7 @@ impl<Embedded> Default for EntryChanges<Embedded> {
 
 pub struct EntryChange<Embedded> {
     pub key_sequence: KeySequence<Embedded>,
-    pub value_position: GrainId,
+    pub value_position: Option<GrainId>,
     pub value_size: u32,
 }
 

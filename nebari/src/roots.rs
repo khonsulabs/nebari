@@ -1579,29 +1579,22 @@ impl<File: io::FileManager> ThreadPool<File> {
         // threads. If we have multiple trees, we should split even with one
         // cpu: if one thread blocks, the other can continue executing.
         let mut committed_trees = Vec::default();
-        if trees.len() == 1 {
-            let mut tree = trees[0].0.lock();
-            if let Some(committed) = tree.commit()? {
-                committed_trees.push(committed);
-            }
-        } else {
-            // Push the trees so that any existing threads can begin processing the queue.
-            let (completion_sender, completion_receiver) = flume::unbounded();
-            let tree_count = trees.len();
-            for tree in trees {
-                self.sender.send(ThreadCommand::Commit(ThreadCommit {
-                    tree,
-                    completion_sender: completion_sender.clone(),
-                }))?;
-            }
+        // Push the trees so that any existing threads can begin processing the queue.
+        let (completion_sender, completion_receiver) = flume::unbounded();
+        let tree_count = trees.len();
+        for tree in trees {
+            self.sender.send(ThreadCommand::Commit(ThreadCommit {
+                tree,
+                completion_sender: completion_sender.clone(),
+            }))?;
+        }
 
-            self.spawn_threads_if_needed(tree_count);
+        self.spawn_threads_if_needed(tree_count);
 
-            // Wait for our results
-            for _ in 0..tree_count {
-                if let Some(committed_state) = completion_receiver.recv()?? {
-                    committed_trees.push(committed_state);
-                }
+        // Wait for our results
+        for _ in 0..tree_count {
+            if let Some(committed_state) = completion_receiver.recv()?? {
+                committed_trees.push(committed_state);
             }
         }
 

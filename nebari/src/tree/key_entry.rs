@@ -18,7 +18,7 @@ pub struct KeyEntry<Index> {
 /// An index that serializes a value to the file.
 pub trait PositionIndex {
     /// The position on-disk of the stored value.
-    fn position(&self) -> GrainId;
+    fn position(&self) -> Option<GrainId>;
 }
 
 impl<Index: PositionIndex + BinarySerialization> KeyEntry<Index> {

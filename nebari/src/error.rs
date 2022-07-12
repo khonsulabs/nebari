@@ -139,6 +139,15 @@ impl From<std::io::Error> for Error {
     }
 }
 
+impl From<std::io::ErrorKind> for Error {
+    fn from(err: std::io::ErrorKind) -> Self {
+        Self {
+            kind: ErrorKind::from(std::io::Error::from(err)),
+            backtrace: Mutex::new(Backtrace::new_unresolved()),
+        }
+    }
+}
+
 impl From<&'static str> for Error {
     fn from(message: &'static str) -> Self {
         Self {

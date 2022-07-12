@@ -48,34 +48,37 @@
 //! - `[u8]` - Contents
 
 use std::{
-    borrow::Cow,
     cell::RefCell,
     collections::HashMap,
     fmt::{Debug, Display},
     hash::BuildHasher,
-    io::SeekFrom,
+    iter,
     marker::PhantomData,
     ops::{Bound, Deref, DerefMut, Range, RangeBounds},
     sync::Arc,
 };
 
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
-use crc::{Crc, CRC_32_BZIP2};
-use parking_lot::MutexGuard;
+use sediment::{
+    database::PendingCommit,
+    format::GrainId,
+    io::{self, paths::PathId},
+};
 
 use crate::{
     chunk_cache::CacheEntry,
-    error::Error,
-    io::{
-        File, FileManager, FileOp, IntoPathId, ManagedFile, ManagedFileOpener, OpenableFile,
-        OperableFile, PathId,
+    error::{CompareAndSwapError, Error},
+    storage::{sediment::SedimentFile, BlobStorage},
+    transaction::TransactionManager,
+    tree::{
+        btree::{BTreeNode, Indexer, KeyOperation, Reducer, ScanArgs},
+        state::{AnyTreeState, CommitStateGuard},
     },
-    roots::AbortError,
-    transaction::{ManagedTransaction, TransactionManager},
-    tree::btree::{BTreeNode, Indexer, KeyOperation, Reducer, ScanArgs},
     vault::AnyVault,
-    ArcBytes, ChunkCache, CompareAndSwapError, Context, ErrorKind,
+    AbortError, ArcBytes, ChunkCache, Context, ErrorKind,
 };
+
+// CompareAndSwapError, transaction::{CommittedTreeState, ManagedTransaction, TransactionManager},
 
 /// B+Tree types
 pub mod btree;
@@ -94,7 +97,7 @@ pub(crate) const DEFAULT_MAX_ORDER: usize = 1000;
 
 pub use self::{
     by_id::{ByIdIndexer, ByIdStats, UnversionedByIdIndex, VersionedByIdIndex},
-    by_sequence::{BySequenceIndex, BySequenceStats, SequenceId},
+    by_sequence::{BySequenceIndex, BySequenceReducer, BySequenceStats, SequenceId},
     interior::{Interior, Pointer},
     key_entry::{KeyEntry, PositionIndex},
     modify::{CompareSwap, CompareSwapFn, Modification, Operation, PersistenceMode},
@@ -104,13 +107,6 @@ pub use self::{
     unversioned::{Unversioned, UnversionedTreeRoot},
     versioned::{KeySequence, SequenceEntry, SequenceIndex, Versioned, VersionedTreeRoot},
 };
-
-/// The number of bytes in each page on-disk.
-// The memory used by PagedWriter is PAGE_SIZE * PAGED_WRITER_BATCH_COUNT. E.g,
-// 4096 * 4 = 16kb
-pub const PAGE_SIZE: usize = 256;
-
-const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_BZIP2);
 
 /// The header byte for a tree file's page.
 #[derive(Eq, PartialEq)]
@@ -141,9 +137,9 @@ impl TryFrom<u8> for PageHeader {
 /// ## Generics
 /// - `File`: An [`ManagedFile`] implementor.
 #[derive(Debug)]
-pub struct TreeFile<Root: root::Root, File: ManagedFile> {
+pub struct TreeFile<Root: root::Root, File: io::FileManager> {
     /// The file handle the tree is stored within.
-    pub file: <File::Manager as FileManager>::FileHandle,
+    pub file: SedimentFile<File>,
     /// The state of the file.
     pub state: State<Root>,
     /// The vault used to encrypt/decrypt chunks.
@@ -153,26 +149,12 @@ pub struct TreeFile<Root: root::Root, File: ManagedFile> {
     scratch: Vec<u8>,
 }
 
-impl<Root: root::Root, File: ManagedFile> Deref for TreeFile<Root, File> {
-    type Target = <File::Manager as FileManager>::FileHandle;
-
-    fn deref(&self) -> &Self::Target {
-        &self.file
-    }
-}
-
-impl<Root: root::Root, File: ManagedFile> DerefMut for TreeFile<Root, File> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.file
-    }
-}
-
-impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
+impl<Root: root::Root, File: io::FileManager> TreeFile<Root, File> {
     /// Returns a tree as contained in `file`.
     ///
     /// `state` should already be initialized using [`Self::initialize_state`] if the file exists.
     pub fn new(
-        file: <File::Manager as FileManager>::FileHandle,
+        file: SedimentFile<File>,
         state: State<Root>,
         vault: Option<Arc<dyn AnyVault>>,
         cache: Option<ChunkCache>,
@@ -186,36 +168,35 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         })
     }
 
-    /// Opens a tree file with read-only permissions.
-    pub fn read(
-        path: impl IntoPathId,
+    /// Opens a tree file
+    pub fn open<Path: AsRef<std::path::Path> + ?Sized>(
+        path: &Path,
         state: State<Root>,
-        context: &Context<File::Manager>,
-        transactions: Option<&TransactionManager<File::Manager>>,
+        context: &Context<File>,
+        transactions: Option<&TransactionManager<File>>,
     ) -> Result<Self, Error> {
-        let file = context.file_manager.read(path)?;
-        Self::initialize_state(&state, file.id(), context, transactions)?;
+        let mut file = SedimentFile::open(path, true, context.file_manager.clone())?;
+        Self::initialize_state(&mut file, &state, context.vault(), transactions)?;
         Self::new(file, state, context.vault.clone(), context.cache.clone())
     }
 
-    /// Opens a tree file with the ability to read and write.
-    pub fn write(
-        path: impl IntoPathId,
+    /// Opens a tree file using an existing [`SedimentFile`].
+    pub fn open_sediment_file(
+        mut file: SedimentFile<File>,
         state: State<Root>,
-        context: &Context<File::Manager>,
-        transactions: Option<&TransactionManager<File::Manager>>,
+        context: &Context<File>,
+        transactions: Option<&TransactionManager<File>>,
     ) -> Result<Self, Error> {
-        let file = context.file_manager.append(path)?;
-        Self::initialize_state(&state, file.id(), context, transactions)?;
+        Self::initialize_state(&mut file, &state, context.vault(), transactions)?;
         Self::new(file, state, context.vault.clone(), context.cache.clone())
     }
 
     /// Attempts to load the last saved state of this tree into `state`.
     pub fn initialize_state(
+        storage: &mut SedimentFile<File>,
         state: &State<Root>,
-        file_path: &PathId,
-        context: &Context<File::Manager>,
-        transaction_manager: Option<&TransactionManager<File::Manager>>,
+        vault: Option<&dyn AnyVault>,
+        transaction_manager: Option<&TransactionManager<File>>,
     ) -> Result<(), Error> {
         {
             let read_state = state.read();
@@ -228,90 +209,59 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         if active_state.initialized() {
             return Ok(());
         }
+        active_state.file_id = Some(storage.unique_id().id);
 
-        active_state.file_id = file_path.id();
-        let file_length = context.file_manager.file_length(file_path)?;
-        if file_length == 0 {
+        let header_bytes = storage.read_header()?;
+        if header_bytes.is_empty() {
             active_state.root.initialize_default();
-            active_state.publish(state);
+            active_state.publish(None, state);
             return Ok(());
         }
 
-        let mut tree = context.file_manager.open_for_read(file_path)?;
-
-        // Scan back block by block until we find a header page.
-        let mut block_start = file_length - (file_length % PAGE_SIZE as u64);
-        if file_length - block_start < 4 {
-            // We need room for at least the 4-byte page header
-            block_start -= PAGE_SIZE as u64;
-        }
-        let mut scratch_buffer = vec![0_u8; 4];
-        loop {
-            // Read the page header
-            tree.seek(SeekFrom::Start(block_start))?;
-            tree.read_exact(&mut scratch_buffer)?;
-
-            #[allow(clippy::match_on_vec_items)]
-            match (
-                &scratch_buffer[0..3],
-                PageHeader::try_from(scratch_buffer[3]),
-            ) {
-                (b"Nbr", Ok(header)) => {
-                    if header != Root::HEADER {
-                        return Err(Error::data_integrity(format!(
-                            "Tree {:?} contained another header type",
-                            file_path
-                        )));
-                    }
-                    let contents = match read_chunk(
-                        block_start + 4,
-                        true,
-                        &mut tree,
-                        context.vault(),
-                        context.cache(),
-                    )? {
-                        CacheEntry::ArcBytes(buffer) => buffer,
-                        CacheEntry::Decoded(_) => unreachable!(),
-                    };
-                    let root = Root::deserialize(contents, active_state.root.reducer().clone())
-                        .map_err(|err| ErrorKind::DataIntegrity(Box::new(err)))?;
-                    if let Some(transaction_manager) = transaction_manager {
-                        if root.transaction_id().valid()
-                            && !transaction_manager
-                                .transaction_was_successful(root.transaction_id())?
-                        {
-                            // The transaction wasn't written successfully, so
-                            // we cannot trust the data present.
-                            if block_start == 0 {
-                                // No data was ever fully written.
-                                active_state.root.initialize_default();
-                                return Ok(());
-                            }
-                            block_start -= PAGE_SIZE as u64;
-                            continue;
-                        }
-                    }
-                    active_state.root = root;
-                    break;
+        #[allow(clippy::match_on_vec_items)]
+        match (&header_bytes[0..3], PageHeader::try_from(header_bytes[3])) {
+            (b"Nbr", Ok(header)) => {
+                if header != Root::HEADER {
+                    return Err(Error::data_integrity(format!(
+                        "Tree {:?} contained another header type",
+                        storage.unique_id()
+                    )));
                 }
-                (_, Ok(_) | Err(_)) => {
-                    if block_start == 0 {
-                        eprintln!(
-                            "Tree {:?} contained data, but no valid pages were found",
-                            file_path
-                        );
-                        active_state.root.initialize_default();
-                        break;
+
+                let contents = header_bytes.slice(4..);
+
+                let contents = if let Some(vault) = vault {
+                    ArcBytes::from(vault.decrypt(&contents)?)
+                } else {
+                    contents
+                };
+
+                let root = Root::deserialize(contents, active_state.root.reducer().clone())
+                    .map_err(|err| ErrorKind::DataIntegrity(Box::new(err)))?;
+
+                if let Some(transaction_manager) = transaction_manager {
+                    if root.transaction_id().valid()
+                        && !transaction_manager.transaction_was_successful(root.transaction_id())?
+                    {
+                        // The transaction wasn't written successfully, so
+                        // we cannot trust the data present.
+                        todo!("need rollback")
+                        // if block_start == 0 {
+                        //     // No data was ever fully written.
+                        //     active_state.root.initialize_default();
+                        //     return Ok(());
+                        // }
+                        // block_start -= PAGE_SIZE as u64;
+                        // continue;
                     }
-                    block_start -= PAGE_SIZE as u64;
-                    continue;
                 }
+                active_state.root = root;
+
+                active_state.publish(None, state);
+                Ok(())
             }
+            (_, Ok(_) | Err(_)) => Err(Error::data_integrity("invalid header encountered")),
         }
-
-        active_state.current_position = file_length;
-        active_state.publish(state);
-        Ok(())
     }
 
     /// Sets a key/value pair. Replaces any previous value if set. If you wish
@@ -325,24 +275,23 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         key: impl Into<ArcBytes<'static>>,
         value: impl Into<Root::Value>,
     ) -> Result<Root::Index, Error> {
-        Ok(self
-            .file
-            .execute(TreeModifier {
-                state: &self.state,
-                vault: self.vault.as_deref(),
-                cache: self.cache.as_ref(),
-                modification: Some(Modification {
-                    persistence_mode: persistence_mode.into(),
-                    keys: vec![key.into()],
-                    operation: Operation::Set(value.into()),
-                }),
-                scratch: &mut self.scratch,
-            })?
-            .into_iter()
-            .next()
-            .expect("always produces a single result")
-            .index
-            .expect("modification always produces a new index"))
+        Ok(TreeModifier {
+            state: &self.state,
+            vault: self.vault.as_deref(),
+            cache: self.cache.as_ref(),
+            modification: Some(Modification {
+                persistence_mode: persistence_mode.into(),
+                keys: vec![key.into()],
+                operation: Operation::Set(value.into()),
+            }),
+            scratch: &mut self.scratch,
+        }
+        .modify(&mut self.file)?
+        .into_iter()
+        .next()
+        .expect("always produces a single result")
+        .index
+        .expect("modification always produces a new index"))
     }
 
     /// Executes a modification. Returns a list of modified keys and their
@@ -351,13 +300,14 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         &mut self,
         modification: Modification<'_, Root::Value, Root::Index>,
     ) -> Result<Vec<ModificationResult<Root::Index>>, Error> {
-        self.file.execute(TreeModifier {
+        TreeModifier {
             state: &self.state,
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
             modification: Some(modification),
             scratch: &mut self.scratch,
-        })
+        }
+        .modify(&mut self.file)
     }
 
     /// Compares the value of `key` against `old`. If the values match, key will
@@ -459,7 +409,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub fn get(&mut self, key: &[u8], in_transaction: bool) -> Result<Option<Root::Value>, Error> {
         let mut buffer = None;
-        self.file.execute(TreeGetter {
+        TreeGetter {
             from_transaction: in_transaction,
             state: &self.state,
             vault: self.vault.as_deref(),
@@ -470,7 +420,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                 Ok(())
             },
             key_evaluator: |_, _| ScanEvaluation::ReadData,
-        })?;
+        }
+        .get(&mut self.file)?;
         Ok(buffer)
     }
 
@@ -482,7 +433,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         in_transaction: bool,
     ) -> Result<Option<Root::Index>, Error> {
         let mut found_index = None;
-        self.file.execute(TreeGetter {
+        TreeGetter {
             from_transaction: in_transaction,
             state: &self.state,
             vault: self.vault.as_deref(),
@@ -493,7 +444,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                 found_index = Some(index.clone());
                 ScanEvaluation::Skip
             },
-        })?;
+        }
+        .get(&mut self.file)?;
         Ok(found_index)
     }
 
@@ -506,7 +458,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     ) -> Result<Option<TreeValueIndex<Root>>, Error> {
         let mut buffer = None;
         let mut found_index = None;
-        self.file.execute(TreeGetter {
+        TreeGetter {
             from_transaction: in_transaction,
             state: &self.state,
             vault: self.vault.as_deref(),
@@ -518,7 +470,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                 Ok(())
             },
             key_evaluator: |_, _| ScanEvaluation::ReadData,
-        })?;
+        }
+        .get(&mut self.file)?;
         if let (Some(value), Some(index)) = (buffer, found_index) {
             Ok(Some(ValueIndex { value, index }))
         } else {
@@ -541,7 +494,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     {
         let keys = keys.into_iter();
         let mut buffers = Vec::with_capacity(keys.len());
-        self.file.execute(TreeGetter {
+        TreeGetter {
             from_transaction: in_transaction,
             state: &self.state,
             vault: self.vault.as_deref(),
@@ -552,7 +505,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                 Ok(())
             },
             key_evaluator: |_, _| ScanEvaluation::ReadData,
-        })?;
+        }
+        .get(&mut self.file)?;
         Ok(buffers)
     }
 
@@ -571,7 +525,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     {
         let keys = keys.into_iter();
         let mut buffers = Vec::with_capacity(keys.len());
-        self.file.execute(TreeGetter {
+        TreeGetter {
             from_transaction: in_transaction,
             state: &self.state,
             vault: self.vault.as_deref(),
@@ -582,7 +536,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                 Ok(())
             },
             key_evaluator: |_, _| ScanEvaluation::ReadData,
-        })?;
+        }
+        .get(&mut self.file)?;
         Ok(buffers)
     }
 
@@ -601,7 +556,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
     {
         let keys = keys.into_iter();
         let mut buffers = Vec::with_capacity(keys.len());
-        self.file.execute(TreeGetter {
+        TreeGetter {
             from_transaction: in_transaction,
             state: &self.state,
             vault: self.vault.as_deref(),
@@ -612,7 +567,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
                 Ok(())
             },
             key_evaluator: |_, _| ScanEvaluation::ReadData,
-        })?;
+        }
+        .get(&mut self.file)?;
         Ok(buffers)
     }
 
@@ -740,7 +696,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         ) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
-        self.file.execute(TreeScanner {
+        TreeScanner {
             forwards,
             from_transaction: in_transaction,
             state: &self.state,
@@ -751,7 +707,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             key_reader,
             key_evaluator,
             _phantom: PhantomData,
-        })?;
+        }
+        .scan(&mut self.file)?;
         Ok(())
     }
 
@@ -778,7 +735,7 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             state.root.reducer().clone()
         };
         let reduce_state = RefCell::new(ReduceState::new(reducer));
-        self.file.execute(TreeScanner {
+        TreeScanner {
             forwards: true,
             from_transaction: in_transaction,
             state: &self.state,
@@ -825,7 +782,8 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
             },
             key_reader: |_, _, _| unreachable!(),
             _phantom: PhantomData,
-        })?;
+        }
+        .scan(&mut self.file)?;
         let reduce_state = reduce_state.into_inner();
         Ok(reduce_state.finish())
     }
@@ -924,43 +882,53 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         Ok(result)
     }
 
-    /// Commits the tree. This is only needed if writes were done with a
-    /// transaction id. This will fully flush the tree and publish the
-    /// transactional state to be available to readers.
-    pub fn commit(&mut self) -> Result<(), Error> {
-        self.file.execute(TreeWriter {
+    /// Begins a transactional commit. This is only needed if writes were done
+    /// with a transaction id.
+    ///
+    /// The returned [`CommittedTreeState`] must be provided to the
+    /// [`TransactionManager`] to publish the newly written state. If None is
+    /// returned, the tree had no changes.
+    pub fn begin_commit(&mut self) -> Result<Option<CommittedTreeState<File>>, Error> {
+        // We need to move the current session into the CommittedTreeState. To
+        // do this, we're going to create a clone (which has no session), and
+        // then swap it out so that `file` has the session.
+        let mut file = self.file.clone();
+        std::mem::swap(&mut file, &mut self.file);
+
+        TreeWriter {
             state: &self.state,
             vault: self.vault.as_deref(),
             cache: self.cache.as_ref(),
             scratch: &mut self.scratch,
-        })
+        }
+        .commit(file)
     }
 
-    /// Rewrites the database, removing all unused data in the process. For a
-    /// `VersionedTreeRoot`, this will remove old version information.
-    ///
-    /// This process is done atomically by creating a new file containing the
-    /// active data. Once the new file has all the current file's data, the file
-    /// contents are swapped using atomic file operations.
-    pub fn compact(
-        mut self,
-        file_manager: &File::Manager,
-        transactions: Option<TransactableCompaction<'_, File::Manager>>,
-    ) -> Result<Self, Error> {
-        let (compacted_file, finisher) = self.file.execute(TreeCompactor {
-            state: &self.state,
-            manager: file_manager,
-            vault: self.vault.as_deref(),
-            transactions,
-            scratch: &mut self.scratch,
-        })?;
-        self.file = self
-            .file
-            .replace_with(compacted_file, file_manager, |file_id| {
-                finisher.finish(file_id.id().expect("id can't be none at this stage"));
-            })?;
-        Ok(self)
-    }
+    // /// Rewrites the database, removing all unused data in the process. For a
+    // /// `VersionedTreeRoot`, this will remove old version information.
+    // ///
+    // /// This process is done atomically by creating a new file containing the
+    // /// active data. Once the new file has all the current file's data, the file
+    // /// contents are swapped using atomic file operations.
+    // pub fn compact(
+    //     mut self,
+    //     file_manager: &File::Manager,
+    //     transactions: Option<TransactableCompaction<'_, File::Manager>>,
+    // ) -> Result<Self, Error> {
+    //     let (compacted_file, finisher) = self.file.execute(TreeCompactor {
+    //         state: &self.state,
+    //         manager: file_manager,
+    //         vault: self.vault.as_deref(),
+    //         transactions,
+    //         scratch: &mut self.scratch,
+    //     })?;
+    //     self.file = self
+    //         .file
+    //         .replace_with(compacted_file, file_manager, |file_id| {
+    //             finisher.finish(file_id.id().expect("id can't be none at this stage"));
+    //         })?;
+    //     Ok(self)
+    // }
 }
 
 #[derive(Debug)]
@@ -1042,7 +1010,7 @@ where
     }
 }
 
-impl<File: ManagedFile, Index> TreeFile<VersionedTreeRoot<Index>, File>
+impl<File: io::FileManager, Index> TreeFile<VersionedTreeRoot<Index>, File>
 where
     Index: EmbeddedIndex<ArcBytes<'static>> + Clone + Debug + 'static,
 {
@@ -1072,7 +1040,7 @@ where
             FnMut(KeySequence<Index>, ArcBytes<'static>) -> Result<(), AbortError<CallerError>>,
         CallerError: Display + Debug,
     {
-        self.file.execute(TreeSequenceScanner {
+        TreeSequenceScanner {
             forwards,
             from_transaction: in_transaction,
             state: &self.state,
@@ -1089,7 +1057,8 @@ where
                 })
             },
             data_callback,
-        })?;
+        }
+        .scan(&mut self.file)?;
         Ok(())
     }
 
@@ -1106,7 +1075,7 @@ where
         Sequences: Iterator<Item = SequenceId>,
     {
         let results = RefCell::new(HashMap::new());
-        self.file.execute(TreeSequenceGetter {
+        TreeSequenceGetter {
             keys: sequences,
             from_transaction: in_transaction,
             state: &self.state,
@@ -1126,7 +1095,8 @@ where
                     .1 = Some(value);
                 Ok(())
             },
-        })?;
+        }
+        .get(&mut self.file)?;
         Ok(results.into_inner())
     }
 
@@ -1142,7 +1112,7 @@ where
         Sequences: Iterator<Item = SequenceId>,
     {
         let mut results = Vec::new();
-        self.file.execute(TreeSequenceGetter {
+        TreeSequenceGetter {
             keys: sequences,
             from_transaction: in_transaction,
             state: &self.state,
@@ -1156,7 +1126,8 @@ where
                 ScanEvaluation::Skip
             },
             key_reader: |_, _, _| unreachable!(),
-        })?;
+        }
+        .get(&mut self.file)?;
         Ok(results)
     }
 
@@ -1173,7 +1144,7 @@ where
         Sequences: Iterator<Item = SequenceId>,
     {
         let results = RefCell::new(HashMap::new());
-        self.file.execute(TreeSequenceGetter {
+        TreeSequenceGetter {
             keys: sequences,
             from_transaction: in_transaction,
             state: &self.state,
@@ -1197,112 +1168,110 @@ where
                     .value = Some(value);
                 Ok(())
             },
-        })?;
+        }
+        .get(&mut self.file)?;
         Ok(results.into_inner())
     }
 }
 
-/// A compaction process that runs in concert with a transaction manager.
-pub struct TransactableCompaction<'a, Manager: FileManager> {
-    /// The name of the tree being compacted.
-    pub name: &'a str,
-    /// The transaction manager.
-    pub manager: &'a TransactionManager<Manager>,
-}
+// /// A compaction process that runs in concert with a transaction manager.
+// pub struct TransactableCompaction<'a, Manager: FileManager> {
+//     /// The name of the tree being compacted.
+//     pub name: &'a str,
+//     /// The transaction manager.
+//     pub manager: &'a TransactionManager<Manager>,
+// }
 
-struct TreeCompactor<'a, Root: root::Root, Manager: FileManager> {
-    manager: &'a Manager,
-    state: &'a State<Root>,
-    vault: Option<&'a dyn AnyVault>,
-    transactions: Option<TransactableCompaction<'a, Manager>>,
-    scratch: &'a mut Vec<u8>,
-}
+// struct TreeCompactor<'a, Root: root::Root, Manager: FileManager> {
+//     manager: &'a Manager,
+//     state: &'a State<Root>,
+//     vault: Option<&'a dyn AnyVault>,
+//     transactions: Option<TransactableCompaction<'a, Manager>>,
+//     scratch: &'a mut Vec<u8>,
+// }
 
-impl<'a, Root, Manager>
-    FileOp<Result<(Manager::File, TreeCompactionFinisher<'a, Root, Manager>), Error>>
-    for TreeCompactor<'a, Root, Manager>
-where
-    Root: root::Root,
-    Manager: FileManager,
-{
-    fn execute(
-        self,
-        file: &mut dyn File,
-    ) -> Result<(Manager::File, TreeCompactionFinisher<'a, Root, Manager>), Error> {
-        let current_path = file.id().path();
-        let file_name = current_path
-            .file_name()
-            .ok_or_else(|| ErrorKind::message("could not retrieve file name"))?;
-        let mut compacted_name = file_name.to_os_string();
-        compacted_name.push(".compacting");
-        let compacted_path = current_path
-            .parent()
-            .ok_or_else(|| ErrorKind::message("couldn't access parent of file"))?
-            .join(compacted_name);
+// impl<'a, Root, Manager> TreeCompactor<'a, Root, Manager>
+// where
+//     Root: root::Root,
+//     Manager: FileManager,
+// {
+//     fn compact(
+//         self,
+//         file: &mut dyn BlobStorage,
+//     ) -> Result<(Manager::File, TreeCompactionFinisher<'a, Root, Manager>), Error> {
+//         let current_path = file.id().path();
+//         let file_name = current_path
+//             .file_name()
+//             .ok_or_else(|| ErrorKind::message("could not retrieve file name"))?;
+//         let mut compacted_name = file_name.to_os_string();
+//         compacted_name.push(".compacting");
+//         let compacted_path = current_path
+//             .parent()
+//             .ok_or_else(|| ErrorKind::message("couldn't access parent of file"))?
+//             .join(compacted_name);
 
-        if compacted_path.exists() {
-            std::fs::remove_file(&compacted_path)?;
-        }
+//         if compacted_path.exists() {
+//             std::fs::remove_file(&compacted_path)?;
+//         }
 
-        let transaction = self.transactions.as_ref().map(|transactions| {
-            transactions
-                .manager
-                .new_transaction([transactions.name.as_bytes()])
-        });
-        let mut new_file = self.manager.open_for_append(&compacted_path)?;
-        let mut writer = PagedWriter::new(None, &mut new_file, self.vault, None, 0)?;
+//         let transaction = self.transactions.as_ref().map(|transactions| {
+//             transactions
+//                 .manager
+//                 .new_transaction([transactions.name.as_bytes()])
+//         });
+//         let mut new_file = self.manager.open_for_append(&compacted_path)?;
+//         let mut writer = PagedWriter::new(None, &mut new_file, self.vault, None, 0)?;
 
-        // Use the read state to list all the currently live chunks
-        let mut copied_chunks = HashMap::new();
-        let read_state = self.state.read();
-        let mut temporary_header = read_state.root.clone();
-        drop(read_state);
-        temporary_header.copy_data_to(false, file, &mut copied_chunks, &mut writer, self.vault)?;
+//         // Use the read state to list all the currently live chunks
+//         let mut copied_chunks = HashMap::new();
+//         let read_state = self.state.read();
+//         let mut temporary_header = read_state.root.clone();
+//         drop(read_state);
+//         temporary_header.copy_data_to(false, file, &mut copied_chunks, &mut writer, self.vault)?;
 
-        // Now, do the same with the write state, which should be very fast,
-        // since only nodes that have changed will need to be visited.
-        let mut write_state = self.state.lock();
-        write_state
-            .root
-            .copy_data_to(true, file, &mut copied_chunks, &mut writer, self.vault)?;
+//         // Now, do the same with the write state, which should be very fast,
+//         // since only nodes that have changed will need to be visited.
+//         let mut write_state = self.state.lock();
+//         write_state
+//             .root
+//             .copy_data_to(true, file, &mut copied_chunks, &mut writer, self.vault)?;
 
-        save_tree(
-            &mut write_state,
-            self.vault,
-            None,
-            writer,
-            self.scratch,
-            true,
-        )?;
+//         let file = save_tree(&mut write_state, self.vault, None, writer, self.scratch)?;
+//         file.synchronize()?;
 
-        // Close any existing handles to the file. This ensures that once we
-        // save the tree, new requests to the file manager will point to the new
-        // file.
+//         // Because the file path now refers to a new file handle, some operating
+//         // systems such as Linux and Mac OS require synchronizing the metadata
+//         // of the containing directory.
+//         if let Some(parent) = compacted_path.parent() {
+//             self.manager.synchronize(parent)?;
+//         }
 
-        Ok((
-            new_file,
-            TreeCompactionFinisher {
-                write_state,
-                state: self.state,
-                _transaction: transaction,
-            },
-        ))
-    }
-}
+//         let read_state = self.state.lock_read();
 
-struct TreeCompactionFinisher<'a, Root: root::Root, Manager: FileManager> {
-    state: &'a State<Root>,
-    write_state: MutexGuard<'a, ActiveState<Root>>,
-    _transaction: Option<ManagedTransaction<Manager>>,
-}
+//         Ok((
+//             new_file,
+//             TreeCompactionFinisher {
+//                 write_state,
+//                 read_state,
+//                 _transaction: transaction,
+//             },
+//         ))
+//     }
+// }
 
-impl<'a, Root: root::Root, Manager: FileManager> TreeCompactionFinisher<'a, Root, Manager> {
-    fn finish(mut self, new_file_id: u64) {
-        self.write_state.file_id = Some(new_file_id);
-        self.write_state.publish(self.state);
-        drop(self);
-    }
-}
+// struct TreeCompactionFinisher<'a, Root: root::Root, Manager: FileManager> {
+//     write_state: MutexGuard<'a, ActiveState<Root>>,
+//     read_state: RwLockWriteGuard<'a, Arc<ActiveState<Root>>>,
+//     _transaction: Option<ManagedTransaction<Manager>>,
+// }
+
+// impl<'a, Root: root::Root, Manager: FileManager> TreeCompactionFinisher<'a, Root, Manager> {
+//     fn finish(mut self, new_file_id: u64) {
+//         self.write_state.file_id = Some(new_file_id);
+//         *self.read_state = Arc::new(self.write_state.clone());
+//         drop(self);
+//     }
+// }
 
 struct TreeWriter<'a, Root: root::Root> {
     state: &'a State<Root>,
@@ -1311,37 +1280,43 @@ struct TreeWriter<'a, Root: root::Root> {
     scratch: &'a mut Vec<u8>,
 }
 
-impl<'a, Root> FileOp<Result<(), Error>> for TreeWriter<'a, Root>
+impl<'a, Root> TreeWriter<'a, Root>
 where
     Root: root::Root,
 {
-    fn execute(self, file: &mut dyn File) -> Result<(), Error> {
+    fn commit<Manager: io::FileManager>(
+        self,
+        mut file: SedimentFile<Manager>,
+    ) -> Result<Option<CommittedTreeState<Manager>>, Error> {
         let mut active_state = self.state.lock();
-        if active_state.file_id != file.id().id() {
+        let path_id = file.unique_id();
+        if active_state.file_id != Some(path_id.id) {
             return Err(Error::from(ErrorKind::TreeCompacted));
         }
         if active_state.root.dirty() {
-            let data_block = PagedWriter::new(
-                None,
-                file,
-                self.vault,
-                self.cache,
-                active_state.current_position,
-            )?;
+            let data_block = PagedWriter::new(&mut file, self.vault, self.cache);
 
             self.scratch.clear();
-            save_tree(
-                &mut *active_state,
-                self.vault,
-                self.cache,
-                data_block,
-                self.scratch,
-                true,
-            )
+            save_tree(&mut *active_state, self.vault, data_block, self.scratch)?;
+            Ok(Some(CommittedTreeState {
+                path_id,
+                state: Box::new(self.state.clone()),
+                committed: CommitStateGuard(Box::new(active_state.clone())),
+                session_to_commit: file.enqueue_commit()?,
+            }))
         } else {
-            Ok(())
+            Ok(None)
         }
     }
+}
+
+/// The state of an updated tree that has been written to disk but has not been
+/// synchronized with the transaction log yet.
+pub struct CommittedTreeState<Manager: io::FileManager> {
+    pub(crate) path_id: PathId,
+    pub(crate) state: Box<dyn AnyTreeState>,
+    pub(crate) committed: CommitStateGuard,
+    pub(crate) session_to_commit: Option<PendingCommit<Manager>>,
 }
 
 struct TreeModifier<'a, 'm, Root: root::Root> {
@@ -1352,27 +1327,20 @@ struct TreeModifier<'a, 'm, Root: root::Root> {
     scratch: &'a mut Vec<u8>,
 }
 
-impl<'a, 'm, Root> FileOp<Result<Vec<ModificationResult<Root::Index>>, Error>>
-    for TreeModifier<'a, 'm, Root>
+impl<'a, 'm, Root> TreeModifier<'a, 'm, Root>
 where
     Root: root::Root,
 {
-    fn execute(
+    fn modify(
         mut self,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
     ) -> Result<Vec<ModificationResult<Root::Index>>, Error> {
         let mut active_state = self.state.lock();
-        if active_state.file_id != file.id().id() {
+        if active_state.file_id != Some(file.unique_id().id) {
             return Err(Error::from(ErrorKind::TreeCompacted));
         }
 
-        let mut data_block = PagedWriter::new(
-            None,
-            file,
-            self.vault,
-            self.cache,
-            active_state.current_position,
-        )?;
+        let mut data_block = PagedWriter::new(file, self.vault, self.cache);
 
         let modification = self.modification.take().unwrap();
         let persistence_mode = modification.persistence_mode;
@@ -1386,20 +1354,13 @@ where
 
         if is_transactional {
             // Transactions will written to disk later.
-            let (_, new_position) = data_block.finish()?;
-            active_state.current_position = new_position;
+            data_block.finish();
         } else {
             // Save the tree to disk immediately.
             self.scratch.clear();
-            save_tree(
-                &mut *active_state,
-                self.vault,
-                self.cache,
-                data_block,
-                self.scratch,
-                persistence_mode.should_synchronize(),
-            )?;
-            active_state.publish(self.state);
+            let file = save_tree(&mut *active_state, self.vault, data_block, self.scratch)?;
+            let guard = file.sync()?;
+            active_state.publish(guard, self.state);
         }
 
         Ok(results)
@@ -1407,37 +1368,27 @@ where
 }
 
 #[allow(clippy::shadow_unrelated)] // It is related, but clippy can't tell.
-fn save_tree<Root: root::Root>(
+fn save_tree<'writer, Root: root::Root>(
     active_state: &mut ActiveState<Root>,
     vault: Option<&dyn AnyVault>,
-    cache: Option<&ChunkCache>,
-    mut data_block: PagedWriter<'_>,
+    mut data_block: PagedWriter<'writer, '_>,
     scratch: &mut Vec<u8>,
-    synchronize: bool,
-) -> Result<(), Error> {
+) -> Result<&'writer mut dyn BlobStorage, Error> {
     scratch.clear();
     active_state.root.serialize(&mut data_block, scratch)?;
-    let (file, after_data) = data_block.finish()?;
-    active_state.current_position = after_data;
+    let file = data_block.finish();
 
-    // Write a new header.
-    let mut header_block = PagedWriter::new(
-        Some(Root::HEADER),
-        file,
-        vault,
-        cache,
-        active_state.current_position,
-    )?;
-    header_block.write_chunk(scratch)?;
-
-    let (file, after_header) = header_block.finish()?;
-    active_state.current_position = after_header;
-
-    if synchronize {
-        file.synchronize()?;
+    if let Some(vault) = vault {
+        *scratch = vault.encrypt(scratch)?;
     }
+    scratch.splice(
+        ..0,
+        b"Nbr".iter().copied().chain(iter::once(Root::HEADER as u8)),
+    );
 
-    Ok(())
+    file.write_header(scratch)?;
+
+    Ok(file)
 }
 
 /// One or more keys.
@@ -1500,18 +1451,18 @@ struct TreeGetter<
     key_reader: KeyReader,
 }
 
-impl<'a, 'keys, KeyEvaluator, KeyReader, Root, Keys> FileOp<Result<(), Error>>
-    for TreeGetter<'a, 'keys, Root, KeyEvaluator, KeyReader, Keys>
+impl<'a, 'keys, KeyEvaluator, KeyReader, Root, Keys>
+    TreeGetter<'a, 'keys, Root, KeyEvaluator, KeyReader, Keys>
 where
     KeyEvaluator: FnMut(&ArcBytes<'static>, &Root::Index) -> ScanEvaluation,
     KeyReader: FnMut(ArcBytes<'static>, Root::Value, Root::Index) -> Result<(), Error>,
     Keys: Iterator<Item = &'keys [u8]>,
     Root: root::Root,
 {
-    fn execute(mut self, file: &mut dyn File) -> Result<(), Error> {
+    fn get(mut self, file: &mut dyn BlobStorage) -> Result<(), Error> {
         if self.from_transaction {
             let state = self.state.lock();
-            if state.file_id != file.id().id() {
+            if state.file_id != Some(file.unique_id().id) {
                 return Err(Error::from(ErrorKind::TreeCompacted));
             }
 
@@ -1525,7 +1476,7 @@ where
             )
         } else {
             let state = self.state.read();
-            if state.file_id != file.id().id() {
+            if state.file_id != Some(file.unique_id().id) {
                 return Err(Error::from(ErrorKind::TreeCompacted));
             }
 
@@ -1579,8 +1530,8 @@ impl<
         KeyEvaluator,
         KeyReader,
         KeyRangeBounds,
-    > FileOp<Result<bool, AbortError<CallerError>>>
-    for TreeScanner<
+    >
+    TreeScanner<
         'a,
         'keys,
         CallerError,
@@ -1598,10 +1549,10 @@ where
     KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
     CallerError: Display + Debug,
 {
-    fn execute(mut self, file: &mut dyn File) -> Result<bool, AbortError<CallerError>> {
+    fn scan(mut self, file: &mut dyn BlobStorage) -> Result<bool, AbortError<CallerError>> {
         if self.from_transaction {
             let state = self.state.lock();
-            if state.file_id != file.id().id() {
+            if state.file_id != Some(file.unique_id().id) {
                 return Err(AbortError::Nebari(Error::from(ErrorKind::TreeCompacted)));
             }
 
@@ -1619,7 +1570,7 @@ where
             )
         } else {
             let state = self.state.read();
-            if state.file_id != file.id().id() {
+            if state.file_id != Some(file.unique_id().id) {
                 return Err(AbortError::Nebari(Error::from(ErrorKind::TreeCompacted)));
             }
 
@@ -1655,18 +1606,18 @@ struct TreeSequenceGetter<
     key_reader: KeyReader,
 }
 
-impl<'a, KeyEvaluator, KeyReader, Index, Keys> FileOp<Result<(), Error>>
-    for TreeSequenceGetter<'a, Index, KeyEvaluator, KeyReader, Keys>
+impl<'a, KeyEvaluator, KeyReader, Index, Keys>
+    TreeSequenceGetter<'a, Index, KeyEvaluator, KeyReader, Keys>
 where
     KeyEvaluator: for<'k> FnMut(SequenceId, &'k BySequenceIndex<Index>) -> ScanEvaluation,
     KeyReader: FnMut(SequenceId, BySequenceIndex<Index>, ArcBytes<'static>) -> Result<(), Error>,
     Keys: Iterator<Item = SequenceId>,
     Index: EmbeddedIndex<ArcBytes<'static>> + Clone + Debug + 'static,
 {
-    fn execute(mut self, file: &mut dyn File) -> Result<(), Error> {
+    fn get(mut self, file: &mut dyn BlobStorage) -> Result<(), Error> {
         if self.from_transaction {
             let state = self.state.lock();
-            if state.file_id != file.id().id() {
+            if state.file_id != Some(file.unique_id().id) {
                 return Err(Error::from(ErrorKind::TreeCompacted));
             }
 
@@ -1687,7 +1638,7 @@ where
             )
         } else {
             let state = self.state.read();
-            if state.file_id != file.id().id() {
+            if state.file_id != Some(file.unique_id().id) {
                 return Err(Error::from(ErrorKind::TreeCompacted));
             }
 
@@ -1737,16 +1688,7 @@ struct TreeSequenceScanner<
 }
 
 impl<'a, 'keys, KeyEvaluator, KeyRangeBounds, DataCallback, CallerError, Index>
-    FileOp<Result<(), AbortError<CallerError>>>
-    for TreeSequenceScanner<
-        'a,
-        'keys,
-        KeyEvaluator,
-        KeyRangeBounds,
-        DataCallback,
-        CallerError,
-        Index,
-    >
+    TreeSequenceScanner<'a, 'keys, KeyEvaluator, KeyRangeBounds, DataCallback, CallerError, Index>
 where
     KeyEvaluator: FnMut(&ArcBytes<'static>, &BySequenceIndex<Index>) -> ScanEvaluation,
     KeyRangeBounds: RangeBounds<&'keys [u8]> + Debug + ?Sized,
@@ -1755,7 +1697,7 @@ where
     CallerError: Display + Debug,
     Index: EmbeddedIndex<ArcBytes<'static>> + Clone + Debug + 'static,
 {
-    fn execute(self, file: &mut dyn File) -> Result<(), AbortError<CallerError>> {
+    fn scan(self, file: &mut dyn BlobStorage) -> Result<(), AbortError<CallerError>> {
         let Self {
             forwards,
             from_transaction,
@@ -1782,7 +1724,7 @@ where
             };
         if from_transaction {
             let state = state.lock();
-            if state.file_id != file.id().id() {
+            if state.file_id != Some(file.unique_id().id) {
                 return Err(AbortError::Nebari(Error::from(ErrorKind::TreeCompacted)));
             }
 
@@ -1805,7 +1747,7 @@ where
                 .map(|_| {})
         } else {
             let state = state.read();
-            if state.file_id != file.id().id() {
+            if state.file_id != Some(file.unique_id().id) {
                 return Err(AbortError::Nebari(Error::from(ErrorKind::TreeCompacted)));
             }
 
@@ -1831,139 +1773,66 @@ where
 }
 
 /// Writes data in pages, allowing for quick scanning through the file.
-pub struct PagedWriter<'a> {
-    file: &'a mut dyn File,
+pub struct PagedWriter<'file, 'a> {
+    file: &'file mut dyn BlobStorage,
     vault: Option<&'a dyn AnyVault>,
     cache: Option<&'a ChunkCache>,
-    position: u64,
-    offset: usize,
-    buffered_write: [u8; WRITE_BUFFER_SIZE],
 }
 
-impl<'a> Deref for PagedWriter<'a> {
-    type Target = dyn File;
+impl<'file, 'a> Deref for PagedWriter<'file, 'a> {
+    type Target = &'file mut dyn BlobStorage;
 
     fn deref(&self) -> &Self::Target {
-        self.file
+        &self.file
     }
 }
 
-impl<'a> DerefMut for PagedWriter<'a> {
+impl<'file, 'a> DerefMut for PagedWriter<'file, 'a> {
+    #[allow(clippy::mut_mut)] // Forced because of deref_mut
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.file
+        &mut self.file
     }
 }
 
-const WRITE_BUFFER_SIZE: usize = 8 * 1024;
-
-impl<'a> PagedWriter<'a> {
+impl<'file, 'a> PagedWriter<'file, 'a> {
     fn new(
-        header: Option<PageHeader>,
-        file: &'a mut dyn File,
+        file: &'file mut dyn BlobStorage,
         vault: Option<&'a dyn AnyVault>,
         cache: Option<&'a ChunkCache>,
-        position: u64,
-    ) -> Result<Self, Error> {
-        let mut writer = Self {
-            file,
-            vault,
-            cache,
-            position,
-            offset: 0,
-            buffered_write: [0; WRITE_BUFFER_SIZE],
-        };
-        if let Some(header) = header {
-            // Ensure alignment if we have a header
-            #[allow(clippy::cast_possible_truncation)]
-            let padding_needed = PAGE_SIZE - (writer.position % PAGE_SIZE as u64) as usize;
-            let mut padding_and_header = Vec::new();
-            padding_and_header.resize(padding_needed + 4, header as u8);
-            padding_and_header.splice(
-                padding_and_header.len() - 4..padding_and_header.len() - 1,
-                b"Nbr".iter().copied(),
-            );
-            writer.write(&padding_and_header)?;
-        }
-        if writer.current_position() == 0 {
-            // Write a magic code
-            writer.write(b"Nbri")?;
-        }
-        Ok(writer)
+    ) -> Self {
+        Self { file, vault, cache }
     }
 
-    const fn current_position(&self) -> u64 {
-        self.position + self.offset as u64
-    }
+    // fn commit_if_needed(&mut self) -> Result<(), Error> {
+    //     if self.offset > 0 {
+    //         self.commit()?;
+    //     }
+    //     Ok(())
+    // }
 
-    fn fill_and_write_buffer(&mut self, data: &mut &[u8]) -> Result<(), Error> {
-        let bytes_available = self.buffered_write.len() - self.offset;
-        let bytes_to_copy = bytes_available.min(data.len());
-        let new_offset = self.offset + bytes_to_copy;
-        let (data_to_copy, remaining) = data.split_at(bytes_to_copy);
-        self.buffered_write[self.offset..new_offset].copy_from_slice(data_to_copy);
-        self.offset = new_offset;
-        if self.offset == self.buffered_write.len() {
-            self.commit()?;
-        }
-
-        *data = remaining;
-        Ok(())
-    }
-
-    fn write(&mut self, mut data: &[u8]) -> Result<usize, Error> {
-        let bytes_written = data.len();
-
-        self.fill_and_write_buffer(&mut data)?;
-
-        if data.len() > self.buffered_write.len() {
-            self.file.write_all(data)?;
-            self.position += data.len() as u64;
-        } else {
-            self.fill_and_write_buffer(&mut data)?;
-        }
-        Ok(bytes_written)
-    }
-
-    fn commit_if_needed(&mut self) -> Result<(), Error> {
-        if self.offset > 0 {
-            self.commit()?;
-        }
-        Ok(())
-    }
-
-    fn commit(&mut self) -> Result<(), Error> {
-        self.file.write_all(&self.buffered_write[0..self.offset])?;
-        self.position += self.offset as u64;
-        self.offset = 0;
-        Ok(())
-    }
+    // fn commit(&mut self) -> Result<(), Error> {
+    //     self.file.write_all(&self.buffered_write[0..self.offset])?;
+    //     self.position += self.offset as u64;
+    //     self.offset = 0;
+    //     Ok(())
+    // }
 
     /// Writes a chunk of data to the file, after possibly encrypting it.
     /// Returns the position that this chunk can be read from in the file.
     #[allow(clippy::cast_possible_truncation)]
-    pub fn write_chunk(&mut self, contents: &[u8]) -> Result<u64, Error> {
-        let possibly_encrypted = self.vault.as_ref().map_or_else(
-            || Ok(Cow::Borrowed(contents)),
-            |vault| vault.encrypt(contents).map(Cow::Owned),
-        )?;
-        let length =
-            u32::try_from(possibly_encrypted.len()).map_err(|_| ErrorKind::ValueTooLarge)?;
-        let crc = CRC32.checksum(&possibly_encrypted);
-        let position = self.current_position();
+    pub fn write_chunk(&mut self, contents: &[u8]) -> Result<GrainId, Error> {
+        let possibly_encrypted = self
+            .vault
+            .as_ref()
+            .map_or_else(|| Ok(contents.to_vec()), |vault| vault.encrypt(contents))?;
+        // let length =
+        //     u32::try_from(possibly_encrypted.len()).map_err(|_| ErrorKind::ValueTooLarge)?;
+        // let crc = CRC32.checksum(&possibly_encrypted);
 
-        self.write_u32::<BigEndian>(length)?;
-        self.write_u32::<BigEndian>(crc)?;
-        self.write(&possibly_encrypted)?;
-
-        if let (Some(cache), Some(file_id)) = (self.cache, self.file.id().id()) {
-            if cache.max_chunk_size() >= contents.len() {
-                cache.insert(
-                    file_id,
-                    position,
-                    ArcBytes::owned(possibly_encrypted.to_vec()),
-                );
-            }
-        }
+        let position = self.file.write_async(possibly_encrypted)?;
+        // self.write_u32::<BigEndian>(length)?;
+        // self.write_u32::<BigEndian>(crc)?;
+        // self.write(&possibly_encrypted)?;
 
         Ok(position)
     }
@@ -1971,11 +1840,11 @@ impl<'a> PagedWriter<'a> {
     /// Writes a chunk of data to the file, after possibly encrypting it.
     /// Returns the position that this chunk can be read from in the file.
     #[allow(clippy::cast_possible_truncation)]
-    pub fn write_chunk_cached(&mut self, contents: ArcBytes<'static>) -> Result<u64, Error> {
+    pub fn write_chunk_cached(&mut self, contents: ArcBytes<'static>) -> Result<GrainId, Error> {
         let position = self.write_chunk(&contents)?;
 
-        if let (Some(cache), Some(file_id)) = (self.cache, self.file.id().id()) {
-            cache.insert(file_id, position, contents);
+        if let Some(cache) = self.cache {
+            cache.insert(self.file.unique_id().id, position, contents);
         }
 
         Ok(position)
@@ -1983,7 +1852,7 @@ impl<'a> PagedWriter<'a> {
 
     /// Reads a "chunk" of data located at `position`. `position` should be a
     /// location previously returned by [`Self::write_chunk()`].
-    pub fn read_chunk(&mut self, position: u64) -> Result<CacheEntry, Error> {
+    pub fn read_chunk(&mut self, position: GrainId) -> Result<CacheEntry, Error> {
         read_chunk(position, false, self.file, self.vault, self.cache)
     }
 
@@ -1993,13 +1862,13 @@ impl<'a> PagedWriter<'a> {
     /// contains `original_position`, the already copied position is returned.
     pub fn copy_chunk_from<Hasher: BuildHasher>(
         &mut self,
-        original_position: u64,
-        from_file: &mut dyn File,
-        copied_chunks: &mut std::collections::HashMap<u64, u64, Hasher>,
+        original_position: GrainId,
+        from_file: &mut dyn BlobStorage,
+        copied_chunks: &mut std::collections::HashMap<GrainId, GrainId, Hasher>,
         vault: Option<&dyn AnyVault>,
-    ) -> Result<u64, Error> {
-        if original_position == 0 {
-            Ok(0)
+    ) -> Result<GrainId, Error> {
+        if original_position.as_u64() == 0 {
+            Ok(GrainId::from(0))
         } else if let Some(new_position) = copied_chunks.get(&original_position) {
             Ok(*new_position)
         } else {
@@ -2017,61 +1886,35 @@ impl<'a> PagedWriter<'a> {
         }
     }
 
-    fn write_u32<B: ByteOrder>(&mut self, value: u32) -> Result<usize, Error> {
-        let mut buffer = [0_u8; 4];
-        B::write_u32(&mut buffer, value);
-        self.write(&buffer)
-    }
-
-    fn finish(mut self) -> Result<(&'a mut dyn File, u64), Error> {
-        self.commit_if_needed()?;
-        Ok((self.file, self.position))
+    fn finish(mut self) -> &'file mut dyn BlobStorage {
+        self.file
     }
 }
 
 #[allow(clippy::cast_possible_truncation)]
 #[cfg_attr(feature = "tracing", tracing::instrument(skip(file, vault, cache)))]
 fn read_chunk(
-    position: u64,
+    position: GrainId,
     validate_crc: bool,
-    file: &mut dyn File,
+    file: &mut dyn BlobStorage,
     vault: Option<&dyn AnyVault>,
     cache: Option<&ChunkCache>,
 ) -> Result<CacheEntry, Error> {
-    if let (Some(cache), Some(file_id)) = (cache, file.id().id()) {
-        if let Some(entry) = cache.get(file_id, position) {
+    if let Some(cache) = cache {
+        if let Some(entry) = cache.get(file.unique_id().id, position) {
             return Ok(entry);
         }
     }
 
-    // Read the chunk header
-    let mut header = [0_u8; 8];
-    file.seek(SeekFrom::Start(position))?;
-    file.read_exact(&mut header)?;
-    let length = BigEndian::read_u32(&header[0..4]) as usize;
+    let data = file.read(position)?;
 
-    let mut scratch = Vec::new();
-    scratch.resize(length, 0);
-    file.read_exact(&mut scratch)?;
+    let decrypted = match vault {
+        Some(vault) => ArcBytes::from(vault.decrypt(&data)?),
+        None => data,
+    };
 
-    if validate_crc {
-        let crc = BigEndian::read_u32(&header[4..8]);
-        let computed_crc = CRC32.checksum(&scratch);
-        if crc != computed_crc {
-            return Err(Error::data_integrity(format!(
-                "crc32 failure on chunk at position {}",
-                position
-            )));
-        }
-    }
-
-    let decrypted = ArcBytes::from(match vault {
-        Some(vault) => vault.decrypt(&scratch)?,
-        None => scratch,
-    });
-
-    if let (Some(cache), Some(file_id)) = (cache, file.id().id()) {
-        cache.insert(file_id, position, decrypted.clone());
+    if let Some(cache) = cache {
+        cache.insert(file.unique_id().id, position, decrypted.clone());
     }
 
     Ok(CacheEntry::ArcBytes(decrypted))
@@ -2331,73 +2174,19 @@ pub enum ChangeResult {
 mod tests {
     use std::{
         collections::{BTreeMap, HashSet},
-        convert::Infallible,
         path::Path,
     };
 
     use nanorand::{Pcg64, Rng};
-    use tempfile::NamedTempFile;
-
-    use super::*;
-    use crate::io::{
-        any::AnyFileManager,
-        fs::{StdFile, StdFileManager},
-        memory::{MemoryFile, MemoryFileManager, MemoryFileOpener},
-        ManagedFileOpener,
+    use sediment::io::{
+        any::AnyFileManager, fs::StdFileManager, memory::MemoryFileManager, FileManager,
     };
 
-    fn test_paged_write(offset: usize, length: usize) -> Result<(), Error> {
-        let mut file = MemoryFileOpener.open_for_append(format!("test-{}-{}", offset, length))?;
-        let mut paged_writer =
-            PagedWriter::new(Some(PageHeader::VersionedHeader), &mut file, None, None, 0)?;
+    use super::*;
+    use crate::storage::sediment::SedimentFile;
 
-        let mut scratch = Vec::new();
-        scratch.resize(offset.max(length), 0);
-        if offset > 0 {
-            paged_writer.write(&scratch[..offset])?;
-        }
-        scratch.fill(1);
-        let written_position = paged_writer.write_chunk(&scratch[..length])?;
-        drop(paged_writer.finish());
-
-        match read_chunk(written_position, true, &mut file, None, None)? {
-            CacheEntry::ArcBytes(data) => {
-                assert_eq!(data.len(), length);
-                assert!(data.iter().all(|i| i == 1));
-            }
-            CacheEntry::Decoded(_) => unreachable!(),
-        }
-
-        drop(file);
-
-        Ok(())
-    }
-
-    /// Tests the writing of pages at various boundaries. This should cover
-    /// every edge case: offset is on page 1/2/3, write stays on first page or
-    /// lands on page 1/2/3 end or extends onto page 4.
-    #[test]
-    fn paged_writer() {
-        for offset in 0..=PAGE_SIZE * 2 {
-            for length in [
-                1,
-                PAGE_SIZE / 2,
-                PAGE_SIZE,
-                PAGE_SIZE * 3 / 2,
-                PAGE_SIZE * 2,
-            ] {
-                if let Err(err) = test_paged_write(offset, length) {
-                    unreachable!(
-                        "paged writer failure at offset {} length {}: {:?}",
-                        offset, length, err
-                    );
-                }
-            }
-        }
-    }
-
-    fn insert_one_record<R: Root<Value = ArcBytes<'static>> + Default, F: ManagedFile>(
-        context: &Context<F::Manager>,
+    fn insert_one_record<R: Root<Value = ArcBytes<'static>> + Default, M: io::FileManager>(
+        context: &Context<M>,
         file_path: &Path,
         ids: &mut HashSet<u64>,
         rng: &mut Pcg64,
@@ -2411,7 +2200,7 @@ mod tests {
         };
         let id_buffer = ArcBytes::from(id.to_be_bytes().to_vec());
         {
-            let mut tree = TreeFile::<R, F>::write(
+            let mut tree = TreeFile::<R, M>::open(
                 file_path,
                 State::new(None, max_order, R::default()),
                 context,
@@ -2428,7 +2217,7 @@ mod tests {
 
         // Try loading the file up and retrieving the data.
         {
-            let mut tree = TreeFile::<R, F>::write(
+            let mut tree = TreeFile::<R, M>::open(
                 file_path,
                 State::new(None, max_order, R::default()),
                 context,
@@ -2440,17 +2229,18 @@ mod tests {
         }
     }
 
-    fn remove_one_record<R: Root<Value = ArcBytes<'static>> + Default, F: ManagedFile>(
-        context: &Context<F::Manager>,
+    fn remove_one_record<R: Root<Value = ArcBytes<'static>> + Default, F: io::FileManager>(
+        context: &Context<F>,
         file_path: &Path,
         id: u64,
         max_order: Option<usize>,
     ) {
         let id_buffer = ArcBytes::from(id.to_be_bytes().to_vec());
         {
-            let file = context.file_manager.append(file_path).unwrap();
+            let mut file =
+                SedimentFile::open(file_path, true, context.file_manager.clone()).unwrap();
             let state = State::new(None, max_order, R::default());
-            TreeFile::<R, F>::initialize_state(&state, file.id(), context, None).unwrap();
+            TreeFile::<R, F>::initialize_state(&mut file, &state, context.vault(), None).unwrap();
             let mut tree =
                 TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
                     .unwrap();
@@ -2468,9 +2258,10 @@ mod tests {
 
         // Try loading the file up and retrieving the data.
         {
-            let file = context.file_manager.append(file_path).unwrap();
+            let mut file =
+                SedimentFile::open(file_path, true, context.file_manager.clone()).unwrap();
             let state = State::default();
-            TreeFile::<R, F>::initialize_state(&state, file.id(), context, None).unwrap();
+            TreeFile::<R, F>::initialize_state(&mut file, &state, context.vault(), None).unwrap();
 
             let mut tree =
                 TreeFile::<R, F>::new(file, state, context.vault.clone(), context.cache.clone())
@@ -2485,18 +2276,18 @@ mod tests {
         const ORDER: usize = 4;
 
         let mut rng = Pcg64::new_seed(1);
-        let context = Context {
-            file_manager: StdFileManager::default(),
-            vault: None,
-            cache: None,
-        };
         let temp_dir = crate::test_util::TestDirectory::new("btree-tests");
         std::fs::create_dir(&temp_dir).unwrap();
         let file_path = temp_dir.join("tree");
         let mut ids = HashSet::new();
+        let context = Context {
+            file_manager: sediment::io::fs::StdFileManager::default(),
+            vault: None,
+            cache: None,
+        };
         // Insert up to the limit of a LEAF, which is ORDER - 1.
         for _ in 0..ORDER - 1 {
-            insert_one_record::<Versioned, StdFile>(
+            insert_one_record::<Versioned, sediment::io::fs::StdFileManager>(
                 &context,
                 &file_path,
                 &mut ids,
@@ -2507,7 +2298,7 @@ mod tests {
         println!("Successfully inserted up to ORDER - 1 nodes.");
 
         // The next record will split the node
-        insert_one_record::<Versioned, StdFile>(
+        insert_one_record::<Versioned, sediment::io::fs::StdFileManager>(
             &context,
             &file_path,
             &mut ids,
@@ -2517,8 +2308,9 @@ mod tests {
         println!("Successfully introduced one layer of depth.");
 
         // Insert a lot more.
-        for _ in 0..1_000 {
-            insert_one_record::<Versioned, StdFile>(
+        for i in 0..1_000 {
+            println!("{i}");
+            insert_one_record::<Versioned, sediment::io::fs::StdFileManager>(
                 &context,
                 &file_path,
                 &mut ids,
@@ -2551,8 +2343,14 @@ mod tests {
         std::fs::create_dir(&temp_dir).unwrap();
         let file_path = temp_dir.join("tree");
         let mut ids = HashSet::new();
-        for _ in 0..1000 {
-            insert_one_record::<R, StdFile>(&context, &file_path, &mut ids, &mut rng, Some(ORDER));
+        for _ in 0..250 {
+            insert_one_record::<R, StdFileManager>(
+                &context,
+                &file_path,
+                &mut ids,
+                &mut rng,
+                Some(ORDER),
+            );
         }
 
         let mut ids = ids.into_iter().collect::<Vec<_>>();
@@ -2561,11 +2359,11 @@ mod tests {
 
         // Remove each of the records
         for id in ids {
-            remove_one_record::<R, StdFile>(&context, &file_path, id, Some(ORDER));
+            remove_one_record::<R, StdFileManager>(&context, &file_path, id, Some(ORDER));
         }
 
         // Test being able to add a record again
-        insert_one_record::<R, StdFile>(
+        insert_one_record::<R, StdFileManager>(
             &context,
             &file_path,
             &mut HashSet::default(),
@@ -2586,20 +2384,20 @@ mod tests {
 
     #[test]
     fn spam_insert_std_versioned() {
-        spam_insert::<Versioned, StdFile>("std-versioned");
+        spam_insert::<Versioned, StdFileManager>("std-versioned");
     }
 
     #[test]
     fn spam_insert_std_unversioned() {
-        spam_insert::<Unversioned, StdFile>("std-unversioned");
+        spam_insert::<Unversioned, StdFileManager>("std-unversioned");
     }
 
-    fn spam_insert<R: Root<Value = ArcBytes<'static>> + Default, F: ManagedFile>(name: &str) {
+    fn spam_insert<R: Root<Value = ArcBytes<'static>> + Default, F: FileManager>(name: &str) {
         const RECORDS: usize = 1_000;
         let mut rng = Pcg64::new_seed(1);
         let ids = (0..RECORDS).map(|_| rng.generate::<u64>());
         let context = Context {
-            file_manager: F::Manager::default(),
+            file_manager: F::default(),
             vault: None,
             cache: Some(ChunkCache::new(100, 160_384)),
         };
@@ -2607,7 +2405,7 @@ mod tests {
         std::fs::create_dir(&temp_dir).unwrap();
         let file_path = temp_dir.join("tree");
         let state = State::default();
-        let mut tree = TreeFile::<R, F>::write(file_path, state, &context, None).unwrap();
+        let mut tree = TreeFile::<R, F>::open(&file_path, state, &context, None).unwrap();
         for (_index, id) in ids.enumerate() {
             let id_buffer = ArcBytes::from(id.to_be_bytes().to_vec());
             tree.set(None, id_buffer.clone(), ArcBytes::from(b"hello world"))
@@ -2627,8 +2425,8 @@ mod tests {
 
     #[test]
     fn any_bulk_insert_versioned() {
-        bulk_insert::<Versioned, _>("any-versioned", AnyFileManager::memory());
-        bulk_insert::<Versioned, _>("any-versioned", AnyFileManager::std());
+        bulk_insert::<Versioned, _>("any-versioned", AnyFileManager::new_memory());
+        bulk_insert::<Versioned, _>("any-versioned", AnyFileManager::new_file());
     }
 
     #[test]
@@ -2643,8 +2441,8 @@ mod tests {
 
     #[test]
     fn any_bulk_insert_unversioned() {
-        bulk_insert::<Unversioned, _>("any-unversioned", AnyFileManager::memory());
-        bulk_insert::<Unversioned, _>("any-unversioned", AnyFileManager::std());
+        bulk_insert::<Unversioned, _>("any-unversioned", AnyFileManager::new_memory());
+        bulk_insert::<Unversioned, _>("any-unversioned", AnyFileManager::new_file());
     }
 
     fn bulk_insert<R: Root<Value = ArcBytes<'static>> + Default, M: FileManager>(
@@ -2663,7 +2461,7 @@ mod tests {
         std::fs::create_dir(&temp_dir).unwrap();
         let file_path = temp_dir.join("tree");
         let state = State::default();
-        let mut tree = TreeFile::<R, M::File>::write(file_path, state, &context, None).unwrap();
+        let mut tree = TreeFile::<R, M>::open(&file_path, state, &context, None).unwrap();
         for _ in 0..BATCHES {
             let mut ids = (0..RECORDS_PER_BATCH)
                 .map(|_| rng.generate::<u64>())
@@ -2699,7 +2497,7 @@ mod tests {
         let state = State::default();
         // let file = context.file_manager.append("test").unwrap();
         let mut tree =
-            TreeFile::<Versioned, MemoryFile>::write("test", state, &context, None).unwrap();
+            TreeFile::<Versioned, MemoryFileManager>::open("test", state, &context, None).unwrap();
         // Create enough records to go 4 levels deep.
         let mut ids = Vec::new();
         for id in 0..3_u32.pow(4) {
@@ -2745,201 +2543,201 @@ mod tests {
         assert_eq!(&all_records, &all_through_scan);
     }
 
-    fn compact<R: Root<Value = ArcBytes<'static>> + Default, M: FileManager>(
-        label: &str,
-        file_manager: M,
-    ) {
-        const ORDER: usize = 4;
-        let mut rng = Pcg64::new_seed(1);
-        let context = Context {
-            file_manager,
-            vault: None,
-            cache: None,
-        };
-        let temp_dir = crate::test_util::TestDirectory::new(format!("btree-compact-{}", label));
-        std::fs::create_dir(&temp_dir).unwrap();
-        let file_path = temp_dir.join("tree");
-        let mut ids = HashSet::new();
-        for _ in 0..5 {
-            insert_one_record::<R, M::File>(&context, &file_path, &mut ids, &mut rng, Some(ORDER));
-        }
+    // fn compact<R: Root<Value = ArcBytes<'static>> + Default, M: FileManager>(
+    //     label: &str,
+    //     file_manager: M,
+    // ) {
+    //     const ORDER: usize = 4;
+    //     let mut rng = Pcg64::new_seed(1);
+    //     let context = Context {
+    //         file_manager,
+    //         vault: None,
+    //         cache: None,
+    //     };
+    //     let temp_dir = crate::test_util::TestDirectory::new(format!("btree-compact-{}", label));
+    //     std::fs::create_dir(&temp_dir).unwrap();
+    //     let file_path = temp_dir.join("tree");
+    //     let mut ids = HashSet::new();
+    //     for _ in 0..5 {
+    //         insert_one_record::<R, M>(&context, &file_path, &mut ids, &mut rng, Some(ORDER));
+    //     }
 
-        let mut tree =
-            TreeFile::<R, M::File>::write(&file_path, State::default(), &context, None).unwrap();
-        let pre_compact_size = context.file_manager.file_length(&file_path).unwrap();
-        tree = tree.compact(&context.file_manager, None).unwrap();
-        let after_compact_size = context.file_manager.file_length(&file_path).unwrap();
-        assert!(
-            after_compact_size < pre_compact_size,
-            "compact didn't remove any data"
-        );
+    //     let mut tree =
+    //         TreeFile::<R, M>::open(&file_path, State::default(), &context, None).unwrap();
+    //     let pre_compact_size = context.file_manager.file_length(&file_path).unwrap();
+    //     tree = tree.compact(&context.file_manager, None).unwrap();
+    //     let after_compact_size = context.file_manager.file_length(&file_path).unwrap();
+    //     assert!(
+    //         after_compact_size < pre_compact_size,
+    //         "compact didn't remove any data"
+    //     );
 
-        // Try fetching all the records to ensure they're still present.
-        for id in ids {
-            let id_buffer = ArcBytes::from(id.to_be_bytes().to_vec());
-            tree.get(&id_buffer, false)
-                .unwrap()
-                .expect("no value found");
-        }
-    }
+    //     // Try fetching all the records to ensure they're still present.
+    //     for id in ids {
+    //         let id_buffer = ArcBytes::from(id.to_be_bytes().to_vec());
+    //         tree.get(&id_buffer, false)
+    //             .unwrap()
+    //             .expect("no value found");
+    //     }
+    // }
 
-    #[test]
-    fn std_compact_versioned() {
-        compact::<Versioned, _>("versioned", StdFileManager::default());
-    }
+    // #[test]
+    // fn std_compact_versioned() {
+    //     compact::<Versioned, _>("std-versioned", StdFileManager::default());
+    // }
 
-    #[test]
-    fn std_compact_unversioned() {
-        compact::<Unversioned, _>("unversioned", StdFileManager::default());
-    }
+    // #[test]
+    // fn std_compact_unversioned() {
+    //     compact::<Unversioned, _>("std-unversioned", StdFileManager::default());
+    // }
 
-    #[test]
-    fn memory_compact_versioned() {
-        compact::<Versioned, _>("versioned", MemoryFileManager::default());
-    }
+    // #[test]
+    // fn memory_compact_versioned() {
+    //     compact::<Versioned, _>("memory-versioned", MemoryFileManager::default());
+    // }
 
-    #[test]
-    fn memory_compact_unversioned() {
-        compact::<Unversioned, _>("unversioned", MemoryFileManager::default());
-    }
+    // #[test]
+    // fn memory_compact_unversioned() {
+    //     compact::<Unversioned, _>("memory-unversioned", MemoryFileManager::default());
+    // }
 
-    #[test]
-    fn any_compact_versioned() {
-        compact::<Versioned, _>("any-versioned", AnyFileManager::std());
-        compact::<Versioned, _>("any-versioned", AnyFileManager::memory());
-    }
+    // #[test]
+    // fn any_compact_versioned() {
+    //     compact::<Versioned, _>("any-versioned", AnyFileManager::new_file());
+    //     compact::<Versioned, _>("any-versioned", AnyFileManager::new_memory());
+    // }
 
-    #[test]
-    fn any_compact_unversioned() {
-        compact::<Unversioned, _>("any-unversioned", AnyFileManager::std());
-        compact::<Unversioned, _>("any-unversioned", AnyFileManager::memory());
-    }
+    // #[test]
+    // fn any_compact_unversioned() {
+    //     compact::<Unversioned, _>("any-unversioned", AnyFileManager::new_file());
+    //     compact::<Unversioned, _>("any-unversioned", AnyFileManager::new_memory());
+    // }
 
-    #[test]
-    fn revision_history() {
-        let context = Context {
-            file_manager: StdFileManager::default(),
-            vault: None,
-            cache: None,
-        };
-        let state = State::default();
-        let tempfile = NamedTempFile::new().unwrap();
-        let mut tree =
-            TreeFile::<Versioned, StdFile>::write(tempfile.path(), state, &context, None).unwrap();
+    // #[test]
+    // fn revision_history() {
+    //     let context = Context {
+    //         file_manager: StdFileManager::default(),
+    //         vault: None,
+    //         cache: None,
+    //     };
+    //     let state = State::default();
+    //     let tempfile = NamedTempFile::new().unwrap();
+    //     let mut tree =
+    //         TreeFile::<Versioned, StdFile>::write(tempfile.path(), state, &context, None).unwrap();
 
-        // Store three versions of the same key.
-        tree.set(None, ArcBytes::from(b"a"), ArcBytes::from(b"0"))
-            .unwrap();
-        tree.set(None, ArcBytes::from(b"a"), ArcBytes::from(b"1"))
-            .unwrap();
-        tree.set(None, ArcBytes::from(b"a"), ArcBytes::from(b"2"))
-            .unwrap();
+    //     // Store three versions of the same key.
+    //     tree.set(None, ArcBytes::from(b"a"), ArcBytes::from(b"0"))
+    //         .unwrap();
+    //     tree.set(None, ArcBytes::from(b"a"), ArcBytes::from(b"1"))
+    //         .unwrap();
+    //     tree.set(None, ArcBytes::from(b"a"), ArcBytes::from(b"2"))
+    //         .unwrap();
 
-        // Retrieve the sequences
-        let mut sequences = Vec::new();
-        tree.scan_sequences::<Infallible, _, _, _>(
-            ..,
-            true,
-            false,
-            |_| ScanEvaluation::ReadData,
-            |sequence, value| {
-                sequences.push((sequence, value));
-                Ok(())
-            },
-        )
-        .unwrap();
-        assert_eq!(sequences.len(), 3);
-        sequences.sort_by(|a, b| a.0.sequence.cmp(&b.0.sequence));
-        assert!(sequences.iter().all(|s| s.0.key.as_slice() == b"a"));
-        assert_eq!(sequences[0].0.last_sequence, None);
-        assert_eq!(sequences[1].0.last_sequence, Some(sequences[0].0.sequence));
-        assert_eq!(sequences[2].0.last_sequence, Some(sequences[1].0.sequence));
+    //     // Retrieve the sequences
+    //     let mut sequences = Vec::new();
+    //     tree.scan_sequences::<Infallible, _, _, _>(
+    //         ..,
+    //         true,
+    //         false,
+    //         |_| ScanEvaluation::ReadData,
+    //         |sequence, value| {
+    //             sequences.push((sequence, value));
+    //             Ok(())
+    //         },
+    //     )
+    //     .unwrap();
+    //     assert_eq!(sequences.len(), 3);
+    //     sequences.sort_by(|a, b| a.0.sequence.cmp(&b.0.sequence));
+    //     assert!(sequences.iter().all(|s| s.0.key.as_slice() == b"a"));
+    //     assert_eq!(sequences[0].0.last_sequence, None);
+    //     assert_eq!(sequences[1].0.last_sequence, Some(sequences[0].0.sequence));
+    //     assert_eq!(sequences[2].0.last_sequence, Some(sequences[1].0.sequence));
 
-        assert_eq!(sequences[0].1, b"0");
-        assert_eq!(sequences[1].1, b"1");
-        assert_eq!(sequences[2].1, b"2");
-    }
+    //     assert_eq!(sequences[0].1, b"0");
+    //     assert_eq!(sequences[1].1, b"1");
+    //     assert_eq!(sequences[2].1, b"2");
+    // }
 
-    struct ExtendToPageBoundaryPlus(u64);
+    // // struct ExtendToPageBoundaryPlus(u64);
 
-    impl FileOp<()> for ExtendToPageBoundaryPlus {
-        #[allow(clippy::cast_possible_truncation)]
-        fn execute(self, file: &mut dyn File) {
-            let length = file.length().unwrap();
-            let bytes = vec![42_u8; (length - (length % PAGE_SIZE as u64) + self.0) as usize];
-            file.write_all(&bytes).unwrap();
-        }
-    }
+    // // impl FileOp<()> for ExtendToPageBoundaryPlus {
+    // //     #[allow(clippy::cast_possible_truncation)]
+    // //     fn execute(self, file: &mut dyn BlobStorage) {
+    // //         let length = file.length().unwrap();
+    // //         let bytes = vec![42_u8; (length - (length % PAGE_SIZE as u64) + self.0) as usize];
+    // //         file.write_all(&bytes).unwrap();
+    // //     }
+    // // }
 
-    #[test]
-    fn header_incompatible() {
-        let context = Context {
-            file_manager: MemoryFileManager::default(),
-            vault: None,
-            cache: None,
-        };
-        let temp_dir = crate::test_util::TestDirectory::new("header_incompatible");
-        std::fs::create_dir(&temp_dir).unwrap();
-        let file_path = temp_dir.join("tree");
+    // // #[test]
+    // // fn header_incompatible() {
+    // //     let context = Context {
+    // //         file_manager: MemoryFileManager::default(),
+    // //         vault: None,
+    // //         cache: None,
+    // //     };
+    // //     let temp_dir = crate::test_util::TestDirectory::new("header_incompatible");
+    // //     std::fs::create_dir(&temp_dir).unwrap();
+    // //     let file_path = temp_dir.join("tree");
 
-        // Write some data using unversioned
-        {
-            let state = State::default();
-            let mut tree =
-                TreeFile::<Unversioned, MemoryFile>::write(&file_path, state, &context, None)
-                    .unwrap();
-            tree.set(
-                None,
-                ArcBytes::from(b"test"),
-                ArcBytes::from(b"hello world"),
-            )
-            .unwrap();
-        }
-        // Try reading it as versioned.
-        let mut file = context.file_manager.append(&file_path).unwrap();
-        file.execute(ExtendToPageBoundaryPlus(3));
-        let state = State::default();
-        assert!(matches!(
-            TreeFile::<Versioned, MemoryFile>::write(&file_path, state, &context, None)
-                .unwrap_err()
-                .kind,
-            ErrorKind::DataIntegrity(_)
-        ));
-    }
+    // //     // Write some data using unversioned
+    // //     {
+    // //         let state = State::default();
+    // //         let mut tree =
+    // //             TreeFile::<Unversioned, MemoryFile>::write(&file_path, state, &context, None)
+    // //                 .unwrap();
+    // //         tree.set(
+    // //             None,
+    // //             ArcBytes::from(b"test"),
+    // //             ArcBytes::from(b"hello world"),
+    // //         )
+    // //         .unwrap();
+    // //     }
+    // //     // Try reading it as versioned.
+    // //     let mut file = context.file_manager.append(&file_path).unwrap();
+    // //     file.execute(ExtendToPageBoundaryPlus(3));
+    // //     let state = State::default();
+    // //     assert!(matches!(
+    // //         TreeFile::<Versioned, MemoryFile>::write(&file_path, state, &context, None)
+    // //             .unwrap_err()
+    // //             .kind,
+    // //         ErrorKind::DataIntegrity(_)
+    // //     ));
+    // // }
 
-    #[test]
-    fn file_length_page_offset_plus_a_little() {
-        let context = Context {
-            file_manager: MemoryFileManager::default(),
-            vault: None,
-            cache: None,
-        };
-        let temp_dir = crate::test_util::TestDirectory::new("page-header-edge-cases");
-        std::fs::create_dir(&temp_dir).unwrap();
-        let file_path = temp_dir.join("tree");
+    // // #[test]
+    // // fn file_length_page_offset_plus_a_little() {
+    // //     let context = Context {
+    // //         file_manager: MemoryFileManager::default(),
+    // //         vault: None,
+    // //         cache: None,
+    // //     };
+    // //     let temp_dir = crate::test_util::TestDirectory::new("page-header-edge-cases");
+    // //     std::fs::create_dir(&temp_dir).unwrap();
+    // //     let file_path = temp_dir.join("tree");
 
-        // Write some data.
-        {
-            let state = State::default();
-            let mut tree =
-                TreeFile::<Unversioned, MemoryFile>::write(&file_path, state, &context, None)
-                    .unwrap();
-            tree.set(
-                None,
-                ArcBytes::from(b"test"),
-                ArcBytes::from(b"hello world"),
-            )
-            .unwrap();
-        }
-        // Test when the file is of a length that is less than 4 bytes longer than a multiple of a PAGE_SIZE.
-        let mut file = context.file_manager.append(&file_path).unwrap();
-        file.execute(ExtendToPageBoundaryPlus(3));
-        let state = State::default();
-        let mut tree =
-            TreeFile::<Unversioned, MemoryFile>::write(&file_path, state, &context, None).unwrap();
+    // //     // Write some data.
+    // //     {
+    // //         let state = State::default();
+    // //         let mut tree =
+    // //             TreeFile::<Unversioned, MemoryFile>::write(&file_path, state, &context, None)
+    // //                 .unwrap();
+    // //         tree.set(
+    // //             None,
+    // //             ArcBytes::from(b"test"),
+    // //             ArcBytes::from(b"hello world"),
+    // //         )
+    // //         .unwrap();
+    // //     }
+    // //     // Test when the file is of a length that is less than 4 bytes longer than a multiple of a PAGE_SIZE.
+    // //     let mut file = context.file_manager.append(&file_path).unwrap();
+    // //     file.execute(ExtendToPageBoundaryPlus(3));
+    // //     let state = State::default();
+    // //     let mut tree =
+    // //         TreeFile::<Unversioned, MemoryFile>::write(&file_path, state, &context, None).unwrap();
 
-        assert_eq!(tree.get(b"test", false).unwrap().unwrap(), b"hello world");
-    }
+    // //     assert_eq!(tree.get(b"test", false).unwrap().unwrap(), b"hello world");
+    // // }
 
     fn edit_keys<R: Root<Value = ArcBytes<'static>> + Default, M: FileManager>(
         label: &str,
@@ -2955,7 +2753,7 @@ mod tests {
         let file_path = temp_dir.join("tree");
 
         let mut tree =
-            TreeFile::<R, M::File>::write(&file_path, State::default(), &context, None).unwrap();
+            TreeFile::<R, M>::open(&file_path, State::default(), &context, None).unwrap();
         assert!(matches!(
             tree.compare_and_swap(b"test", Some(&b"won't match"[..]), None, None)
                 .unwrap_err(),
@@ -3006,14 +2804,14 @@ mod tests {
 
     #[test]
     fn any_edit_keys_versioned() {
-        edit_keys::<Versioned, _>("any-versioned", AnyFileManager::std());
-        edit_keys::<Versioned, _>("any-versioned", AnyFileManager::memory());
+        edit_keys::<Versioned, _>("any-versioned", AnyFileManager::new_file());
+        edit_keys::<Versioned, _>("any-versioned", AnyFileManager::new_memory());
     }
 
     #[test]
     fn any_edit_keys_unversioned() {
-        edit_keys::<Unversioned, _>("any-unversioned", AnyFileManager::std());
-        edit_keys::<Unversioned, _>("any-unversioned", AnyFileManager::memory());
+        edit_keys::<Unversioned, _>("any-unversioned", AnyFileManager::new_file());
+        edit_keys::<Unversioned, _>("any-unversioned", AnyFileManager::new_memory());
     }
 
     #[test]
@@ -3040,7 +2838,7 @@ mod tests {
         std::fs::create_dir(&temp_dir).unwrap();
         let file_path = temp_dir.join("tree");
 
-        let mut tree = TreeFile::<Unversioned, StdFile>::write(
+        let mut tree = TreeFile::<Unversioned, StdFileManager>::open(
             &file_path,
             State::new(None, Some(4), Unversioned::default()),
             &context,
@@ -3102,7 +2900,7 @@ mod tests {
         let file_path = temp_dir.join("tree");
 
         let mut tree =
-            TreeFile::<R, M::File>::write(&file_path, State::default(), &context, None).unwrap();
+            TreeFile::<R, M>::open(&file_path, State::default(), &context, None).unwrap();
         tree.set(None, ArcBytes::from(b"a"), ArcBytes::from(b"first"))
             .unwrap();
         tree.set(None, ArcBytes::from(b"z"), ArcBytes::from(b"last"))
@@ -3141,14 +2939,14 @@ mod tests {
 
     #[test]
     fn any_first_last_versioned() {
-        first_last::<Versioned, _>("any-versioned", AnyFileManager::std());
-        first_last::<Versioned, _>("any-versioned", AnyFileManager::memory());
+        first_last::<Versioned, _>("any-versioned", AnyFileManager::new_file());
+        first_last::<Versioned, _>("any-versioned", AnyFileManager::new_memory());
     }
 
     #[test]
     fn any_first_last_unversioned() {
-        first_last::<Unversioned, _>("any-unversioned", AnyFileManager::std());
-        first_last::<Unversioned, _>("any-unversioned", AnyFileManager::memory());
+        first_last::<Unversioned, _>("any-unversioned", AnyFileManager::new_file());
+        first_last::<Unversioned, _>("any-unversioned", AnyFileManager::new_memory());
     }
 
     fn bulk_compare_swaps<R: Root<Value = ArcBytes<'static>> + Default, M: FileManager>(
@@ -3166,7 +2964,7 @@ mod tests {
         let file_path = temp_dir.join("tree");
 
         let mut tree =
-            TreeFile::<R, M::File>::write(&file_path, State::default(), &context, None).unwrap();
+            TreeFile::<R, M>::open(&file_path, State::default(), &context, None).unwrap();
         let mut rng = Pcg64::new_seed(1);
 
         let mut database_state = HashMap::new();

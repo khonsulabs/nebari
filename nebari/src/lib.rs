@@ -4,7 +4,6 @@
     clippy::cargo,
     missing_docs,
     // clippy::missing_docs_in_private_items,
-    clippy::nursery,
     clippy::pedantic,
     future_incompatible,
     rust_2018_idioms,
@@ -16,8 +15,6 @@
     clippy::module_name_repetitions,
 )]
 
-#[macro_use]
-pub mod io;
 mod error;
 mod roots;
 pub mod transaction;
@@ -26,18 +23,21 @@ mod vault;
 
 mod chunk_cache;
 mod context;
+pub mod storage;
 #[cfg(test)]
 mod test_util;
 
 pub use arc_bytes::ArcBytes;
+pub use sediment;
 
 pub use self::{
     chunk_cache::{CacheEntry, ChunkCache},
     context::Context,
-    error::{Error, ErrorKind, InternalError},
+    error::{AbortError, CompareAndSwapError, Error, ErrorKind, InternalError},
     roots::{
-        AbortError, CompareAndSwapError, Config, ExecutingTransaction, LockedTransactionTree,
-        Roots, ThreadPool, TransactionTree, Tree, UnlockedTransactionTree,
+        Config, ExecutingTransaction, LockedTransactionTree, Roots, ThreadPool, TransactionTree,
+        Tree, UnlockedTransactionTree,
     },
+    transaction::TransactionId,
     vault::{AnyVault, Vault},
 };

@@ -8,10 +8,11 @@ autoexamples = false
 autobins = false
 
 [features]
-default = []
+default = ["nebari/fbarrier-fsync"]
 couchdb = ["serde_json", "ureq", "http-auth-basic"]
 sled = ["_sled"]
 sqlite = ["rusqlite"]
+fbarrier-fsync = ["nebari/fbarrier-fsync"]
 
 [[bench]]
 name = "nebari-bench"

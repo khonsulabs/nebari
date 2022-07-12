@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use sediment::format::GrainId;
 
 use super::{serialization::BinarySerialization, PagedWriter};
-use crate::{error::Error, io::File, vault::AnyVault, ArcBytes, ErrorKind};
+use crate::{error::Error, storage::BlobStorage, vault::AnyVault, ArcBytes, ErrorKind};
 
 /// An entry for a key. Stores a single index value for a single key.
 #[derive(Debug, Clone)]
@@ -17,15 +18,15 @@ pub struct KeyEntry<Index> {
 /// An index that serializes a value to the file.
 pub trait PositionIndex {
     /// The position on-disk of the stored value.
-    fn position(&self) -> u64;
+    fn position(&self) -> Option<GrainId>;
 }
 
 impl<Index: PositionIndex + BinarySerialization> KeyEntry<Index> {
     pub(crate) fn copy_data_to<Callback>(
         &mut self,
-        file: &mut dyn File,
-        copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_>,
+        file: &mut dyn BlobStorage,
+        copied_chunks: &mut HashMap<GrainId, GrainId>,
+        writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
         index_callback: &mut Callback,
     ) -> Result<bool, Error>
@@ -33,9 +34,9 @@ impl<Index: PositionIndex + BinarySerialization> KeyEntry<Index> {
         Callback: FnMut(
             &ArcBytes<'static>,
             &mut Index,
-            &mut dyn File,
-            &mut HashMap<u64, u64>,
-            &mut PagedWriter<'_>,
+            &mut dyn BlobStorage,
+            &mut HashMap<GrainId, GrainId>,
+            &mut PagedWriter<'_, '_>,
             Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,
     {
@@ -54,7 +55,7 @@ impl<Index: BinarySerialization> BinarySerialization for KeyEntry<Index> {
     fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        paged_writer: &mut PagedWriter<'_>,
+        paged_writer: &mut PagedWriter<'_, '_>,
     ) -> Result<usize, Error> {
         let mut bytes_written = 0;
         // Write the key

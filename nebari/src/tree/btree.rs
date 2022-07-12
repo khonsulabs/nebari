@@ -7,6 +7,7 @@ use std::{
 };
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use sediment::format::GrainId;
 
 use super::{
     interior::Interior,
@@ -18,7 +19,7 @@ use super::{
 use crate::{
     chunk_cache::CacheEntry,
     error::Error,
-    io::File,
+    storage::BlobStorage,
     tree::{key_entry::PositionIndex, read_chunk, versioned::Children, ScanEvaluation},
     vault::AnyVault,
     AbortError, ArcBytes, ChunkCache, ErrorKind,
@@ -120,10 +121,10 @@ where
         &ArcBytes<'_>,
         Option<&Value>,
         Option<&Index>,
-        &mut PagedWriter<'_>,
+        &mut PagedWriter<'_, '_>,
     ) -> Result<KeyOperation<Index>, Error>,
     IndexReducer: Reducer<Index, ReducedIndex>,
-    Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<Value>, Error>,
+    Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<Value>, Error>,
 {
     /// The maximum number of children allowed per node.
     pub current_order: usize,
@@ -158,10 +159,10 @@ where
         &ArcBytes<'_>,
         Option<&Value>,
         Option<&Index>,
-        &mut PagedWriter<'_>,
+        &mut PagedWriter<'_, '_>,
     ) -> Result<KeyOperation<Index>, Error>,
     IndexReducer: Reducer<Index, ReducedIndex>,
-    Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<Value>, Error>,
+    Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<Value>, Error>,
 {
     /// Returns a new context.
     pub fn new(
@@ -182,18 +183,18 @@ where
     }
 }
 
-#[cfg(any(debug_assertions, feature = "paranoid"))]
-macro_rules! assert_children_order {
-    ($children:expr) => {
-        assert_eq!(
-            $children
-                .windows(2)
-                .find_map(|w| (w[0].key > w[1].key).then(|| (&w[0].key, &w[1].key))),
-            None
-        );
-    };
-}
-#[cfg(not(any(debug_assertions, feature = "paranoid")))]
+// #[cfg(any(debug_assertions, feature = "paranoid"))]
+// macro_rules! assert_children_order {
+//     ($children:expr) => {
+//         assert_eq!(
+//             $children
+//                 .windows(2)
+//                 .find_map(|w| (w[0].key > w[1].key).then(|| (&w[0].key, &w[1].key))),
+//             None
+//         );
+//     };
+// }
+// #[cfg(not(any(debug_assertions, feature = "paranoid")))]
 macro_rules! assert_children_order {
     ($children:expr) => {};
 }
@@ -223,17 +224,17 @@ where
             IndexReducer,
         >,
         max_key: Option<&ArcBytes<'_>>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<ChangeResult, Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         match &mut self.node {
             BTreeNode::Leaf(children) => {
@@ -316,17 +317,17 @@ where
             IndexReducer,
         >,
         max_key: Option<&ArcBytes<'_>>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<bool, Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut last_index = 0;
         let mut any_changes = false;
@@ -461,17 +462,17 @@ where
             IndexReducer,
         >,
         max_key: Option<&ArcBytes<'_>>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<ChangeResult, Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut last_index = 0;
         let mut any_changes = false;
@@ -562,17 +563,17 @@ where
             Loader,
             IndexReducer,
         >,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         let can_absorb = children.len() > 1;
         match (result, can_absorb) {
@@ -609,17 +610,17 @@ where
             Loader,
             IndexReducer,
         >,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         let (insert_on_top, sponge_index) = if child_index > 0 {
             (true, child_index - 1)
@@ -681,17 +682,17 @@ where
             Loader,
             IndexReducer,
         >,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut should_backup = false;
         // Before adding a new node, we want to first try to use neighboring
@@ -758,17 +759,17 @@ where
             Loader,
             IndexReducer,
         >,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<(ChangeResult, bool), Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         let mut should_backup = false;
         // Check the previous child to see if it can accept any of this child.
@@ -858,17 +859,17 @@ where
             Loader,
             IndexReducer,
         >,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<ChangeResult, Error>
     where
         Indexer: FnMut(
             &ArcBytes<'_>,
             Option<&IndexedType>,
             Option<&Index>,
-            &mut PagedWriter<'_>,
+            &mut PagedWriter<'_, '_>,
         ) -> Result<KeyOperation<Index>, Error>,
         IndexReducer: Reducer<Index, ReducedIndex>,
-        Loader: FnMut(&Index, &mut PagedWriter<'_>) -> Result<Option<IndexedType>, Error>,
+        Loader: FnMut(&Index, &mut PagedWriter<'_, '_>) -> Result<Option<IndexedType>, Error>,
     {
         // Check the previous child to see if it can accept any of this child.
         children[child_index + 1].position.load(
@@ -959,7 +960,7 @@ where
         insert_at_top: bool,
         current_order: usize,
         minimum_children: usize,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
     ) -> Result<ChangeResult, Error> {
         self.dirty = true;
         match (&mut self.node, children) {
@@ -1121,7 +1122,7 @@ where
             KeyEvaluator,
             ScanDataCallback,
         >,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
         current_depth: usize,
@@ -1142,17 +1143,12 @@ where
                     if range.contains(&child.key.as_slice()) {
                         match (args.key_evaluator)(&child.key, &child.index) {
                             ScanEvaluation::ReadData => {
-                                if child.index.position() > 0 {
-                                    let data = match read_chunk(
-                                        child.index.position(),
-                                        false,
-                                        file,
-                                        vault,
-                                        cache,
-                                    )? {
-                                        CacheEntry::ArcBytes(contents) => contents,
-                                        CacheEntry::Decoded(_) => unreachable!(),
-                                    };
+                                if let Some(position) = child.index.position() {
+                                    let data =
+                                        match read_chunk(position, false, file, vault, cache)? {
+                                            CacheEntry::ArcBytes(contents) => contents,
+                                            CacheEntry::Decoded(_) => unreachable!(),
+                                        };
                                     (args.data_callback)(child.key.clone(), &child.index, data)?;
                                 }
                             }
@@ -1246,7 +1242,7 @@ where
         keys: &mut Keys,
         mut key_evaluator: KeyEvaluator,
         mut key_reader: KeyReader,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
@@ -1261,8 +1257,7 @@ where
             &mut KeyRange::new(keys),
             &mut |key, index| key_evaluator(key, index),
             &mut |key, index| {
-                // Deleted keys are stored with a 0 position.
-                if index.position() > 0 {
+                if index.position().is_some() {
                     positions_to_read.push((key, index.clone()));
                 }
                 Ok(())
@@ -1276,8 +1271,8 @@ where
         positions_to_read.sort_by(|a, b| a.1.position().cmp(&b.1.position()));
 
         for (key, index) in positions_to_read {
-            if index.position() > 0 {
-                match read_chunk(index.position(), false, file, vault, cache)? {
+            if let Some(position) = index.position() {
+                match read_chunk(position, false, file, vault, cache)? {
                     CacheEntry::ArcBytes(contents) => {
                         key_reader(key, contents, index)?;
                     }
@@ -1307,7 +1302,7 @@ where
         keys: &mut KeyRange<Keys, Bytes>,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, Error>
@@ -1396,9 +1391,9 @@ where
     pub fn copy_data_to<Callback>(
         &mut self,
         include_nodes: NodeInclusion,
-        file: &mut dyn File,
-        copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_>,
+        file: &mut dyn BlobStorage,
+        copied_chunks: &mut HashMap<GrainId, GrainId>,
+        writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
         scratch: &mut Vec<u8>,
         index_callback: &mut Callback,
@@ -1407,9 +1402,9 @@ where
         Callback: FnMut(
             &ArcBytes<'static>,
             &mut Index,
-            &mut dyn File,
-            &mut HashMap<u64, u64>,
-            &mut PagedWriter<'_>,
+            &mut dyn BlobStorage,
+            &mut HashMap<GrainId, GrainId>,
+            &mut PagedWriter<'_, '_>,
             Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,
     {
@@ -1476,7 +1471,7 @@ impl<
     fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        paged_writer: &mut PagedWriter<'_>,
+        paged_writer: &mut PagedWriter<'_, '_>,
     ) -> Result<usize, Error> {
         self.dirty = false;
         let mut bytes_written = 0;

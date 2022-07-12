@@ -6,6 +6,7 @@ use std::{
 };
 
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
+use sediment::format::GrainId;
 
 use super::{
     btree::BTreeEntry,
@@ -13,13 +14,12 @@ use super::{
     by_sequence::{BySequenceIndex, BySequenceStats},
     modify::Modification,
     serialization::BinarySerialization,
-    ChangeResult, PagedWriter, ScanEvaluation, PAGE_SIZE,
+    ChangeResult, PagedWriter, ScanEvaluation,
 };
 use crate::{
     chunk_cache::CacheEntry,
     error::{Error, InternalError},
-    io::File,
-    roots::AbortError,
+    storage::BlobStorage,
     transaction::TransactionId,
     tree::{
         btree::{Indexer, KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
@@ -31,7 +31,7 @@ use crate::{
         BTreeNode, Interior, ModificationResult, PageHeader, PersistenceMode, Reducer, Root,
     },
     vault::AnyVault,
-    ArcBytes, ChunkCache, ErrorKind,
+    AbortError, ArcBytes, ChunkCache, ErrorKind,
 };
 
 /// An versioned tree with no additional indexed data.
@@ -97,7 +97,7 @@ where
             BySequenceIndex<EmbeddedIndex>,
             BySequenceIndex<EmbeddedIndex>,
         >,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
         max_order: Option<usize>,
     ) -> Result<(), Error> {
         // Reverse so that pop is efficient.
@@ -123,10 +123,10 @@ where
                     |_key: &ArcBytes<'_>,
                      value: Option<&BySequenceIndex<EmbeddedIndex>>,
                      _existing_index: Option<&BySequenceIndex<EmbeddedIndex>>,
-                     _writer: &mut PagedWriter<'_>| {
+                     _writer: &mut PagedWriter<'_, '_>| {
                         Ok(KeyOperation::Set(value.unwrap().clone()))
                     },
-                    |_index: &BySequenceIndex<EmbeddedIndex>, _writer: &mut PagedWriter<'_>| {
+                    |_index: &BySequenceIndex<EmbeddedIndex>, _writer: &mut PagedWriter<'_, '_>| {
                         Ok(None)
                     },
                     BySequenceReducer,
@@ -154,7 +154,7 @@ where
             VersionedByIdIndex<EmbeddedIndex, ArcBytes<'static>>,
         >,
         changes: &mut EntryChanges<EmbeddedIndex>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
         max_order: Option<usize>,
     ) -> Result<Vec<ModificationResult<VersionedByIdIndex<EmbeddedIndex, ArcBytes<'static>>>>, Error>
     {
@@ -182,15 +182,15 @@ where
                      existing_index: Option<
                         &VersionedByIdIndex<EmbeddedIndex, ArcBytes<'static>>,
                     >,
-                     writer: &mut PagedWriter<'_>| {
+                     writer: &mut PagedWriter<'_, '_>| {
                         let (position, value_size) = if let Some(value) = value {
                             let new_position = writer.write_chunk_cached(value.clone())?;
                             // write_chunk errors if it can't fit within a u32
                             #[allow(clippy::cast_possible_truncation)]
                             let value_length = value.len() as u32;
-                            (new_position, value_length)
+                            (Some(new_position), value_length)
                         } else {
-                            (0, 0)
+                            (None, 0)
                         };
                         let embedded = reducer.0.index(key, value);
                         changes.current_sequence = changes
@@ -221,8 +221,8 @@ where
                         Ok(KeyOperation::Set(new_index))
                     },
                     |index, writer| {
-                        if index.position > 0 {
-                            match writer.read_chunk(index.position) {
+                        if let Some(position) = index.position {
+                            match writer.read_chunk(position) {
                                 Ok(CacheEntry::ArcBytes(buffer)) => Ok(Some(buffer)),
                                 Ok(CacheEntry::Decoded(_)) => unreachable!(),
                                 Err(err) => Err(err),
@@ -295,10 +295,10 @@ where
 
     fn serialize(
         &mut self,
-        paged_writer: &mut PagedWriter<'_>,
+        paged_writer: &mut PagedWriter<'_, '_>,
         output: &mut Vec<u8>,
     ) -> Result<(), Error> {
-        output.reserve(PAGE_SIZE);
+        output.reserve(4096);
         output.write_u64::<BigEndian>(self.transaction_id.0)?;
         output.write_u64::<BigEndian>(self.sequence.0)?;
         // Reserve space for by_sequence and by_id sizes (2xu32).
@@ -356,7 +356,7 @@ where
     fn modify(
         &mut self,
         modification: Modification<'_, ArcBytes<'static>, Self::Index>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
         max_order: Option<usize>,
     ) -> Result<Vec<ModificationResult<Self::Index>>, Error> {
         let persistence_mode = modification.persistence_mode;
@@ -405,7 +405,7 @@ where
         keys: &mut Keys,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
@@ -437,7 +437,7 @@ where
             KeyEvaluator,
             ScanDataCallback,
         >,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
@@ -458,9 +458,9 @@ where
     fn copy_data_to(
         &mut self,
         include_nodes: bool,
-        file: &mut dyn File,
-        copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_>,
+        file: &mut dyn BlobStorage,
+        copied_chunks: &mut HashMap<GrainId, GrainId>,
+        writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error> {
         // Copy all of the data using the ID root.
@@ -485,8 +485,11 @@ where
                   copied_chunks,
                   to_file,
                   vault| {
-                let new_position =
-                    to_file.copy_chunk_from(index.position, from_file, copied_chunks, vault)?;
+                let new_position = if let Some(position) = index.position {
+                    Some(to_file.copy_chunk_from(position, from_file, copied_chunks, vault)?)
+                } else {
+                    None
+                };
 
                 sequence_indexes.push((
                     key.clone(),
@@ -534,10 +537,10 @@ where
                 |_key: &ArcBytes<'_>,
                                value: Option<&BySequenceIndex<EmbeddedIndex>>,
                                _existing_index: Option<&BySequenceIndex<EmbeddedIndex>>,
-                               _writer: &mut PagedWriter<'_>| {
+                               _writer: &mut PagedWriter<'_, '_>| {
                     Ok(KeyOperation::Set(value.unwrap().clone()))
                 },
-                |_index: &BySequenceIndex<EmbeddedIndex>, _writer: &mut PagedWriter<'_>| unreachable!(),
+                |_index: &BySequenceIndex<EmbeddedIndex>, _writer: &mut PagedWriter<'_, '_>| unreachable!(),
                 BySequenceReducer,
             ),
             None,
@@ -564,7 +567,7 @@ impl<Embedded> Default for EntryChanges<Embedded> {
 
 pub struct EntryChange<Embedded> {
     pub key_sequence: KeySequence<Embedded>,
-    pub value_position: u64,
+    pub value_position: Option<GrainId>,
     pub value_size: u32,
 }
 

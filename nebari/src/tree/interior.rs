@@ -4,12 +4,13 @@ use std::{
 };
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use sediment::format::GrainId;
 
 use super::{btree::BTreeEntry, read_chunk, BinarySerialization, PagedWriter};
 use crate::{
     chunk_cache::CacheEntry,
     error::Error,
-    io::File,
+    storage::BlobStorage,
     tree::{btree::NodeInclusion, key_entry::PositionIndex},
     vault::AnyVault,
     AbortError, ArcBytes, ChunkCache, ErrorKind,
@@ -31,11 +32,11 @@ pub struct Interior<Index, ReducedIndex> {
 #[derive(Clone, Debug)]
 pub enum Pointer<Index, ReducedIndex> {
     /// The position on-disk of the node.
-    OnDisk(u64),
+    OnDisk(Option<GrainId>),
     /// An in-memory node that may have previously been saved on-disk.
     Loaded {
         /// The position on-disk of the node, if it was previously saved.
-        previous_location: Option<u64>,
+        previous_location: Option<GrainId>,
         /// The loaded B-Tree entry.
         entry: Box<BTreeEntry<Index, ReducedIndex>>,
     },
@@ -51,14 +52,14 @@ impl<
     #[allow(clippy::missing_panics_doc)] // Currently the only panic is if the types don't match, which shouldn't happen due to these nodes always being accessed through a root.
     pub fn load(
         &mut self,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         validate_crc: bool,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
         current_order: Option<usize>,
     ) -> Result<(), Error> {
         match self {
-            Pointer::OnDisk(position) => {
+            Pointer::OnDisk(Some(position)) => {
                 let entry = match read_chunk(*position, validate_crc, file, vault, cache)? {
                     CacheEntry::ArcBytes(mut buffer) => {
                         // It's worthless to store this node in the cache
@@ -77,7 +78,7 @@ impl<
                     previous_location: Some(*position),
                 };
             }
-            Pointer::Loaded { .. } => {}
+            Pointer::OnDisk(None) | Pointer::Loaded { .. } => {}
         }
         Ok(())
     }
@@ -101,9 +102,9 @@ impl<
     /// Returns the position on-disk of the node being pointed at, if the node
     /// has been saved before.
     #[must_use]
-    pub fn position(&self) -> Option<u64> {
+    pub fn position(&self) -> Option<GrainId> {
         match self {
-            Pointer::OnDisk(location) => Some(*location),
+            Pointer::OnDisk(location) => *location,
             Pointer::Loaded {
                 previous_location, ..
             } => *previous_location,
@@ -119,36 +120,45 @@ impl<
         CallerError: Display + Debug,
         Cb: FnOnce(
             &BTreeEntry<Index, ReducedIndex>,
-            &mut dyn File,
+            &mut dyn BlobStorage,
         ) -> Result<Output, AbortError<CallerError>>,
     >(
         &self,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
         current_order: Option<usize>,
         callback: Cb,
     ) -> Result<Output, AbortError<CallerError>> {
         match self {
-            Pointer::OnDisk(position) => match read_chunk(*position, false, file, vault, cache)? {
-                CacheEntry::ArcBytes(mut buffer) => {
-                    let decoded = BTreeEntry::deserialize_from(&mut buffer, current_order)?;
+            Pointer::OnDisk(Some(position)) => {
+                match read_chunk(*position, false, file, vault, cache)? {
+                    CacheEntry::ArcBytes(mut buffer) => {
+                        let decoded = BTreeEntry::deserialize_from(&mut buffer, current_order)?;
 
-                    let result = callback(&decoded, file);
-                    if let (Some(cache), Some(file_id)) = (cache, file.id().id()) {
-                        cache.replace_with_decoded(file_id, *position, Box::new(decoded));
+                        let result = callback(&decoded, file);
+                        if let Some(cache) = cache {
+                            cache.replace_with_decoded(
+                                file.unique_id().id,
+                                *position,
+                                Box::new(decoded),
+                            );
+                        }
+                        result
                     }
-                    result
+                    CacheEntry::Decoded(value) => {
+                        let entry = value
+                            .as_ref()
+                            .as_any()
+                            .downcast_ref::<Box<BTreeEntry<Index, ReducedIndex>>>()
+                            .unwrap();
+                        callback(entry, file)
+                    }
                 }
-                CacheEntry::Decoded(value) => {
-                    let entry = value
-                        .as_ref()
-                        .as_any()
-                        .downcast_ref::<Box<BTreeEntry<Index, ReducedIndex>>>()
-                        .unwrap();
-                    callback(entry, file)
-                }
-            },
+            }
+            Pointer::OnDisk(None) => Err(AbortError::Nebari(Error::from(
+                std::io::ErrorKind::NotFound,
+            ))),
             Pointer::Loaded { entry, .. } => callback(entry, file),
         }
     }
@@ -180,9 +190,9 @@ impl<
     pub(crate) fn copy_data_to<Callback>(
         &mut self,
         include_nodes: NodeInclusion,
-        file: &mut dyn File,
-        copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_>,
+        file: &mut dyn BlobStorage,
+        copied_chunks: &mut HashMap<GrainId, GrainId>,
+        writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
         scratch: &mut Vec<u8>,
         index_callback: &mut Callback,
@@ -191,9 +201,9 @@ impl<
         Callback: FnMut(
             &ArcBytes<'static>,
             &mut Index,
-            &mut dyn File,
-            &mut HashMap<u64, u64>,
-            &mut PagedWriter<'_>,
+            &mut dyn BlobStorage,
+            &mut HashMap<GrainId, GrainId>,
+            &mut PagedWriter<'_, '_>,
             Option<&dyn AnyVault>,
         ) -> Result<bool, Error>,
     {
@@ -221,7 +231,7 @@ impl<
 
         // Remove the node from memory to save RAM during the compaction process.
         if let Some(position) = position {
-            self.position = Pointer::OnDisk(position);
+            self.position = Pointer::OnDisk(Some(position));
         }
 
         Ok(any_data_copied)
@@ -236,9 +246,9 @@ impl<
     fn serialize_to(
         &mut self,
         writer: &mut Vec<u8>,
-        paged_writer: &mut PagedWriter<'_>,
+        paged_writer: &mut PagedWriter<'_, '_>,
     ) -> Result<usize, Error> {
-        let mut pointer = Pointer::OnDisk(0);
+        let mut pointer = Pointer::OnDisk(None);
         std::mem::swap(&mut pointer, &mut self.position);
         let location_on_disk = match pointer {
             Pointer::OnDisk(position) => position,
@@ -254,14 +264,17 @@ impl<
                     let position =
                         paged_writer.write_chunk(&writer[old_writer_length..writer.len()])?;
                     writer.truncate(old_writer_length);
-                    if let (Some(cache), Some(file_id)) =
-                        (paged_writer.cache, paged_writer.id().id())
-                    {
-                        cache.replace_with_decoded(file_id, position, entry);
+                    if let Some(cache) = paged_writer.cache {
+                        cache.replace_with_decoded(paged_writer.unique_id().id, position, entry);
                     }
-                    position
+
+                    if let Some(previous_location) = previous_location {
+                        paged_writer.free(previous_location)?;
+                    }
+
+                    Some(position)
                 }
-                (false, Some(position)) => position,
+                (false, Some(position)) => Some(position),
             },
         };
         self.position = Pointer::OnDisk(location_on_disk);
@@ -272,7 +285,7 @@ impl<
         writer.extend_from_slice(&self.key);
         bytes_written += 2 + key_len as usize;
 
-        writer.write_u64::<BigEndian>(location_on_disk)?;
+        writer.write_u64::<BigEndian>(location_on_disk.map_or(0, |location| location.as_u64()))?;
         bytes_written += 8;
 
         bytes_written += self.stats.serialize_to(writer, paged_writer)?;
@@ -294,7 +307,10 @@ impl<
         }
         let key = reader.read_bytes(key_len)?.into_owned();
 
-        let position = reader.read_u64::<BigEndian>()?;
+        let position = match reader.read_u64::<BigEndian>()? {
+            0 => None,
+            grain => Some(GrainId::from(grain)),
+        };
         let stats = ReducedIndex::deserialize_from(reader, current_order)?;
 
         Ok(Self {

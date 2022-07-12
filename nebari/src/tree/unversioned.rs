@@ -5,6 +5,7 @@ use std::{
 };
 
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
+use sediment::format::GrainId;
 
 use super::{
     btree::BTreeEntry,
@@ -16,8 +17,7 @@ use super::{
 use crate::{
     chunk_cache::CacheEntry,
     error::{Error, InternalError},
-    io::File,
-    roots::AbortError,
+    storage::BlobStorage,
     transaction::TransactionId,
     tree::{
         btree::{Indexer, KeyOperation, ModificationContext, NodeInclusion, ScanArgs},
@@ -25,7 +25,7 @@ use crate::{
         dynamic_order, BTreeNode, ChangeResult, ModificationResult, PageHeader, Root,
     },
     vault::AnyVault,
-    ArcBytes, ChunkCache, ErrorKind,
+    AbortError, ArcBytes, ChunkCache, ErrorKind,
 };
 
 /// An unversioned tree with no additional indexed data.
@@ -67,14 +67,14 @@ impl<Index> UnversionedTreeRoot<Index>
 where
     Index: Clone + super::EmbeddedIndex<ArcBytes<'static>> + Debug + 'static,
 {
-    fn modify_id_root<'a, 'w>(
-        &'a mut self,
+    fn modify_id_root(
+        &mut self,
         mut modification: Modification<
             '_,
             ArcBytes<'static>,
             UnversionedByIdIndex<Index, ArcBytes<'static>>,
         >,
-        writer: &'a mut PagedWriter<'w>,
+        writer: &mut PagedWriter<'_, '_>,
         max_order: Option<usize>,
     ) -> Result<Vec<ModificationResult<UnversionedByIdIndex<Index, ArcBytes<'static>>>>, Error>
     {
@@ -100,7 +100,7 @@ where
                     |key: &ArcBytes<'_>,
                      value: Option<&ArcBytes<'static>>,
                      _existing_index,
-                     writer: &mut PagedWriter<'_>| {
+                     writer: &mut PagedWriter<'_, '_>| {
                         if let Some(value) = value {
                             let position = writer.write_chunk_cached(value.clone())?;
                             // write_chunk errors if it can't fit within a u32
@@ -108,7 +108,7 @@ where
                             let value_length = value.len() as u32;
                             let new_index = UnversionedByIdIndex::new(
                                 value_length,
-                                position,
+                                Some(position),
                                 reducer.0.index(key, Some(value)),
                             );
                             results.push(ModificationResult {
@@ -124,9 +124,15 @@ where
                             Ok(KeyOperation::Remove)
                         }
                     },
-                    |index, writer| match writer.read_chunk(index.position)? {
-                        CacheEntry::ArcBytes(buffer) => Ok(Some(buffer.clone())),
-                        CacheEntry::Decoded(_) => unreachable!(),
+                    |index, writer| {
+                        if let Some(position) = index.position {
+                            match writer.read_chunk(position)? {
+                                CacheEntry::ArcBytes(buffer) => Ok(Some(buffer.clone())),
+                                CacheEntry::Decoded(_) => unreachable!(),
+                            }
+                        } else {
+                            Ok(None)
+                        }
                     },
                     self.reducer().clone(),
                 ),
@@ -188,7 +194,7 @@ where
 
     fn serialize(
         &mut self,
-        paged_writer: &mut PagedWriter<'_>,
+        paged_writer: &mut PagedWriter<'_, '_>,
         output: &mut Vec<u8>,
     ) -> Result<(), Error> {
         output.write_u64::<BigEndian>(
@@ -237,7 +243,7 @@ where
     fn modify(
         &mut self,
         modification: Modification<'_, ArcBytes<'static>, Self::Index>,
-        writer: &mut PagedWriter<'_>,
+        writer: &mut PagedWriter<'_, '_>,
         max_order: Option<usize>,
     ) -> Result<Vec<ModificationResult<Self::Index>>, Error> {
         let transaction_id = modification.persistence_mode.transaction_id();
@@ -257,7 +263,7 @@ where
         keys: &mut Keys,
         key_evaluator: &mut KeyEvaluator,
         key_reader: &mut KeyReader,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<(), Error>
@@ -289,7 +295,7 @@ where
             KeyEvaluator,
             DataCallback,
         >,
-        file: &mut dyn File,
+        file: &mut dyn BlobStorage,
         vault: Option<&dyn AnyVault>,
         cache: Option<&ChunkCache>,
     ) -> Result<bool, AbortError<CallerError>>
@@ -310,9 +316,9 @@ where
     fn copy_data_to(
         &mut self,
         include_nodes: bool,
-        file: &mut dyn File,
-        copied_chunks: &mut HashMap<u64, u64>,
-        writer: &mut PagedWriter<'_>,
+        file: &mut dyn BlobStorage,
+        copied_chunks: &mut HashMap<GrainId, GrainId>,
+        writer: &mut PagedWriter<'_, '_>,
         vault: Option<&dyn AnyVault>,
     ) -> Result<(), Error> {
         let mut scratch = Vec::new();
@@ -333,8 +339,11 @@ where
                   copied_chunks,
                   to_file,
                   vault| {
-                let new_position =
-                    to_file.copy_chunk_from(index.position, from_file, copied_chunks, vault)?;
+                let new_position = if let Some(position) = index.position {
+                    Some(to_file.copy_chunk_from(position, from_file, copied_chunks, vault)?)
+                } else {
+                    None
+                };
 
                 if new_position == index.position {
                     // Data is already in the new file

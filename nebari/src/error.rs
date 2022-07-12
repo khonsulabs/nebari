@@ -1,14 +1,13 @@
 use std::{
     array::TryFromSliceError,
     convert::Infallible,
-    fmt::{Debug, Display},
+    fmt::{Debug, Display, Write},
+    num::TryFromIntError,
 };
 
 use backtrace::Backtrace;
 use parking_lot::{Mutex, MutexGuard};
 use thiserror::Error;
-
-use crate::AbortError;
 
 /// An error from Nebari as well as an associated backtrace.
 pub struct Error {
@@ -47,11 +46,10 @@ impl Error {
                     line.push_str(&name.to_string());
                     line.push(' ');
                 } else if let Some(addr) = symbol.addr() {
-                    line.push_str(&format!("{:x}", addr as usize));
-                    line.push(' ');
+                    write!(line, "{:x} ", addr as usize).unwrap();
                 } else {
                     // Give up on formatting this one.
-                    line.push_str(&format!("{symbol:?}"));
+                    write!(line, "{symbol:?}").unwrap();
                     return line;
                 }
 
@@ -60,7 +58,7 @@ impl Error {
                         line.push_str("at ");
                         line.push_str(file);
                     } else {
-                        line.push_str(&format!("at {file:?}"));
+                        write!(line, "at {file:?}").unwrap();
                     }
 
                     if let Some(lineno) = symbol.lineno() {
@@ -120,6 +118,12 @@ impl From<ErrorKind> for Error {
     }
 }
 
+impl From<TryFromIntError> for Error {
+    fn from(_: TryFromIntError) -> Self {
+        Self::data_integrity("value too large")
+    }
+}
+
 impl From<AbortError<Infallible>> for Error {
     fn from(ae: AbortError<Infallible>) -> Self {
         ae.infallible()
@@ -130,6 +134,15 @@ impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
         Self {
             kind: ErrorKind::from(err),
+            backtrace: Mutex::new(Backtrace::new_unresolved()),
+        }
+    }
+}
+
+impl From<std::io::ErrorKind> for Error {
+    fn from(err: std::io::ErrorKind) -> Self {
+        Self {
+            kind: ErrorKind::from(std::io::Error::from(err)),
             backtrace: Mutex::new(Backtrace::new_unresolved()),
         }
     }
@@ -292,4 +305,37 @@ pub enum InternalError {
     /// An unexpected byte length was encountered.
     #[error("an unexpected byte length was encountered")]
     IncorrectByteLength,
+}
+
+/// An error that could come from user code or Nebari.
+#[derive(thiserror::Error, Debug)]
+pub enum AbortError<CallerError: Display + Debug = Infallible> {
+    /// An error unrelated to Nebari occurred.
+    #[error("other error: {0}")]
+    Other(CallerError),
+    /// An error from Roots occurred.
+    #[error("database error: {0}")]
+    Nebari(#[from] Error),
+}
+
+impl AbortError<Infallible> {
+    /// Unwraps the error contained within an infallible abort error.
+    #[must_use]
+    pub fn infallible(self) -> Error {
+        match self {
+            AbortError::Other(_) => unreachable!(),
+            AbortError::Nebari(error) => error,
+        }
+    }
+}
+
+/// An error returned from `compare_and_swap()`.
+#[derive(Debug, thiserror::Error)]
+pub enum CompareAndSwapError<Value: Debug> {
+    /// The stored value did not match the conditional value.
+    #[error("value did not match. existing value: {0:?}")]
+    Conflict(Option<Value>),
+    /// Another error occurred while executing the operation.
+    #[error("error during compare_and_swap: {0}")]
+    Error(#[from] Error),
 }

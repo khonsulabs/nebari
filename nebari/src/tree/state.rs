@@ -1,6 +1,8 @@
 use std::{fmt::Debug, sync::Arc};
 
-use parking_lot::{Mutex, MutexGuard, RwLock};
+use parking_lot::{Mutex, MutexGuard, RwLock, RwLockWriteGuard};
+
+use sediment::database::CheckpointGuard;
 
 use crate::chunk_cache::AnySendSync;
 
@@ -21,9 +23,9 @@ where
     pub fn new(file_id: Option<u64>, max_order: Option<usize>, root: Root) -> Self {
         let state = ActiveState {
             file_id,
-            max_order,
-            current_position: 0,
             root,
+            max_order,
+            checkpoint_guard: None,
         };
 
         Self {
@@ -37,9 +39,9 @@ where
         root.initialize_default();
         let state = ActiveState {
             file_id,
-            max_order,
-            current_position: 0,
             root,
+            max_order,
+            checkpoint_guard: None,
         };
 
         Self {
@@ -51,6 +53,11 @@ where
     /// Locks the state for writing.
     pub fn lock(&self) -> MutexGuard<'_, ActiveState<Root>> {
         self.writer.lock()
+    }
+
+    /// Locks the read state for writing.
+    pub(crate) fn lock_read(&self) -> RwLockWriteGuard<'_, Arc<ActiveState<Root>>> {
+        self.reader.write()
     }
 
     /// Reads the current state.
@@ -72,7 +79,7 @@ where
 
 pub trait AnyTreeState: AnySendSync + Debug {
     fn cloned(&self) -> Box<dyn AnyTreeState>;
-    fn publish(&self);
+    fn finish_commit(&self, checkpoint_guard: Option<CheckpointGuard>, guard: CommitStateGuard);
 }
 
 impl<Root: super::Root> AnyTreeState for State<Root> {
@@ -80,11 +87,18 @@ impl<Root: super::Root> AnyTreeState for State<Root> {
         Box::new(self.clone())
     }
 
-    fn publish(&self) {
-        let state = self.lock();
-        state.publish(self);
+    fn finish_commit(&self, checkpoint_guard: Option<CheckpointGuard>, guard: CommitStateGuard) {
+        let state = guard
+            .0
+            .as_ref()
+            .as_any()
+            .downcast_ref::<ActiveState<Root>>()
+            .expect("wrong type");
+        state.publish(checkpoint_guard, self);
     }
 }
+
+pub struct CommitStateGuard(pub Box<dyn AnySendSync>);
 
 /// An active state for a tree file.
 #[derive(Clone, Debug, Default)]
@@ -92,8 +106,7 @@ pub struct ActiveState<Root: super::Root> {
     /// The current file id associated with this tree file. Database compaction
     /// will cause the file_id to be changed once the operation succeeds.
     pub file_id: Option<u64>,
-    /// The current location within the file for data to be written.
-    pub current_position: u64,
+    pub checkpoint_guard: Option<CheckpointGuard>,
     /// The root of the B-Tree.
     pub root: Root,
     /// The maximum "order" of the B-Tree. This controls the maximum number of
@@ -111,9 +124,21 @@ where
         self.root.initialized()
     }
 
-    pub(crate) fn publish(&self, state: &State<Root>) {
+    pub(crate) fn publish(&self, checkpoint_guard: Option<CheckpointGuard>, state: &State<Root>) {
         let mut reader = state.reader.write();
-        *reader = Arc::new(self.clone());
+        // Multiple transactions may be batched together, and the threads may
+        // wake up in different orders than the transactions were applied. So,
+        // we must check that the state being published isn't outdated by an
+        // already published state.
+        if !reader.root.transaction_id().valid()
+            || reader.root.transaction_id() < self.root.transaction_id()
+        {
+            let new_state = ActiveState {
+                checkpoint_guard,
+                ..self.clone()
+            };
+            *reader = Arc::new(new_state);
+        }
     }
 
     pub(crate) fn rollback(&mut self, state: &State<Root>) {

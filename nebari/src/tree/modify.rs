@@ -6,6 +6,8 @@ use std::{
 use super::btree::KeyOperation;
 use crate::{error::Error, transaction::TransactionId, ArcBytes, ErrorKind};
 
+// pub type TransactionId = u64;
+
 /// A tree modification.
 #[derive(Debug)]
 pub struct Modification<'a, T, Index> {

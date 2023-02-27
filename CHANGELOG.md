@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.5.5
+
+### Fixed
+
+- An edge case allowing `StdFileManager::append()` to return an internal
+  communication error has been fixed when a file is being condended for by more
+  than one thread.
+
 ## v0.5.4
 
 ### Fixed
@@ -41,7 +49,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   For now, the stance of Nebari's authors is that `F_FULLFSYNC` is the proper
   way to implement true ACID-compliance.
 
-[reducing-disk-writes]: https://developer.apple.com/documentation/xcode/reducing-disk-writes#Minimize-Explicit-Storage-Synchronization
 
 ## v0.5.2
 

@@ -140,17 +140,19 @@ impl FileManager for StdFileManager {
                     *open_file = FileSlot::Waiting(file_sender);
                     drop(open_files);
 
-                    let file = file_receiver.recv()?;
-
-                    // If we stole the slot from another waiter (shouldn't
-                    // happen in real usage), we need to reinstall it.
-                    if let FileSlot::Waiting(other_sender) = other {
-                        let mut open_files = self.open_files.lock();
-                        if let Some(open_file) = open_files.get_mut(&file_id) {
-                            *open_file = FileSlot::Waiting(other_sender);
+                    if let Ok(file) = file_receiver.recv() {
+                        // If we stole the slot from another waiter (shouldn't
+                        // happen in real usage), we need to reinstall it.
+                        if let FileSlot::Waiting(other_sender) = other {
+                            let mut open_files = self.open_files.lock();
+                            if let Some(open_file) = open_files.get_mut(&file_id) {
+                                *open_file = FileSlot::Waiting(other_sender);
+                            }
                         }
+                        file
+                    } else {
+                        return self.append(path);
                     }
-                    file
                 }
             };
             Ok(OpenStdFile {

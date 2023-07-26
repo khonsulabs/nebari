@@ -1322,7 +1322,7 @@ where
                 let mut last_index = 0;
                 let mut took_one_key = false;
                 while let Some(key) = keys.current_key() {
-                    match children[last_index..].binary_search_by(|child| (&*child.key).cmp(key)) {
+                    match children[last_index..].binary_search_by(|child| (*child.key).cmp(key)) {
                         Ok(matching) => {
                             took_one_key = true;
                             keys.next();
@@ -1354,7 +1354,7 @@ where
                 let mut last_index = 0;
                 while let Some(key) = keys.current_key() {
                     let containing_node_index = children[last_index..]
-                        .binary_search_by(|child| (&*child.key).cmp(key))
+                        .binary_search_by(|child| (*child.key).cmp(key))
                         .unwrap_or_else(|not_found| not_found);
                     last_index += containing_node_index;
 

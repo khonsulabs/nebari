@@ -58,7 +58,7 @@ impl<
         current_order: Option<usize>,
     ) -> Result<(), Error> {
         match self {
-            Pointer::OnDisk(position) => {
+            Self::OnDisk(position) => {
                 let entry = match read_chunk(*position, validate_crc, file, vault, cache)? {
                     CacheEntry::ArcBytes(mut buffer) => {
                         // It's worthless to store this node in the cache
@@ -77,7 +77,7 @@ impl<
                     previous_location: Some(*position),
                 };
             }
-            Pointer::Loaded { .. } => {}
+            Self::Loaded { .. } => {}
         }
         Ok(())
     }
@@ -85,16 +85,16 @@ impl<
     /// Returns the previously-[`load()`ed](Self::load) entry.
     pub fn get(&mut self) -> Option<&BTreeEntry<Index, ReducedIndex>> {
         match self {
-            Pointer::OnDisk(_) => None,
-            Pointer::Loaded { entry, .. } => Some(entry),
+            Self::OnDisk(_) => None,
+            Self::Loaded { entry, .. } => Some(entry),
         }
     }
 
     /// Returns the previously-[`load()`ed](Self::load) entry as a mutable reference.
     pub fn get_mut(&mut self) -> Option<&mut BTreeEntry<Index, ReducedIndex>> {
         match self {
-            Pointer::OnDisk(_) => None,
-            Pointer::Loaded { entry, .. } => Some(entry.as_mut()),
+            Self::OnDisk(_) => None,
+            Self::Loaded { entry, .. } => Some(entry.as_mut()),
         }
     }
 
@@ -103,8 +103,8 @@ impl<
     #[must_use]
     pub fn position(&self) -> Option<u64> {
         match self {
-            Pointer::OnDisk(location) => Some(*location),
-            Pointer::Loaded {
+            Self::OnDisk(location) => Some(*location),
+            Self::Loaded {
                 previous_location, ..
             } => *previous_location,
         }
@@ -130,7 +130,7 @@ impl<
         callback: Cb,
     ) -> Result<Output, AbortError<CallerError>> {
         match self {
-            Pointer::OnDisk(position) => match read_chunk(*position, false, file, vault, cache)? {
+            Self::OnDisk(position) => match read_chunk(*position, false, file, vault, cache)? {
                 CacheEntry::ArcBytes(mut buffer) => {
                     let decoded = BTreeEntry::deserialize_from(&mut buffer, current_order)?;
 
@@ -149,7 +149,7 @@ impl<
                     callback(entry, file)
                 }
             },
-            Pointer::Loaded { entry, .. } => callback(entry, file),
+            Self::Loaded { entry, .. } => callback(entry, file),
         }
     }
 }

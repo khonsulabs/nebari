@@ -214,7 +214,7 @@ impl<File: ManagedFile> Roots<File> {
         let states = self.tree_states(trees);
         let trees = trees
             .iter()
-            .zip(states.into_iter())
+            .zip(states)
             .map(|(tree, state)| {
                 tree.borrow()
                     .begin_transaction(
@@ -299,7 +299,7 @@ impl<'transaction, Root: tree::Root, File: ManagedFile> Deref
     type Target = TransactionTree<Root, File>;
 
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        &self.0
     }
 }
 
@@ -307,7 +307,7 @@ impl<'transaction, Root: tree::Root, File: ManagedFile> DerefMut
     for LockedTransactionTree<'transaction, Root, File>
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.0
+        &mut self.0
     }
 }
 
@@ -1576,8 +1576,8 @@ impl AbortError<Infallible> {
     #[must_use]
     pub fn infallible(self) -> Error {
         match self {
-            AbortError::Other(_) => unreachable!(),
-            AbortError::Nebari(error) => error,
+            Self::Other(_) => unreachable!(),
+            Self::Nebari(error) => error,
         }
     }
 }

@@ -501,7 +501,7 @@ impl FileOp<Result<(), Error>> for LogWriter {
 
                 // Write up to PAGE_SIZE - header_len bytes
                 let total_bytes_left = total_length - (offset + 3);
-                let bytes_to_write = total_bytes_left.min(PAGE_SIZE - header_len as usize);
+                let bytes_to_write = total_bytes_left.min(PAGE_SIZE - header_len);
                 scratch[header_len..bytes_to_write + header_len]
                     .copy_from_slice(&bytes[offset..offset + bytes_to_write]);
                 log.write_all(&scratch)?;

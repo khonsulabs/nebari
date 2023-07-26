@@ -404,7 +404,7 @@ impl PathIds {
         let mut file_ids = self.file_ids.write();
         let mut ids_to_remove = Vec::new();
         let mut paths_to_remove = Vec::new();
-        for id in file_ids.iter() {
+        for id in &*file_ids {
             if id.path().starts_with(path) {
                 paths_to_remove.push(id.clone());
                 ids_to_remove.push(id.clone());

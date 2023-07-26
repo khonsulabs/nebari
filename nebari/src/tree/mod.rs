@@ -1673,7 +1673,6 @@ where
             state.root.by_sequence_root.get_multiple(
                 &mut self
                     .keys
-                    .into_iter()
                     .map(|sequence| sequence.0.to_be_bytes()),
                 |key, index| {
                     (self.key_evaluator)(SequenceId::try_from(key.as_slice()).unwrap(), index)
@@ -1694,7 +1693,6 @@ where
             state.root.by_sequence_root.get_multiple(
                 &mut self
                     .keys
-                    .into_iter()
                     .map(|sequence| sequence.0.to_be_bytes()),
                 |key, index| {
                     (self.key_evaluator)(SequenceId::try_from(key.as_slice()).unwrap(), index)
@@ -2955,7 +2953,7 @@ mod tests {
         let file_path = temp_dir.join("tree");
 
         let mut tree =
-            TreeFile::<R, M::File>::write(&file_path, State::default(), &context, None).unwrap();
+            TreeFile::<R, M::File>::write(file_path, State::default(), &context, None).unwrap();
         assert!(matches!(
             tree.compare_and_swap(b"test", Some(&b"won't match"[..]), None, None)
                 .unwrap_err(),
@@ -3102,7 +3100,7 @@ mod tests {
         let file_path = temp_dir.join("tree");
 
         let mut tree =
-            TreeFile::<R, M::File>::write(&file_path, State::default(), &context, None).unwrap();
+            TreeFile::<R, M::File>::write(file_path, State::default(), &context, None).unwrap();
         tree.set(None, ArcBytes::from(b"a"), ArcBytes::from(b"first"))
             .unwrap();
         tree.set(None, ArcBytes::from(b"z"), ArcBytes::from(b"last"))

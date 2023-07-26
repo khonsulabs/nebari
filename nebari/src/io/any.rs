@@ -174,15 +174,15 @@ impl FileManager for AnyFileManager {
 impl ManagedFileOpener<AnyFile> for AnyFileManager {
     fn open_for_read(&self, path: impl IntoPathId + Send) -> Result<AnyFile, crate::Error> {
         match self {
-            AnyFileManager::Std(manager) => manager.open_for_read(path).map(AnyFile::Std),
-            AnyFileManager::Memory(manager) => manager.open_for_read(path).map(AnyFile::Memory),
+            Self::Std(manager) => manager.open_for_read(path).map(AnyFile::Std),
+            Self::Memory(manager) => manager.open_for_read(path).map(AnyFile::Memory),
         }
     }
 
     fn open_for_append(&self, path: impl IntoPathId + Send) -> Result<AnyFile, crate::Error> {
         match self {
-            AnyFileManager::Std(manager) => manager.open_for_append(path).map(AnyFile::Std),
-            AnyFileManager::Memory(manager) => manager.open_for_append(path).map(AnyFile::Memory),
+            Self::Std(manager) => manager.open_for_append(path).map(AnyFile::Std),
+            Self::Memory(manager) => manager.open_for_append(path).map(AnyFile::Memory),
         }
     }
 }
@@ -205,8 +205,8 @@ pub enum AnyFileHandle {
 impl OpenableFile<AnyFile> for AnyFileHandle {
     fn id(&self) -> &PathId {
         match self {
-            AnyFileHandle::Std(file) => file.id(),
-            AnyFileHandle::Memory(file) => file.id(),
+            Self::Std(file) => file.id(),
+            Self::Memory(file) => file.id(),
         }
     }
 
@@ -217,12 +217,12 @@ impl OpenableFile<AnyFile> for AnyFileHandle {
         publish_callback: C,
     ) -> Result<Self, crate::Error> {
         match (self, replacement, manager) {
-            (AnyFileHandle::Std(file), AnyFile::Std(replacement), AnyFileManager::Std(manager)) => {
+            (Self::Std(file), AnyFile::Std(replacement), AnyFileManager::Std(manager)) => {
                 file.replace_with(replacement, manager, publish_callback)
                     .map(AnyFileHandle::Std)
             }
             (
-                AnyFileHandle::Memory(file),
+                Self::Memory(file),
                 AnyFile::Memory(replacement),
                 AnyFileManager::Memory(manager),
             ) => file
@@ -234,8 +234,8 @@ impl OpenableFile<AnyFile> for AnyFileHandle {
 
     fn close(self) -> Result<(), crate::Error> {
         match self {
-            AnyFileHandle::Std(file) => file.close(),
-            AnyFileHandle::Memory(file) => file.close(),
+            Self::Std(file) => file.close(),
+            Self::Memory(file) => file.close(),
         }
     }
 }
@@ -243,8 +243,8 @@ impl OpenableFile<AnyFile> for AnyFileHandle {
 impl OperableFile<AnyFile> for AnyFileHandle {
     fn execute<Output, Op: FileOp<Output>>(&mut self, operator: Op) -> Output {
         match self {
-            AnyFileHandle::Std(file) => file.execute(operator),
-            AnyFileHandle::Memory(file) => file.execute(operator),
+            Self::Std(file) => file.execute(operator),
+            Self::Memory(file) => file.execute(operator),
         }
     }
 }

@@ -136,7 +136,7 @@ impl std::io::Read for MemoryFile {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         let file_buffer = self.buffer.read();
 
-        let read_end = self.position as usize + buffer.len();
+        let read_end = self.position + buffer.len();
         if read_end > file_buffer.len() {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,

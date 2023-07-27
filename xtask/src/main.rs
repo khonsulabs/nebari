@@ -51,7 +51,7 @@ fn generate_benchmark_overview() -> anyhow::Result<()> {
     };
     let overview = overview.replace("ENVIRONMENT", &environment);
 
-    std::fs::write("target/criterion/index.html", &overview)?;
+    std::fs::write("target/criterion/index.html", overview)?;
 
     Ok(())
 }

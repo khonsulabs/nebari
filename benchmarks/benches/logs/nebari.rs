@@ -137,7 +137,7 @@ impl<B: NebariBenchmark> SimpleBench for ReadLogs<B> {
     ) -> Result<Self, anyhow::Error> {
         let context = Context::default().with_cache(ChunkCache::new(2000, 160_384));
         let file_path = group_state.path().join("tree");
-        let tree = TreeFile::<B::Root, StdFile>::read(&file_path, State::default(), &context, None)
+        let tree = TreeFile::<B::Root, StdFile>::read(file_path, State::default(), &context, None)
             .unwrap();
         let state = config.initialize(config_group_state);
         Ok(Self { tree, state })
@@ -225,7 +225,7 @@ impl<B: NebariBenchmark> SimpleBench for ScanLogs<B> {
     ) -> Result<Self, anyhow::Error> {
         let context = Context::default().with_cache(ChunkCache::new(2000, 160_384));
         let file_path = group_state.path().join("tree");
-        let tree = TreeFile::<B::Root, StdFile>::read(&file_path, State::default(), &context, None)
+        let tree = TreeFile::<B::Root, StdFile>::read(file_path, State::default(), &context, None)
             .unwrap();
         let state = config.initialize(config_group_state);
         Ok(Self { tree, state })

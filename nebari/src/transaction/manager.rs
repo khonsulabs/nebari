@@ -151,7 +151,7 @@ where
     /// Returns the current state of the transaction log.
     #[must_use]
     pub fn state(&self) -> &State {
-        &**self
+        self
     }
 }
 
@@ -196,7 +196,7 @@ impl<Manager: FileManager> ManagerThread<Manager> {
         transactions: flume::Receiver<ThreadCommand>,
         context: Context<Manager>,
     ) {
-        let state = State::from_path(&log_path);
+        let state = State::from_path(log_path);
 
         let log = match TransactionLog::<Manager::File>::initialize_state(&state, &context)
             .and_then(|_| TransactionLog::<Manager::File>::open(log_path, state.clone(), context))
@@ -542,7 +542,7 @@ impl IdSequence {
             self.statuses.resize(index + 1, 0);
         }
 
-        let bit_offset = offset as usize % (usize::BITS as usize);
+        let bit_offset = offset % (usize::BITS as usize);
         self.statuses[index] |= 1 << bit_offset;
 
         self.truncate();

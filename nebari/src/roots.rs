@@ -1576,8 +1576,8 @@ impl AbortError<Infallible> {
     #[must_use]
     pub fn infallible(self) -> Error {
         match self {
-            Self::Other(_) => unreachable!(),
-            Self::Nebari(error) => error,
+            AbortError::Other(infallible) => match infallible {},
+            AbortError::Nebari(error) => error,
         }
     }
 }

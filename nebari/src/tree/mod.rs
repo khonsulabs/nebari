@@ -1671,9 +1671,7 @@ where
             }
 
             state.root.by_sequence_root.get_multiple(
-                &mut self
-                    .keys
-                    .map(|sequence| sequence.0.to_be_bytes()),
+                &mut self.keys.map(|sequence| sequence.0.to_be_bytes()),
                 |key, index| {
                     (self.key_evaluator)(SequenceId::try_from(key.as_slice()).unwrap(), index)
                 },
@@ -1691,9 +1689,7 @@ where
             }
 
             state.root.by_sequence_root.get_multiple(
-                &mut self
-                    .keys
-                    .map(|sequence| sequence.0.to_be_bytes()),
+                &mut self.keys.map(|sequence| sequence.0.to_be_bytes()),
                 |key, index| {
                     (self.key_evaluator)(SequenceId::try_from(key.as_slice()).unwrap(), index)
                 },

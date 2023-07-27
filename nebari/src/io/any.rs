@@ -217,17 +217,13 @@ impl OpenableFile<AnyFile> for AnyFileHandle {
         publish_callback: C,
     ) -> Result<Self, crate::Error> {
         match (self, replacement, manager) {
-            (Self::Std(file), AnyFile::Std(replacement), AnyFileManager::Std(manager)) => {
-                file.replace_with(replacement, manager, publish_callback)
-                    .map(AnyFileHandle::Std)
-            }
-            (
-                Self::Memory(file),
-                AnyFile::Memory(replacement),
-                AnyFileManager::Memory(manager),
-            ) => file
+            (Self::Std(file), AnyFile::Std(replacement), AnyFileManager::Std(manager)) => file
                 .replace_with(replacement, manager, publish_callback)
-                .map(AnyFileHandle::Memory),
+                .map(AnyFileHandle::Std),
+            (Self::Memory(file), AnyFile::Memory(replacement), AnyFileManager::Memory(manager)) => {
+                file.replace_with(replacement, manager, publish_callback)
+                    .map(AnyFileHandle::Memory)
+            }
             _ => Err(crate::Error::from("incompatible file and manager")),
         }
     }

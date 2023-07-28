@@ -1037,7 +1037,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// - The new/updated index for this key.
     #[allow(clippy::missing_panics_doc)]
     pub fn replace(
-        &mut self,
+        &self,
         key: impl Into<ArcBytes<'static>>,
         value: impl Into<Root::Value>,
     ) -> Result<(Option<Root::Value>, Root::Index), Error> {
@@ -1050,7 +1050,7 @@ impl<Root: tree::Root, File: ManagedFile> Tree<Root, File> {
     /// Executes a modification. Returns a list of all changed keys.
     #[allow(clippy::missing_panics_doc)]
     pub fn modify<'a>(
-        &mut self,
+        &self,
         keys: Vec<ArcBytes<'a>>,
         operation: Operation<'a, Root::Value, Root::Index>,
     ) -> Result<Vec<ModificationResult<Root::Index>>, Error> {
@@ -1494,7 +1494,7 @@ where
     /// the value was removed, None is returned for the value.
     #[allow(clippy::needless_pass_by_value)]
     pub fn get_multiple_by_sequence<Sequences>(
-        &mut self,
+        &self,
         sequences: Sequences,
     ) -> Result<HashMap<SequenceId, (ArcBytes<'static>, Option<ArcBytes<'static>>)>, Error>
     where
@@ -1517,7 +1517,7 @@ where
     /// If a sequence is not found, it will not appear in the result list.
     #[allow(clippy::needless_pass_by_value)]
     pub fn get_multiple_indexes_by_sequence<Sequences>(
-        &mut self,
+        &self,
         sequences: Sequences,
     ) -> Result<Vec<SequenceIndex<Index>>, Error>
     where
@@ -1541,7 +1541,7 @@ where
     /// result list.
     #[allow(clippy::needless_pass_by_value)]
     pub fn get_multiple_with_indexes_by_sequence<Sequences>(
-        &mut self,
+        &self,
         sequences: Sequences,
     ) -> Result<HashMap<SequenceId, SequenceEntry<Index>>, Error>
     where
@@ -1576,8 +1576,8 @@ impl AbortError<Infallible> {
     #[must_use]
     pub fn infallible(self) -> Error {
         match self {
-            AbortError::Other(infallible) => match infallible {},
-            AbortError::Nebari(error) => error,
+            Self::Other(infallible) => match infallible {},
+            Self::Nebari(error) => error,
         }
     }
 }

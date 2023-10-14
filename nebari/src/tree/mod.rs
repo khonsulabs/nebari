@@ -61,7 +61,7 @@ use std::{
 
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use crc::{Crc, CRC_32_BZIP2};
-use parking_lot::MutexGuard;
+use parking_lot::{MutexGuard, RwLockWriteGuard};
 
 use crate::{
     chunk_cache::CacheEntry,
@@ -71,8 +71,11 @@ use crate::{
         OperableFile, PathId,
     },
     roots::AbortError,
-    transaction::{ManagedTransaction, TransactionManager},
-    tree::btree::{BTreeNode, Indexer, KeyOperation, Reducer, ScanArgs},
+    transaction::{CommittedTreeState, ManagedTransaction, TransactionManager},
+    tree::{
+        btree::{BTreeNode, Indexer, KeyOperation, Reducer, ScanArgs},
+        state::CommitStateGuard,
+    },
     vault::AnyVault,
     ArcBytes, ChunkCache, CompareAndSwapError, Context, ErrorKind,
 };
@@ -924,10 +927,13 @@ impl<Root: root::Root, File: ManagedFile> TreeFile<Root, File> {
         Ok(result)
     }
 
-    /// Commits the tree. This is only needed if writes were done with a
-    /// transaction id. This will fully flush the tree and publish the
-    /// transactional state to be available to readers.
-    pub fn commit(&mut self) -> Result<(), Error> {
+    /// Begins a transactional commit. This is only needed if writes were done
+    /// with a transaction id.
+    ///
+    /// The returned [`CommittedTreeState`] must be provided to the
+    /// [`TransactionManager`] to publish the newly written state. If None is
+    /// returned, the tree had no changes.
+    pub fn begin_commit(&mut self) -> Result<Option<CommittedTreeState>, Error> {
         self.file.execute(TreeWriter {
             state: &self.state,
             vault: self.vault.as_deref(),
@@ -1266,24 +1272,23 @@ where
             .root
             .copy_data_to(true, file, &mut copied_chunks, &mut writer, self.vault)?;
 
-        save_tree(
-            &mut write_state,
-            self.vault,
-            None,
-            writer,
-            self.scratch,
-            true,
-        )?;
+        let file = save_tree(&mut write_state, self.vault, None, writer, self.scratch)?;
+        file.synchronize()?;
 
-        // Close any existing handles to the file. This ensures that once we
-        // save the tree, new requests to the file manager will point to the new
-        // file.
+        // Because the file path now refers to a new file handle, some operating
+        // systems such as Linux and Mac OS require synchronizing the metadata
+        // of the containing directory.
+        if let Some(parent) = compacted_path.parent() {
+            self.manager.synchronize(parent)?;
+        }
+
+        let read_state = self.state.lock_read();
 
         Ok((
             new_file,
             TreeCompactionFinisher {
                 write_state,
-                state: self.state,
+                read_state,
                 _transaction: transaction,
             },
         ))
@@ -1291,15 +1296,15 @@ where
 }
 
 struct TreeCompactionFinisher<'a, Root: root::Root, Manager: FileManager> {
-    state: &'a State<Root>,
     write_state: MutexGuard<'a, ActiveState<Root>>,
+    read_state: RwLockWriteGuard<'a, Arc<ActiveState<Root>>>,
     _transaction: Option<ManagedTransaction<Manager>>,
 }
 
 impl<'a, Root: root::Root, Manager: FileManager> TreeCompactionFinisher<'a, Root, Manager> {
     fn finish(mut self, new_file_id: u64) {
         self.write_state.file_id = Some(new_file_id);
-        self.write_state.publish(self.state);
+        *self.read_state = Arc::new(self.write_state.clone());
         drop(self);
     }
 }
@@ -1311,13 +1316,14 @@ struct TreeWriter<'a, Root: root::Root> {
     scratch: &'a mut Vec<u8>,
 }
 
-impl<'a, Root> FileOp<Result<(), Error>> for TreeWriter<'a, Root>
+impl<'a, Root> FileOp<Result<Option<CommittedTreeState>, Error>> for TreeWriter<'a, Root>
 where
     Root: root::Root,
 {
-    fn execute(self, file: &mut dyn File) -> Result<(), Error> {
+    fn execute(self, file: &mut dyn File) -> Result<Option<CommittedTreeState>, Error> {
         let mut active_state = self.state.lock();
-        if active_state.file_id != file.id().id() {
+        let path_id = file.id().clone();
+        if active_state.file_id != path_id.id() {
             return Err(Error::from(ErrorKind::TreeCompacted));
         }
         if active_state.root.dirty() {
@@ -1336,10 +1342,14 @@ where
                 self.cache,
                 data_block,
                 self.scratch,
-                true,
-            )
+            )?;
+            Ok(Some(CommittedTreeState {
+                path_id,
+                state: Box::new(self.state.clone()),
+                committed: CommitStateGuard(Box::new(active_state.clone())),
+            }))
         } else {
-            Ok(())
+            Ok(None)
         }
     }
 }
@@ -1397,7 +1407,6 @@ where
                 self.cache,
                 data_block,
                 self.scratch,
-                persistence_mode.should_synchronize(),
             )?;
             active_state.publish(self.state);
         }
@@ -1407,14 +1416,13 @@ where
 }
 
 #[allow(clippy::shadow_unrelated)] // It is related, but clippy can't tell.
-fn save_tree<Root: root::Root>(
+fn save_tree<'writer, Root: root::Root>(
     active_state: &mut ActiveState<Root>,
     vault: Option<&dyn AnyVault>,
     cache: Option<&ChunkCache>,
-    mut data_block: PagedWriter<'_>,
+    mut data_block: PagedWriter<'writer, '_>,
     scratch: &mut Vec<u8>,
-    synchronize: bool,
-) -> Result<(), Error> {
+) -> Result<&'writer mut dyn File, Error> {
     scratch.clear();
     active_state.root.serialize(&mut data_block, scratch)?;
     let (file, after_data) = data_block.finish()?;
@@ -1433,11 +1441,7 @@ fn save_tree<Root: root::Root>(
     let (file, after_header) = header_block.finish()?;
     active_state.current_position = after_header;
 
-    if synchronize {
-        file.synchronize()?;
-    }
-
-    Ok(())
+    Ok(file)
 }
 
 /// One or more keys.
@@ -1825,8 +1829,8 @@ where
 }
 
 /// Writes data in pages, allowing for quick scanning through the file.
-pub struct PagedWriter<'a> {
-    file: &'a mut dyn File,
+pub struct PagedWriter<'file, 'a> {
+    file: &'file mut dyn File,
     vault: Option<&'a dyn AnyVault>,
     cache: Option<&'a ChunkCache>,
     position: u64,
@@ -1834,7 +1838,7 @@ pub struct PagedWriter<'a> {
     buffered_write: [u8; WRITE_BUFFER_SIZE],
 }
 
-impl<'a> Deref for PagedWriter<'a> {
+impl<'file, 'a> Deref for PagedWriter<'file, 'a> {
     type Target = dyn File;
 
     fn deref(&self) -> &Self::Target {
@@ -1842,7 +1846,7 @@ impl<'a> Deref for PagedWriter<'a> {
     }
 }
 
-impl<'a> DerefMut for PagedWriter<'a> {
+impl<'file, 'a> DerefMut for PagedWriter<'file, 'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.file
     }
@@ -1850,10 +1854,10 @@ impl<'a> DerefMut for PagedWriter<'a> {
 
 const WRITE_BUFFER_SIZE: usize = 8 * 1024;
 
-impl<'a> PagedWriter<'a> {
+impl<'file, 'a> PagedWriter<'file, 'a> {
     fn new(
         header: Option<PageHeader>,
-        file: &'a mut dyn File,
+        file: &'file mut dyn File,
         vault: Option<&'a dyn AnyVault>,
         cache: Option<&'a ChunkCache>,
         position: u64,
@@ -2017,7 +2021,7 @@ impl<'a> PagedWriter<'a> {
         self.write(&buffer)
     }
 
-    fn finish(mut self) -> Result<(&'a mut dyn File, u64), Error> {
+    fn finish(mut self) -> Result<(&'file mut dyn File, u64), Error> {
         self.commit_if_needed()?;
         Ok((self.file, self.position))
     }
@@ -2779,22 +2783,22 @@ mod tests {
 
     #[test]
     fn std_compact_versioned() {
-        compact::<Versioned, _>("versioned", StdFileManager::default());
+        compact::<Versioned, _>("std-versioned", StdFileManager::default());
     }
 
     #[test]
     fn std_compact_unversioned() {
-        compact::<Unversioned, _>("unversioned", StdFileManager::default());
+        compact::<Unversioned, _>("std-unversioned", StdFileManager::default());
     }
 
     #[test]
     fn memory_compact_versioned() {
-        compact::<Versioned, _>("versioned", MemoryFileManager::default());
+        compact::<Versioned, _>("memory-versioned", MemoryFileManager::default());
     }
 
     #[test]
     fn memory_compact_unversioned() {
-        compact::<Unversioned, _>("unversioned", MemoryFileManager::default());
+        compact::<Unversioned, _>("memory-unversioned", MemoryFileManager::default());
     }
 
     #[test]

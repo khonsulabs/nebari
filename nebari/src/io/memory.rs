@@ -245,6 +245,10 @@ impl FileManager for MemoryFileManager {
         Ok(self.lookup_file(path, false)?.is_some())
     }
 
+    fn synchronize(&self, _path: impl AsRef<Path>) -> Result<(), crate::Error> {
+        Ok(())
+    }
+
     fn close_handles<F: FnOnce(PathId)>(&self, path: impl IntoPathId, publish_callback: F) {
         let path = path.into_path_id();
         self.forget_file(path.clone());

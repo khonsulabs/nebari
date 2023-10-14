@@ -135,6 +135,27 @@ impl FileManager for AnyFileManager {
         }
     }
 
+    fn file_length(&self, path: impl IntoPathId) -> Result<u64, crate::Error> {
+        match self {
+            Self::Std(manager) => manager.file_length(path),
+            Self::Memory(manager) => manager.file_length(path),
+        }
+    }
+
+    fn exists(&self, path: impl IntoPathId) -> Result<bool, crate::Error> {
+        match self {
+            Self::Std(manager) => manager.exists(path),
+            Self::Memory(manager) => manager.exists(path),
+        }
+    }
+
+    fn synchronize(&self, path: impl AsRef<Path>) -> Result<(), crate::Error> {
+        match self {
+            Self::Std(manager) => manager.synchronize(path),
+            Self::Memory(manager) => manager.synchronize(path),
+        }
+    }
+
     fn close_handles<F: FnOnce(PathId)>(&self, path: impl IntoPathId, publish_callback: F) {
         match self {
             Self::Std(manager) => manager.close_handles(path, publish_callback),
@@ -153,20 +174,6 @@ impl FileManager for AnyFileManager {
         match self {
             Self::Std(manager) => manager.delete_directory(path),
             Self::Memory(manager) => manager.delete_directory(path),
-        }
-    }
-
-    fn exists(&self, path: impl IntoPathId) -> Result<bool, crate::Error> {
-        match self {
-            Self::Std(manager) => manager.exists(path),
-            Self::Memory(manager) => manager.exists(path),
-        }
-    }
-
-    fn file_length(&self, path: impl IntoPathId) -> Result<u64, crate::Error> {
-        match self {
-            Self::Std(manager) => manager.file_length(path),
-            Self::Memory(manager) => manager.file_length(path),
         }
     }
 }
